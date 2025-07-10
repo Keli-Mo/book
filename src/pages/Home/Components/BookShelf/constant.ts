@@ -31,4 +31,11 @@ export const images = [
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Studentbook.png',
   //Our World Starter 练习册
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Workbook-1.png',
+
+    //Oxford Discover 1st edition
+  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_1st-%E5%9B%BE%E7%89%87/OD_2E_L1_1.png',
+  //Oxford Discover 2nd edition
+  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_2nd-%E5%9B%BE%E7%89%87/OD_2E_L2_1.png',
+  //Oxford Discover 3rd edition
+  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_3rd-%E5%9B%BE%E7%89%87/OD_2E_L3_1.png',
 ];

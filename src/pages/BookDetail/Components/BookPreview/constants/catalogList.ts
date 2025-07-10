@@ -1065,4 +1065,232 @@ export const catalogLists = {
             page: 57
         }
     ],
+
+    // Oxford Discover 1 edition
+    "15": [
+        {
+            name: "Unit 1 Families and Friends",
+            page: 6
+        },
+        {
+            name: "Unit 2 Elliot's New Friend",
+            page: 16
+        },
+        {
+            name: "Unit 3 Who's in The Tree? / Colors of the Sky",
+            page: 26
+        },
+        {
+            name: "Unit 4 Let's Make Colors!",
+            page: 36
+        },
+        {
+            name: "Unit 5 Animal Homes",
+            page: 46
+        },
+        {
+            name: "Unit 6 My Friend, Anak",
+            page: 56
+        },
+        {
+            name: "Unit 7 The Four Seasons",
+            page: 66
+        },
+        {
+            name: "Unit 8 The Seasons of Arnold's Apple Tree",
+            page: 76
+        },
+        {
+            name: "Unit 9 Working with Numbers",
+            page: 86
+        },
+        {
+            name: "Unit 10 Stone Soup",
+            page: 96
+        },
+        {
+            name: "Unit 11 The Farmer and The Hat",
+            page: 106
+        },
+        {
+            name: "Unit 12 Wants and Needs",
+            page: 116
+        },
+        {
+            name: "Unit 13 Where's Your Home?",
+            page: 126
+        },
+        {
+            name: "Unit 14 City Mouse and Country Mouse",
+            page: 136
+        },
+        {
+            name: "Unit 15 Percussion Instruments",
+            page: 146
+        },
+        {
+            name: "Unit 16 Let's Make Music!",
+            page: 156
+        },
+        {
+            name: "Unit 17 Living and Nonliving Things",
+            page: 166
+        },
+        {
+            name: "Unit 18 The Gingerbread Man",
+            page: 176
+        }
+    ],
+
+    // Oxford Discover 2 edition
+    "16": [
+        {
+            name: "Unit 1 Amazing Animals",
+            page: 6
+        },
+        {
+            name: "Unit 2 Leo and Lily's Adventure",
+            page: 16
+        },
+        {
+            name: "Unit 3 What Is Our World Made Of?",
+            page: 26
+        },
+        {
+            name: "Unit 4 Let's Make Ice Cream!",
+            page: 36
+        },
+        {
+            name: "Unit 5 Then and Now",
+            page: 46
+        },
+        {
+            name: "Unit 6 Tell Me a Story, Grandpa",
+            page: 56
+        },
+        {
+            name: "Unit 7 Subtraction",
+            page: 68
+        },
+        {
+            name: "Unit 8 Bandar, the Greedy Monkey",
+            page: 76
+        },
+        {
+        name: "Unit 9 Following Rules",
+        page: 86
+        },
+        {
+            name: "Unit 10 The Please and Thank You Book of Poems",
+            page: 96
+        },
+        {
+            name: "Unit 11 Natural Resources",
+            page: 106
+        },
+        {
+            name: "Unit 12 A Juice Carton's Diary",
+            page: 116
+        },
+        {
+            name: "Unit 13 How Music Makes us Feel",
+            page: 126
+        },
+        {
+            name: "Unit 14 Olga's Flute",
+            page: 136
+        },
+        {
+            name: "Unit 15 Forces and Movement",
+            page: 146
+        },
+        {
+            name: "Unit 16 Two Stubborn Little Goats",
+            page: 156
+        },
+        {
+            name: "Unit 17 Shapes in Art",
+            page: 166
+        },
+        {
+            name: "Unit 18 Origami",
+            page: 176
+        },
+    ],
+
+    // Oxford Discover 3 edition
+    "17": [
+        {
+            name: "Unit 1 Having Fun",
+            page: 6
+        },
+        {
+            name: "Unit 2 The Red Rubber Ball",
+            page: 16
+        },
+        {
+            name: "Unit 3 Letters to a Friend",
+            page: 26
+        },
+        {
+            name: "Unit 4 Moving from Here... to There!",
+            page: 36
+        },
+        {
+            name: "Unit 5 Three Poets",
+            page: 46
+        },
+        {
+            name: "Unit 6 You Can Be a Poet",
+            page: 56
+        },
+        {
+            name: "Unit 7 Time and the Earth",
+            page: 66
+        },
+        {
+            name: "Unit 8 Doctor Molly",
+            page: 76
+        },
+        {
+        name: "Unit 9 Green Energy for Today and Tomorrow",
+        page: 86
+        },
+        {
+            name: "Unit 10 Hector the Energy Saver!",
+            page: 96
+        },
+        {
+            name: "Unit 11 Mystery in the Gym",
+            page: 106
+        },
+        {
+            name: "Unit 12 The World of Instruments",
+            page: 116
+        },
+        {
+            name: "Unit 13 Simple Machines in Our Daily Lives",
+            page: 126
+        },
+        {
+            name: "Unit 14 Clara's Invention",
+            page: 136
+        },
+        {
+            name: "Unit 15 The Life of a Sunflower",
+            page: 146
+        },
+        {
+            name: "Unit 16 The Garden of Happiness",
+            page: 156
+        },
+        {
+            name: "Unit 17 My Journey with Captain Magellan",
+            page: 166
+        },
+        {
+            name: "Unit 18 The Fantastic Undersea Life of Jacques Cousteau",
+            page: 176
+        },
+    ],
 }

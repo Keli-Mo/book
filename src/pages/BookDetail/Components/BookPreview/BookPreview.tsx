@@ -37,6 +37,9 @@ const titleMap = {
   "12": 'Our World L1 练习册',
   "13": 'Our World Starter 学生用书',
   "14": 'Our World Starter 练习册',
+  "15": 'Oxford Discover 1st edition',
+  "16": 'Oxford Discover 2nd edition',
+  "17": 'Oxford Discover 3rd edition',
 }
 
 /*
@@ -64,14 +67,16 @@ enum EBookType {
   OW_PRACTICE_BOOK_L1       = "12",
   OW_STUDENT_BOOK_STARTER   = "13",
   OW_PRACTICE_BOOK_STARTER  = "14",
+  OD_DICSOVER_1ST_EDITION   = "15",
+  OD_DICSOVER_2ND_EDITION   = "16",
+  OD_DICSOVER_3RD_EDITION   = "17",
 }
 
 // 定义一个新的类型枚举，来表示页码显示策略
 enum PageNumberingStrategy {
   EXCLUDE_COVER_AND_TOC = "exclude_cover_and_toc",  // 不计入封面和目录页
   INCLUDE_ALL_PAGE = "include_all_page",            // 所有页都计入
-  OW_STUDENT_BOOK = "ow_student_book",              // 只排除封面
-  OW_WITH_COVER = "ow_with_cover",                  // OW系列带封面，页码排除封面
+  EXCLUDE_COVER = "exclude_cover",                  // 页码排除封面   //OW OD  系列从封面后一页开始计算
   //CUSTOM = "custom",                              // 自定义策略
 }
 
@@ -88,10 +93,14 @@ const bookPageStrategyMap: Record<EBookType, PageNumberingStrategy> = {
   [EBookType.KET_STUDENT_BOOK_A2]: PageNumberingStrategy.EXCLUDE_COVER_AND_TOC,
   [EBookType.KET_PRACTICE_BOOK_A2]: PageNumberingStrategy.EXCLUDE_COVER_AND_TOC,
 
-  [EBookType.OW_STUDENT_BOOK_L1]: PageNumberingStrategy.OW_WITH_COVER,
-  [EBookType.OW_PRACTICE_BOOK_L1]: PageNumberingStrategy.OW_WITH_COVER,
-  [EBookType.OW_STUDENT_BOOK_STARTER]: PageNumberingStrategy.OW_WITH_COVER,
-  [EBookType.OW_PRACTICE_BOOK_STARTER]: PageNumberingStrategy.OW_WITH_COVER,
+  [EBookType.OW_STUDENT_BOOK_L1]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OW_PRACTICE_BOOK_L1]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OW_STUDENT_BOOK_STARTER]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OW_PRACTICE_BOOK_STARTER]: PageNumberingStrategy.EXCLUDE_COVER,
+
+  [EBookType.OD_DICSOVER_3RD_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OD_DICSOVER_1ST_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OD_DICSOVER_2ND_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
 }
 
 const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCurrentPage }) => {
@@ -111,7 +120,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
         return (currentPage > 1 ? (<View className="page-number">{(currentPage - 1) + ' / ' + (imageUrls.length - 2)}</View>) : null);
       case PageNumberingStrategy.INCLUDE_ALL_PAGE:
         return (<View className="page-number">{(currentPage + 1) + ' / ' + imageUrls.length}</View>);
-      case PageNumberingStrategy.OW_WITH_COVER:
+      case PageNumberingStrategy.EXCLUDE_COVER:
         return (currentPage > 0 ? (<View className="page-number">{(currentPage) + ' / ' + (imageUrls.length - 1)}</View>) : null);
       default:
         return null;
@@ -325,7 +334,7 @@ export const BookAudioTag: React.FC<any> = React.memo(({ audioList, currentPage,
               left = decimalToPercentage((x - 3576) / 825);
               top = decimalToPercentage((y - 202) / 1061);
               break;
-            case 'OW_L1_Starter':
+            case 'Percentage':
               left = x;
               top = y;
               break;

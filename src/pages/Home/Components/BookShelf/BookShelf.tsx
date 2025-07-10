@@ -18,6 +18,9 @@ const titleMap = {
   12: 'Our World L1 练习册',
   13: 'Our World Starter 学生用书',
   14: 'Our World Starter 练习册',
+  15: 'Oxford Discover 1 edition',
+  16: 'Oxford Discover 2 edition',
+  17: 'Oxford Discover 3 edition',
 }
 
 export const BookShelf: React.FC = () => {
