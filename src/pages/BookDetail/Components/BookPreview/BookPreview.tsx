@@ -122,7 +122,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
 ////////////////////
   const [clickRecords, setClickRecords] = useState<Record<number, ClickRecord[]>>({});
   //花活——页数audioIndex的初始值 1
-  const [audioIndex, setAudioIndex] = useState(1);
+  const [audioIndex, setAudioIndex] = useState(2);
 
 
   const renderPageNumber = () => {
@@ -229,9 +229,9 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
 
           const record: ClickRecord = {
             offset: [`"${(ratioX * 100).toFixed(0)}%"`, `"${(ratioY * 100).toFixed(0)}%"`],
-            url: `https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_Starter_Workbook-%E9%9F%B3%E9%A2%91/ow2e_wbS_ame_'
-          +'8.${audioIndex.toFixed(0)}.mp3`,
-            flag: "OW_L1_Starter",
+            url: `https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_3rd-%E9%9F%B3%E9%A2%91/CD3/3%C2%B7'
+          +'${audioIndex.toFixed(0)}.mp3`,
+            flag: "Percentage",
           };
 
           setClickRecords(prev => {
