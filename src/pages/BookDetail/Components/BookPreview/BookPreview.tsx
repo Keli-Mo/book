@@ -22,6 +22,12 @@ interface IBookPreviewProps {
   setCurrentPage: (v: number) => void
 }
 
+interface ClickRecord {
+  offset: [string, string]; // 百分比格式的坐标
+  url: string;
+  flag: string;
+}
+
 const titleMap = {
   "1": '原版教材+剑桥考试课程',
   "2": '海沙国际课程',
@@ -113,6 +119,11 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   const [isAudioPlaying, setIsAudioPlaying] = useState(false); // 当前是否有音频正在播放
   const audioContextRef = useRef<Taro.InnerAudioContext>(Taro.createInnerAudioContext())
   const router = useRouter();
+////////////////////
+  const [clickRecords, setClickRecords] = useState<Record<number, ClickRecord[]>>({});
+  //花活——页数audioIndex的初始值 1
+  const [audioIndex, setAudioIndex] = useState(1);
+
 
   const renderPageNumber = () => {
     switch (bookPageStrategyMap[id]) {
@@ -195,6 +206,85 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     setIsAudioPlaying(false)
   }
 
+  // 处理图片点击
+  const handleImageClick = (e) => {
+    // 获取图片在页面上的实际宽高
+    Taro.createSelectorQuery()
+      .select('.book-page')
+      .boundingClientRect(rect => {
+        // rect 可能是数组或对象，需判断
+        const r = Array.isArray(rect) ? rect[0] : rect;
+        if (r && r.width && r.height) {
+          // e.detail.x/y 是点击点相对图片左上角的像素
+          const { x, y } = e.detail;
+
+          // 添加调试信息
+          console.log('点击坐标:', { x, y });
+          console.log('图片尺寸:', { width: r.width, height: r.height });
+
+          const ratioX = (x-15) / r.width;
+          const ratioY = (y-15) / r.height - 0.165;// / 1.165
+
+          console.log('计算比例:', { ratioX, ratioY });
+
+          const record: ClickRecord = {
+            offset: [`"${(ratioX * 100).toFixed(0)}%"`, `"${(ratioY * 100).toFixed(0)}%"`],
+            url: `https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_Starter_Workbook-%E9%9F%B3%E9%A2%91/ow2e_wbS_ame_'
+          +'8.${audioIndex.toFixed(0)}.mp3`,
+            flag: "OW_L1_Starter",
+          };
+
+          setClickRecords(prev => {
+            const newRecords = { ...prev };
+            if (!newRecords[currentPage+2]) {
+              newRecords[currentPage+2] = [];
+            }
+            newRecords[currentPage+2].push(record);
+            Taro.setStorageSync('book_click_records', newRecords);
+            return newRecords;
+          });
+
+          //花活——页数audioIndex的初始值 1
+          // 更新audioIndex，下次点击时使用新的数字
+          setAudioIndex(prev => prev + 1);
+
+          Taro.showToast({
+            title: `第${currentPage+2}页: x=${(ratioX*100).toFixed(1)}%, y=${(ratioY*100).toFixed(1)}%`,
+            icon: 'none'
+          });
+        }
+      })
+      .exec();
+  };
+
+  // 导出记录按钮逻辑
+  const exportRecords = () => {
+    const records = Taro.getStorageSync('book_click_records') || {};
+
+    // 自定义格式化，去掉引号，offset不换行
+    const formatRecord = (record) => {
+      return `{
+        offset: [${record.offset[0]}, ${record.offset[1]}],
+        url: '${record.url}',
+        flag: "${record.flag}",
+      }`;
+    };
+
+    const formatPage = (pageNum, records) => {
+      const formattedRecords = records.map(formatRecord).join(',\n        ');
+      return `${pageNum}: [\n        ${formattedRecords}\n    ]`;
+    };
+
+    const pages = Object.keys(records).map(pageNum =>
+      formatPage(pageNum, records[pageNum])
+    ).join(',\n    ');
+
+    const output = `{\n    ${pages}\n}`;
+    Taro.setClipboardData({ data: output });
+    Taro.showToast({ title: '已复制到剪贴板', icon: 'none' });
+  };
+
+
   return (
     <View className="haisha-book-preview-container">
 
@@ -232,9 +322,9 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                     <Text style={{ color: 'red' }}>播放中..</Text>
                   </View>
                 }
-                <BookImage url={url} />
+                <BookImage url={url} onImageClick={handleImageClick} />
                 {/* [(x - 653)/469, (y - 167)/606 */}
-                <BookAudioTag audioList={audioList} currentPage={currentPage} playAudio={playAudio} bookId={id} />
+                <BookAudioTag audioList={audioList} currentPage={currentPage} playAudio={playAudio} />
               </View>
             </SwiperItem>
           ))}
@@ -293,6 +383,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
           }
         </AtList>
       </AtFloatLayout>
+      
+      <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View>
 
     </View>
   );
@@ -300,11 +392,15 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
 
 export default BookPreview;
 
-
-
-export const BookImage: React.FC<any> = React.memo(({ url }) => {
+export const BookImage: React.FC<any> = React.memo(({ url, onImageClick }) => {
   return (
-      <Image src={url} mode="widthFix" className="book-page" />
+    <Image
+      src={url}
+      mode="widthFix"
+      className="book-page"
+      onClick={onImageClick}
+      style={{ width: '100%' }}
+    />
   )
 })
 
