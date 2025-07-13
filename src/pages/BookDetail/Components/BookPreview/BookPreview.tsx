@@ -5,6 +5,8 @@ import { Swiper, SwiperItem, Image, View, Text } from "@tarojs/components";
 import { catalogLists } from "./constants/catalogList";
 import { allAudioList } from "./constants/audioList";
 import { concatImages } from "./constants/images";
+
+//去掉
 import { clickTracker } from "@/utils/clickTracker";
 
 // import "@taroify/core/icon/style"
@@ -24,23 +26,27 @@ interface IBookPreviewProps {
 }
 
 const titleMap = {
-  "1": '原版教材+剑桥考试课程',
-  "2": '海沙国际课程',
-  "3": 'CASA阅读启蒙&自然拼读 1',
-  "4": 'CASA阅读启蒙&自然拼读 2',
-  "5": 'CASA阅读启蒙&自然拼读 3',
-  "6": 'CASA阅读启蒙&自然拼读 4',
-  "7": '剑桥PET学生用书',
-  "8": '剑桥PET练习册',
-  "9": '剑桥KET学生用书',
-  "10": '剑桥KET练习册',
-  "11": 'Our World L1 学生用书',
-  "12": 'Our World L1 练习册',
-  "13": 'Our World Starter 学生用书',
-  "14": 'Our World Starter 练习册',
-  "15": 'Oxford Discover 1st edition',
-  "16": 'Oxford Discover 2nd edition',
-  "17": 'Oxford Discover 3rd edition',
+  1:  '原版教材+剑桥考试课程',
+  2:  '海沙国际课程',
+  3:  'CASA阅读启蒙&自然拼读 1',
+  4:  'CASA阅读启蒙&自然拼读 2',
+  5:  'CASA阅读启蒙&自然拼读 3',
+  6:  'CASA阅读启蒙&自然拼读 4',
+  7:  '剑桥PET学生用书',
+  8:  '剑桥PET练习册',
+  9:  '剑桥KET学生用书',
+  10: '剑桥KET练习册',
+  11: 'Our World L1 学生用书',
+  12: 'Our World L1 练习册',
+  13: 'Our World Starter 学生用书',
+  14: 'Our World Starter 练习册',
+  15: 'OD 1',
+  16: 'OD 2',
+  17: 'OD 3',
+  18: 'OD 4',
+  19: 'RE L1 学生用书',
+  20: 'RE L2 学生用书',
+  21: 'RE FD 学生用书',
 }
 
 /*
@@ -71,6 +77,10 @@ enum EBookType {
   OD_DICSOVER_1ST_EDITION   = "15",
   OD_DICSOVER_2ND_EDITION   = "16",
   OD_DICSOVER_3RD_EDITION   = "17",
+  OD_DICSOVER_4TH_EDITION   = "18",
+  RE_L1_STUDENT_BOOK        = "19",
+  RE_L2_STUDENT_BOOK        = "20",
+  RE_FOUNDATIONS_STUDENT_BOOK    = "21",
 }
 
 // 定义一个新的类型枚举，来表示页码显示策略
@@ -99,9 +109,14 @@ const bookPageStrategyMap: Record<EBookType, PageNumberingStrategy> = {
   [EBookType.OW_STUDENT_BOOK_STARTER]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OW_PRACTICE_BOOK_STARTER]: PageNumberingStrategy.EXCLUDE_COVER,
 
-  [EBookType.OD_DICSOVER_3RD_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_1ST_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_2ND_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OD_DICSOVER_3RD_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OD_DICSOVER_4TH_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+
+  [EBookType.RE_L1_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.RE_L2_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.RE_FOUNDATIONS_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
 }
 
 const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCurrentPage }) => {

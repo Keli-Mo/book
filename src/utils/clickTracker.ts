@@ -24,10 +24,14 @@ export class ClickTracker {
   constructor(config: ClickTrackerConfig = {}) {
     this.config = {
       storageKey: 'book_click_records',
-      audioBaseUrl: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_3rd-%E9%9F%B3%E9%A2%91/CD3/3%C2%B7',
-      audioIndexStart: 2,
-      offsetX: 15,
-      offsetY: 15,
+      // 默认音频基础URL
+      audioBaseUrl: '',
+      // 默认音频索引起始值
+      audioIndexStart: 17,
+      // 默认偏移量和调整比例——图标为15x15像素，图片实际尺寸为300x300像素
+      offsetX: 28, //15,
+      offsetY: 29, //15,
+      // 根据偏移量配平
       widthAdjustment: 0.037,
       heightAdjustment: 0.135,//0.165,
       ...config

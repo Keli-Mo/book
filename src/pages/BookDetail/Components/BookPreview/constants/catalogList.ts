@@ -1293,4 +1293,236 @@ export const catalogLists = {
             page: 176
         },
     ],
+
+    // Oxford Discover 4 edition
+    "18": [
+        {
+            name: "Unit 1 Bella's Home",
+            page: 6
+        },
+        {
+            name: "Unit 2 Traveling Together Around the Sun",
+            page: 16
+        },
+        {
+            name: "Unit 3 Hidden Army: Clay Soldiers of Ancient China",
+            page: 26
+        },
+        {
+            name: "Unit 4 Stumbling upon the Past",
+            page: 36
+        },
+        {
+            name: "Unit 5 The Breakfast Quest",
+            page: 46
+        },
+        {
+            name: "Unit 6 From the World to Your Table",
+            page: 56
+        },
+        {
+            name: "Unit 7 Art Through New Eyes",
+            page: 66
+        },
+        {
+            name: "Unit 8 Sketches in a Gallery",
+            page: 76
+        },
+        {
+            name: "Unit 9 Jakarta: A Big-City Snapshot",
+            page: 86
+        },
+        {
+            name: "Unit 10 Mayor for a Day",
+            page: 96
+        },
+        {
+            name: "Unit 11 Understanding Viruses with Max Axiom, Super Scientist",
+            page: 106
+        },
+        {
+            name: "Unit 12 The Human Body: Systems at Work",
+            page: 116
+        },
+        {
+            name: "Unit 13 From Newspapers to Smartphones: The Rise of the Mass Media",
+            page: 126
+        },
+        {
+            name: "Unit 14 From the Blog of Elsa B. Garcia, Kid Reporter",
+            page: 136
+        },
+        {
+            name: "Unit 15 Forces of Nature",
+            page: 146
+        },
+        {
+            name: "Unit 16 Staying Calm Before the Storm",
+            page: 156
+        },
+        {
+            name: "Unit 17 The Natural Communities of Earth",
+            page: 166
+        },
+        {
+            name: "Unit 18 Camila's Journey",
+            page: 176
+        }
+    ],
+
+    //Reading_Explorer_fundation_studentbook
+    "19": [
+        {
+            name: "Unit 1 Amazing Animals",
+            page: 7
+        },
+        {
+            name: "Unit 2 Travel and Adventure",
+            page: 21
+        },
+        {
+            name: "Unit 3 The Power of Music",
+            page: 35
+        },
+        {
+            name: "Unit 4 Into Space",
+            page: 49
+        },
+        {
+            name: "Unit 5 City Life",
+            page: 63
+        },
+        {
+            name: "Unit 6 Backyard Discoveries",
+            page: 77
+        },
+        {
+            name: "Unit 7 When Dinosaurs Ruled",
+            page: 91
+        },
+        {
+            name: "Unit 8 Stories and Storytellers",
+            page: 105
+        },
+        {
+            name: "Unit 9 Unusual Jobs",
+            page: 117
+        },
+        {
+            name: "Unit 10 Uncovering the Past",
+            page: 131
+        },
+        {
+            name: "Unit 11 Plastic Planet",
+            page: 145
+        },
+        {
+            name: "Unit 12 Vanished!",
+            page: 159
+        }
+    ],
+
+    //Reading_Explorer_2_studentbook
+    "20": [
+        {
+            name: "Unit 1 Food and Health",
+            page: 7
+        },
+        {
+            name: "Unit 2 Call of the Wild",
+            page: 21
+        },
+        {
+            name: "Unit 3 History Detectives",
+            page: 37
+        },
+        {
+            name: "Unit 4 Traditions and Rituals",
+            page: 53
+        },
+        {
+            name: "Unit 5 Finding Wonders",
+            page: 67
+        },
+        {
+            name: "Unit 6 Reef Encounters",
+            page: 83
+        },
+        {
+            name: "Unit 7 Dollars and Scents",
+            page: 99
+        },
+        {
+            name: "Unit 8 Great Explorers",
+            page: 115
+        },
+        {
+            name: "Unit 9 Identity",
+            page: 129
+        },
+        {
+            name: "Unit 10 Facing Change",
+            page: 143
+        },
+        {
+            name: "Unit 11 Fact or Fake?",
+            page: 159
+        },
+        {
+            name: "Unit 12 Going to Extremes",
+            page: 173
+        }
+    ],
+
+    //Reading_Explorer_foundation_studentbook
+    "21": [
+        {
+            name: "Unit 1 Mysteries",
+            page: 7
+        },
+        {
+            name: "Unit 2 Eating Extremes",
+            page: 21
+        },
+        {
+            name: "Unit 3 Cool Jobs",
+            page: 35
+        },
+        {
+            name: "Unit 4 Shipwrecks",
+            page: 49
+        },
+        {
+            name: "Unit 5 Science Investigators",
+            page: 63
+        },
+        {
+            name: "Unit 6 Plants and Trees",
+            page: 75
+        },
+        {
+            name: "Unit 7 Mind's Eye",
+            page: 89
+        },
+        {
+            name: "Unit 8 Animal Wonders",
+            page: 103
+        },
+        {
+            name: "Unit 9 Building Beauty",
+            page: 117
+        },
+        {
+            name: "Unit 10 Forces of Nature",
+            page: 131
+        },
+        {
+            name: "Unit 11 Giants of the Past",
+            page: 145
+        },
+        {
+            name: "Unit 12 Technology",
+            page: 159
+        }
+    ],
 }
