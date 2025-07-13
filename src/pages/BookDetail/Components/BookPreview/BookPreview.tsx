@@ -6,8 +6,8 @@ import { catalogLists } from "./constants/catalogList";
 import { allAudioList } from "./constants/audioList";
 import { concatImages } from "./constants/images";
 
-//去掉
-import { clickTracker } from "@/utils/clickTracker";
+//插件
+// import { clickTracker } from "@/utils/clickTracker";
 
 // import "@taroify/core/icon/style"
 
@@ -211,16 +211,16 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     audioContextRef.current.stop()
     setIsAudioPlaying(false)
   }
-
-  // 处理图片点击
-  const handleImageClick = (e) => {
-    clickTracker.handleImageClick(e, currentPage);
-  };
-
-  // 导出记录按钮逻辑
-  const exportRecords = () => {
-    clickTracker.exportRecords();
-  };
+  // //插件
+  // // 处理图片点击
+  // const handleImageClick = (e) => {
+  //   clickTracker.handleImageClick(e, currentPage);
+  // };
+  // //插件
+  // // 导出记录按钮逻辑
+  // const exportRecords = () => {
+  //   clickTracker.exportRecords();
+  // };
 
 
   return (
@@ -260,7 +260,9 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                     <Text style={{ color: 'red' }}>播放中..</Text>
                   </View>
                 }
-                <BookImage url={url} onImageClick={handleImageClick} />
+                {/* 插件——以下替换，其他恢复 */}
+                {/* <BookImage url={url} onImageClick={handleImageClick} /> */}
+                <BookImage url={url} />
                 {/* [(x - 653)/469, (y - 167)/606 */}
                 <BookAudioTag audioList={audioList} currentPage={currentPage} playAudio={playAudio} />
               </View>
@@ -322,7 +324,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
         </AtList>
       </AtFloatLayout>
       
-      <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View>
+      {/* 插件 */}
+      {/* <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View> */}
 
     </View>
   );
