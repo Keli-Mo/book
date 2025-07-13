@@ -5,6 +5,7 @@ import { Swiper, SwiperItem, Image, View, Text } from "@tarojs/components";
 import { catalogLists } from "./constants/catalogList";
 import { allAudioList } from "./constants/audioList";
 import { concatImages } from "./constants/images";
+import { clickTracker } from "@/utils/clickTracker";
 
 // import "@taroify/core/icon/style"
 
@@ -20,12 +21,6 @@ interface IBookPreviewProps {
   id: string;
   currentPage: number;
   setCurrentPage: (v: number) => void
-}
-
-interface ClickRecord {
-  offset: [string, string]; // 百分比格式的坐标
-  url: string;
-  flag: string;
 }
 
 const titleMap = {
@@ -119,10 +114,6 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   const [isAudioPlaying, setIsAudioPlaying] = useState(false); // 当前是否有音频正在播放
   const audioContextRef = useRef<Taro.InnerAudioContext>(Taro.createInnerAudioContext())
   const router = useRouter();
-////////////////////
-  const [clickRecords, setClickRecords] = useState<Record<number, ClickRecord[]>>({});
-  //花活——页数audioIndex的初始值 1
-  const [audioIndex, setAudioIndex] = useState(2);
 
 
   const renderPageNumber = () => {
@@ -208,80 +199,12 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
 
   // 处理图片点击
   const handleImageClick = (e) => {
-    // 获取图片在页面上的实际宽高
-    Taro.createSelectorQuery()
-      .select('.book-page')
-      .boundingClientRect(rect => {
-        // rect 可能是数组或对象，需判断
-        const r = Array.isArray(rect) ? rect[0] : rect;
-        if (r && r.width && r.height) {
-          // e.detail.x/y 是点击点相对图片左上角的像素
-          const { x, y } = e.detail;
-
-          // 添加调试信息
-          console.log('点击坐标:', { x, y });
-          console.log('图片尺寸:', { width: r.width, height: r.height });
-
-          const ratioX = (x-15) / r.width;
-          const ratioY = (y-15) / r.height - 0.165;// / 1.165
-
-          console.log('计算比例:', { ratioX, ratioY });
-
-          const record: ClickRecord = {
-            offset: [`"${(ratioX * 100).toFixed(0)}%"`, `"${(ratioY * 100).toFixed(0)}%"`],
-            url: `https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_3rd-%E9%9F%B3%E9%A2%91/CD3/3%C2%B7'
-          +'${audioIndex.toFixed(0)}.mp3`,
-            flag: "Percentage",
-          };
-
-          setClickRecords(prev => {
-            const newRecords = { ...prev };
-            if (!newRecords[currentPage+2]) {
-              newRecords[currentPage+2] = [];
-            }
-            newRecords[currentPage+2].push(record);
-            Taro.setStorageSync('book_click_records', newRecords);
-            return newRecords;
-          });
-
-          //花活——页数audioIndex的初始值 1
-          // 更新audioIndex，下次点击时使用新的数字
-          setAudioIndex(prev => prev + 1);
-
-          Taro.showToast({
-            title: `第${currentPage+2}页: x=${(ratioX*100).toFixed(1)}%, y=${(ratioY*100).toFixed(1)}%`,
-            icon: 'none'
-          });
-        }
-      })
-      .exec();
+    clickTracker.handleImageClick(e, currentPage);
   };
 
   // 导出记录按钮逻辑
   const exportRecords = () => {
-    const records = Taro.getStorageSync('book_click_records') || {};
-
-    // 自定义格式化，去掉引号，offset不换行
-    const formatRecord = (record) => {
-      return `{
-        offset: [${record.offset[0]}, ${record.offset[1]}],
-        url: '${record.url}',
-        flag: "${record.flag}",
-      }`;
-    };
-
-    const formatPage = (pageNum, records) => {
-      const formattedRecords = records.map(formatRecord).join(',\n        ');
-      return `${pageNum}: [\n        ${formattedRecords}\n    ]`;
-    };
-
-    const pages = Object.keys(records).map(pageNum =>
-      formatPage(pageNum, records[pageNum])
-    ).join(',\n    ');
-
-    const output = `{\n    ${pages}\n}`;
-    Taro.setClipboardData({ data: output });
-    Taro.showToast({ title: '已复制到剪贴板', icon: 'none' });
+    clickTracker.exportRecords();
   };
 
 
