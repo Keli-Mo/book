@@ -3,7 +3,7 @@
   "projectname": "haisha",
   "setting": {
     "compileHotReLoad": true,
-    "bigPackageSizeSupport": true
+    "bigPackageSizeSupport": false
   },
   "libVersion": "3.8.8"
 }
