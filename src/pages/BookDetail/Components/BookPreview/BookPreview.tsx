@@ -221,7 +221,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     <View className="haisha-book-preview-container">
 
       {/* 顶栏 */}
-      <View className={`top-bar ${showTopBar ? 'height' : ''}`}>
+      <View className={`top-bar ${showTopBar ? 'height' : 'none'}`}>
         {/* <View className="left-container" onClick={goBack}>
           <AtIcon value='chevron-left' size='25' />
           <Text className="back-button">

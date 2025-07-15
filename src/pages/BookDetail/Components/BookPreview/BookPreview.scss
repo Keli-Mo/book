@@ -7,10 +7,6 @@
   align-items: center;
   background-color: rgb(245, 245, 245);
 
-  .none {
-    display: none !important;
-  }
-
   .book-page-ipad {
     display: flex;
     align-items: center;
@@ -144,6 +140,10 @@
     // transition: height 1.5s, padding-top 1.5s, padding-bottom 1.5s;
     // transition: all 1.5s;
     opacity: 1;
+  }
+
+  .none {
+    display: none !important;
   }
 
   .page-number {
