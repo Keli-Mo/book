@@ -107,7 +107,35 @@ const concatImages = {
         ...Array(194).fill(0).map((_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_3rd-%E5%9B%BE%E7%89%87/OD_2E_L3_' + (index + 1) + '.jpg?'
         )
+<<<<<<< HEAD
     ],    
+=======
+    ], 
+    //Oxford Discover 4th edition
+    "18":[
+        ...Array(194).fill(0).map((_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_4th-%E5%9B%BE%E7%89%87/OD_4_' + (index + 1) + '.jpg'
+        )
+    ],
+    //Reading Explorer L1 学生用书
+    "19":[
+        ...Array(177).fill(0).map((_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L1_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L1_Studentbook_' + (index + 1) + '.jpg'
+        )
+    ],
+    //Reading Explorer L2 学生用书
+    "20":[
+        ...Array(193).fill(0).map((_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L2_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L2_Studentbook_' + (index + 1) + '.jpg'
+        )
+    ],
+    //Reading_Explorer_fundation_studentbook
+    "21":[
+        ...Array(177).fill(0).map((_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_Foundations_Studentbook_' + (index + 1) + '.jpg'
+        )
+    ],
+>>>>>>> e255c9e544bfc7363fff2de7ca1b3c7ba28ec055
     ...images,
 }
 export { concatImages };

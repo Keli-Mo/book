@@ -6,6 +6,9 @@ import { catalogLists } from "./constants/catalogList";
 import { allAudioList } from "./constants/audioList";
 import { concatImages } from "./constants/images";
 
+//插件
+// import { clickTracker } from "@/utils/clickTracker";
+
 // import "@taroify/core/icon/style"
 
 import "./BookPreview.scss";
@@ -23,23 +26,27 @@ interface IBookPreviewProps {
 }
 
 const titleMap = {
-  "1": '原版教材+剑桥考试课程',
-  "2": '海沙国际课程',
-  "3": 'CASA阅读启蒙&自然拼读 1',
-  "4": 'CASA阅读启蒙&自然拼读 2',
-  "5": 'CASA阅读启蒙&自然拼读 3',
-  "6": 'CASA阅读启蒙&自然拼读 4',
-  "7": '剑桥PET学生用书',
-  "8": '剑桥PET练习册',
-  "9": '剑桥KET学生用书',
-  "10": '剑桥KET练习册',
-  "11": 'Our World L1 学生用书',
-  "12": 'Our World L1 练习册',
-  "13": 'Our World Starter 学生用书',
-  "14": 'Our World Starter 练习册',
-  "15": 'Oxford Discover 1st edition',
-  "16": 'Oxford Discover 2nd edition',
-  "17": 'Oxford Discover 3rd edition',
+  1:  '原版教材+剑桥考试课程',
+  2:  '海沙国际课程',
+  3:  'CASA阅读启蒙&自然拼读 1',
+  4:  'CASA阅读启蒙&自然拼读 2',
+  5:  'CASA阅读启蒙&自然拼读 3',
+  6:  'CASA阅读启蒙&自然拼读 4',
+  7:  '剑桥PET学生用书',
+  8:  '剑桥PET练习册',
+  9:  '剑桥KET学生用书',
+  10: '剑桥KET练习册',
+  11: 'Our World L1 学生用书',
+  12: 'Our World L1 练习册',
+  13: 'Our World Starter 学生用书',
+  14: 'Our World Starter 练习册',
+  15: 'OD 1',
+  16: 'OD 2',
+  17: 'OD 3',
+  18: 'OD 4',
+  19: 'RE L1 学生用书',
+  20: 'RE L2 学生用书',
+  21: 'RE FD 学生用书',
 }
 
 /*
@@ -53,23 +60,27 @@ const titleMap = {
 */
 
 enum EBookType {
-  HAISHA_ADVERTISEMENT = "1",
-  HAISHA_INTRODUCTION = "2",
-  READING_BOOK_1 = "3",
-  READING_BOOK_2 = "4",
-  READING_BOOK_3 = "5",
-  READING_BOOK_4 = "6",
-  PET_STUDENT_BOOK_B1 = "7",
-  PET_PRACTICE_BOOK_B1 = "8",
-  KET_STUDENT_BOOK_A2 = "9",
-  KET_PRACTICE_BOOK_A2 = "10",
-  OW_STUDENT_BOOK_L1 = "11",
-  OW_PRACTICE_BOOK_L1 = "12",
-  OW_STUDENT_BOOK_STARTER = "13",
-  OW_PRACTICE_BOOK_STARTER = "14",
-  OD_DICSOVER_1ST_EDITION = "15",
-  OD_DICSOVER_2ND_EDITION = "16",
-  OD_DICSOVER_3RD_EDITION = "17",
+  HAISHA_ADVERTISEMENT      = "1",
+  HAISHA_INTRODUCTION       = "2",
+  READING_BOOK_1            = "3",
+  READING_BOOK_2            = "4",
+  READING_BOOK_3            = "5",
+  READING_BOOK_4            = "6",
+  PET_STUDENT_BOOK_B1       = "7",
+  PET_PRACTICE_BOOK_B1      = "8",
+  KET_STUDENT_BOOK_A2       = "9",
+  KET_PRACTICE_BOOK_A2      = "10",
+  OW_STUDENT_BOOK_L1        = "11",
+  OW_PRACTICE_BOOK_L1       = "12",
+  OW_STUDENT_BOOK_STARTER   = "13",
+  OW_PRACTICE_BOOK_STARTER  = "14",
+  OD_DICSOVER_1ST_EDITION   = "15",
+  OD_DICSOVER_2ND_EDITION   = "16",
+  OD_DICSOVER_3RD_EDITION   = "17",
+  OD_DICSOVER_4TH_EDITION   = "18",
+  RE_L1_STUDENT_BOOK        = "19",
+  RE_L2_STUDENT_BOOK        = "20",
+  RE_FOUNDATIONS_STUDENT_BOOK    = "21",
 }
 
 // 定义一个新的类型枚举，来表示页码显示策略
@@ -99,9 +110,14 @@ const bookPageStrategyMap: Record<EBookType, PageNumberingStrategy> = {
   [EBookType.OW_STUDENT_BOOK_STARTER]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OW_PRACTICE_BOOK_STARTER]: PageNumberingStrategy.EXCLUDE_COVER,
 
-  [EBookType.OD_DICSOVER_3RD_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_1ST_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_2ND_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OD_DICSOVER_3RD_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OD_DICSOVER_4TH_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+
+  [EBookType.RE_L1_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.RE_L2_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.RE_FOUNDATIONS_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
 }
 
 const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCurrentPage }) => {
@@ -115,6 +131,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   const [systemInfo, setSystemInfo] = useState("iPhone 12");
   const audioContextRef = useRef<Taro.InnerAudioContext>(Taro.createInnerAudioContext())
   const router = useRouter();
+
 
   const renderPageNumber = () => {
     switch (bookPageStrategyMap[id]) {
@@ -203,6 +220,17 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     audioContextRef.current.stop()
     setIsAudioPlaying(false)
   }
+  // //插件
+  // // 处理图片点击
+  // const handleImageClick = (e) => {
+  //   clickTracker.handleImageClick(e, currentPage);
+  // };
+  // //插件
+  // // 导出记录按钮逻辑
+  // const exportRecords = () => {
+  //   clickTracker.exportRecords();
+  // };
+
 
   // 适配IPad端
   const containerClassName = !systemInfo.includes("iPad") ? "book-pages" : "book-pages book-page-ipad"
@@ -254,9 +282,11 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                     <Text style={{ color: 'red' }}>播放中..</Text>
                   </View>
                 }
+                {/* 插件——以下替换，其他恢复 */}
+                {/* <BookImage url={url} onImageClick={handleImageClick} /> */}
                 <BookImage url={url} />
                 {/* [(x - 653)/469, (y - 167)/606 */}
-                <BookAudioTag audioList={audioList} currentPage={currentPage} playAudio={playAudio} bookId={id} />
+                <BookAudioTag audioList={audioList} currentPage={currentPage} playAudio={playAudio} />
               </View>
             </SwiperItem>
           ))}
@@ -315,6 +345,9 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
           }
         </AtList>
       </AtFloatLayout>
+      
+      {/* 插件 */}
+      {/* <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View> */}
 
     </View>
   );
