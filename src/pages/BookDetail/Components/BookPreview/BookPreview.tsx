@@ -90,9 +90,9 @@ const bookPageStrategyMap: Record<EBookType, PageNumberingStrategy> = {
   [EBookType.READING_BOOK_3]: PageNumberingStrategy.EXCLUDE_COVER_START_FROM_THIRD,
   [EBookType.READING_BOOK_4]: PageNumberingStrategy.EXCLUDE_COVER_START_FROM_THIRD,
   [EBookType.PET_STUDENT_BOOK_B1]: PageNumberingStrategy.EXCLUDE_COVER_START_FROM_THIRD,
-  [EBookType.PET_PRACTICE_BOOK_B1]: PageNumberingStrategy.EXCLUDE_COVER_START_FROM_THIRD,
-  [EBookType.KET_STUDENT_BOOK_A2]: PageNumberingStrategy.EXCLUDE_COVER_START_FROM_THIRD,
-  [EBookType.KET_PRACTICE_BOOK_A2]: PageNumberingStrategy.EXCLUDE_COVER_START_FROM_THIRD,
+  [EBookType.PET_PRACTICE_BOOK_B1]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.KET_STUDENT_BOOK_A2]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.KET_PRACTICE_BOOK_A2]: PageNumberingStrategy.EXCLUDE_COVER,
 
   [EBookType.OW_STUDENT_BOOK_L1]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OW_PRACTICE_BOOK_L1]: PageNumberingStrategy.EXCLUDE_COVER,
