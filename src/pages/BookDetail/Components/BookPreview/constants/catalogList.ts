@@ -1373,6 +1373,58 @@ export const catalogLists = {
     //Reading_Explorer_fundation_studentbook
     "19": [
         {
+            name: "Unit 1 Mysteries",
+            page: 7
+        },
+        {
+            name: "Unit 2 Eating Extremes",
+            page: 21
+        },
+        {
+            name: "Unit 3 Cool Jobs",
+            page: 35
+        },
+        {
+            name: "Unit 4 Shipwrecks",
+            page: 49
+        },
+        {
+            name: "Unit 5 Science Investigators",
+            page: 63
+        },
+        {
+            name: "Unit 6 Plants and Trees",
+            page: 75
+        },
+        {
+            name: "Unit 7 Mind's Eye",
+            page: 89
+        },
+        {
+            name: "Unit 8 Animal Wonders",
+            page: 103
+        },
+        {
+            name: "Unit 9 Building Beauty",
+            page: 117
+        },
+        {
+            name: "Unit 10 Forces of Nature",
+            page: 131
+        },
+        {
+            name: "Unit 11 Giants of the Past",
+            page: 145
+        },
+        {
+            name: "Unit 12 Technology",
+            page: 159
+        }
+    ],
+
+    //Reading_Explorer_1_studentbook
+    "20": [
+        {
             name: "Unit 1 Amazing Animals",
             page: 7
         },
@@ -1421,9 +1473,8 @@ export const catalogLists = {
             page: 159
         }
     ],
-
     //Reading_Explorer_2_studentbook
-    "20": [
+    "21": [
         {
             name: "Unit 1 Food and Health",
             page: 7
@@ -1471,58 +1522,6 @@ export const catalogLists = {
         {
             name: "Unit 12 Going to Extremes",
             page: 173
-        }
-    ],
-
-    //Reading_Explorer_foundation_studentbook
-    "21": [
-        {
-            name: "Unit 1 Mysteries",
-            page: 7
-        },
-        {
-            name: "Unit 2 Eating Extremes",
-            page: 21
-        },
-        {
-            name: "Unit 3 Cool Jobs",
-            page: 35
-        },
-        {
-            name: "Unit 4 Shipwrecks",
-            page: 49
-        },
-        {
-            name: "Unit 5 Science Investigators",
-            page: 63
-        },
-        {
-            name: "Unit 6 Plants and Trees",
-            page: 75
-        },
-        {
-            name: "Unit 7 Mind's Eye",
-            page: 89
-        },
-        {
-            name: "Unit 8 Animal Wonders",
-            page: 103
-        },
-        {
-            name: "Unit 9 Building Beauty",
-            page: 117
-        },
-        {
-            name: "Unit 10 Forces of Nature",
-            page: 131
-        },
-        {
-            name: "Unit 11 Giants of the Past",
-            page: 145
-        },
-        {
-            name: "Unit 12 Technology",
-            page: 159
         }
     ],
 }

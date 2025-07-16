@@ -32,26 +32,19 @@ export const images = [
   //Our World Starter 练习册
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Workbook-1.png',
 
-<<<<<<< HEAD
-    //Oxford Discover 1st edition
-=======
   //Oxford Discover 1st edition
->>>>>>> e255c9e544bfc7363fff2de7ca1b3c7ba28ec055
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L1_1.jpg',
   //Oxford Discover 2nd edition
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L2_1.jpg',
   //Oxford Discover 3rd edition
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L3_1.jpg',
-<<<<<<< HEAD
-=======
 
   //Oxford Discover 4th edition
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L4_1.jpg',
-  //Reading_Explorer_L1_Student_Book
-  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L1_Studentbook.jpg',
-  //Reading_Explorer_L1_Student_Book
-  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L2_Studentbook.jpg',
   //Reading_Explorer_Foundations_Student_Book
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_Foundations_Studentbook.jpg',
->>>>>>> e255c9e544bfc7363fff2de7ca1b3c7ba28ec055
+  //Reading_Explorer_L1_Student_Book
+  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L1_Studentbook.jpg?',
+  //Reading_Explorer_L1_Student_Book
+  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L2_Studentbook.jpg',
 ];

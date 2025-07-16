@@ -22,9 +22,9 @@ const titleMap = {
   16: 'OD 2',
   17: 'OD 3',
   18: 'OD 4',
-  19: 'RE L1 学生用书',
-  20: 'RE L2 学生用书',
-  21: 'RE FD 学生用书',
+  19: 'RE 0',
+  20: 'RE 1',
+  21: 'RE 2',
 }
 
 export const BookShelf: React.FC = () => {

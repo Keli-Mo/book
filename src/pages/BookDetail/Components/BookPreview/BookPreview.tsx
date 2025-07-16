@@ -44,9 +44,9 @@ const titleMap = {
   16: 'OD 2',
   17: 'OD 3',
   18: 'OD 4',
-  19: 'RE L1 学生用书',
-  20: 'RE L2 学生用书',
-  21: 'RE FD 学生用书',
+  19: 'RE 0',
+  20: 'RE 1',
+  21: 'RE 2',
 }
 
 /*
@@ -56,7 +56,7 @@ const titleMap = {
     - 第 1 页（封面或目录）则不显示页码。
 
   2. bookTypeMap[id] 为 false 表示该类型书籍（如广告页或介绍页）不扣除封面和目录页。
-   - 页码从第 1 页开始全部计算，直接显示 "当前页 + 1 / 总页数"。
+    - 页码从第 1 页开始全部计算，直接显示 "当前页 + 1 / 总页数"。
 */
 
 enum EBookType {
@@ -78,9 +78,9 @@ enum EBookType {
   OD_DICSOVER_2ND_EDITION   = "16",
   OD_DICSOVER_3RD_EDITION   = "17",
   OD_DICSOVER_4TH_EDITION   = "18",
-  RE_L1_STUDENT_BOOK        = "19",
-  RE_L2_STUDENT_BOOK        = "20",
-  RE_FOUNDATIONS_STUDENT_BOOK    = "21",
+  RE_FOUNDATIONS_STUDENT_BOOK    = "19",
+  RE_L1_STUDENT_BOOK        = "20",
+  RE_L2_STUDENT_BOOK        = "21",
 }
 
 // 定义一个新的类型枚举，来表示页码显示策略
@@ -115,9 +115,9 @@ const bookPageStrategyMap: Record<EBookType, PageNumberingStrategy> = {
   [EBookType.OD_DICSOVER_3RD_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_4TH_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
 
+  [EBookType.RE_FOUNDATIONS_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.RE_L1_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.RE_L2_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
-  [EBookType.RE_FOUNDATIONS_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
 }
 
 const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCurrentPage }) => {

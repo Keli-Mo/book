@@ -12724,8 +12724,194 @@ const audioList18 = {
     
 }
 
-//Reading_Explorer_L1_studentbook
+//Reading_Explorer_fundation_studentbook
 const audioList19 = {
+    '1': [],
+    '2': [],
+    //Unit 1
+    11: [
+        {
+        offset: ["30%", "21%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%201a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    17: [
+        {
+        offset: ["10%", "19%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%201b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 2
+    25: [
+        {
+        offset: ["35%", "33%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%202a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    31: [
+        {
+        offset: ["10%", "20%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%202b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 3
+    39: [
+        {
+        offset: ["34%", "22%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%203a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    45: [
+        {
+        offset: ["30%", "19%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%203b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 4
+    53: [
+        {
+        offset: ["8%", "17%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%204a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    59: [
+        {
+        offset: ["22%", "20%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%204b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 5
+    66: [
+        {
+        offset: ["5%", "31%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%205a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    71: [
+        {
+        offset: ["39%", "20%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%205b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 6
+    79: [
+        {
+        offset: ["87%", "15%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%206a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    84: [
+        {
+        offset: ["39%", "11%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%206b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 7
+    93: [
+        {
+        offset: ["28%", "16%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%207a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    98: [
+        {
+        offset: ["5%", "18%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%207b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 8
+    107: [
+        {
+        offset: ["15%", "19%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%208a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    113: [
+        {
+        offset: ["10%", "17%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%208b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 9
+    121: [
+        {
+        offset: ["28%", "16%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%209a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    126: [
+        {
+        offset: ["11%", "19%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%209b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 10
+    135: [
+        {
+        offset: ["11%", "21%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2010a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    141: [
+        {
+        offset: ["3%", "22%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2010b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 11
+    149: [
+        {
+        offset: ["7%", "18%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2011a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    154: [
+        {
+        offset: ["7%", "37%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2011b.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit 12
+    163: [
+        {
+        offset: ["9%", "15%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2012a.mp3',
+        flag: "Percentage",
+      }
+    ],
+    169: [
+        {
+        offset: ["9%", "16%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2012b.mp3',
+        flag: "Percentage",
+      }
+    ],
+}
+
+//Reading_Explorer_L1_studentbook
+const audioList20 = {
     '1': [],
     '2': [],
     //Unit 1
@@ -12911,7 +13097,7 @@ const audioList19 = {
 }
 
 //Reading_Explorer_L2_studentbook
-const audioList20 = {
+const audioList21 = {
     '1': [],
     '2': [],
     //Unit 1
@@ -13096,192 +13282,6 @@ const audioList20 = {
     ],
 }
 
-//Reading_Explorer_fundation_studentbook
-const audioList21 = {
-    '1': [],
-    '2': [],
-    //Unit 1
-    11: [
-        {
-        offset: ["30%", "21%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%201a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    17: [
-        {
-        offset: ["10%", "19%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%201b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 2
-    25: [
-        {
-        offset: ["35%", "33%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%202a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    31: [
-        {
-        offset: ["10%", "20%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%202b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 3
-    39: [
-        {
-        offset: ["34%", "22%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%203a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    45: [
-        {
-        offset: ["30%", "19%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%203b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 4
-    53: [
-        {
-        offset: ["8%", "17%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%204a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    59: [
-        {
-        offset: ["22%", "20%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%204b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 5
-    66: [
-        {
-        offset: ["5%", "31%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%205a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    71: [
-        {
-        offset: ["39%", "20%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%205b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 6
-    79: [
-        {
-        offset: ["87%", "15%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%206a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    84: [
-        {
-        offset: ["39%", "11%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%206b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 7
-    93: [
-        {
-        offset: ["28%", "16%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%207a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    98: [
-        {
-        offset: ["5%", "18%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%207b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 8
-    107: [
-        {
-        offset: ["15%", "19%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%208a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    113: [
-        {
-        offset: ["10%", "17%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%208b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 9
-    121: [
-        {
-        offset: ["28%", "16%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%209a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    126: [
-        {
-        offset: ["11%", "19%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%209b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 10
-    135: [
-        {
-        offset: ["11%", "21%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2010a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    141: [
-        {
-        offset: ["3%", "22%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2010b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 11
-    149: [
-        {
-        offset: ["7%", "18%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2011a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    154: [
-        {
-        offset: ["7%", "37%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2011b.mp3',
-        flag: "Percentage",
-      }
-    ],
-    //Unit 12
-    163: [
-        {
-        offset: ["9%", "15%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2012a.mp3',
-        flag: "Percentage",
-      }
-    ],
-    169: [
-        {
-        offset: ["9%", "16%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E9%9F%B3%E9%A2%91/Foundations%20Reading%2012b.mp3',
-        flag: "Percentage",
-      }
-    ],
-}
-
 export const allAudioList = {
     //广告
     '1': [],
@@ -13306,9 +13306,9 @@ export const allAudioList = {
     '16': audioList16,
     '17': audioList17,
     '18': audioList18,
-    //Reading_Explorer_studentbook 1-2
-    '19': audioList19,
-    '20': audioList20,
     //Foundations Student's Book
+    '19': audioList19,
+    //Reading_Explorer_studentbook 1-2    
+    '20': audioList20,
     '21': audioList21,
 }
