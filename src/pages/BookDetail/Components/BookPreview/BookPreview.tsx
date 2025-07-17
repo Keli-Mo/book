@@ -6,9 +6,9 @@ import { catalogLists } from "./constants/catalogList";
 import { allAudioList } from "./constants/audioList";
 import { concatImages } from "./constants/images";
 
-//插件
+// //插件
 // import { clickTracker } from "@/utils/clickTracker";
-
+//不是插件,保持注释
 // import "@taroify/core/icon/style"
 
 import "./BookPreview.scss";
@@ -233,6 +233,15 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   // //插件
   // // 处理图片点击
   // const handleImageClick = (e) => {
+  //   // 打印事件坐标
+  //   console.log('点击事件 e.detail:', e.detail);
+  //   // 获取图片实际显示区域
+  //   Taro.createSelectorQuery()
+  //     .select('.book-page')
+  //     .boundingClientRect(rect => {
+  //       console.log('图片 boundingClientRect:', rect);
+  //     })
+  //     .exec();
   //   clickTracker.handleImageClick(e, currentPage);
   // };
   // //插件
@@ -293,8 +302,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                   </View>
                 }
                 {/* 插件——以下替换，其他恢复 */}
-                {/* <BookImage url={url} onImageClick={handleImageClick} /> */}
                 <BookImage url={url} />
+                {/* <BookImage url={url} onImageClick={handleImageClick} /> */}
                 {/* [(x - 653)/469, (y - 167)/606 */}
                 <BookAudioTag audioList={audioList} currentPage={currentPage} playAudio={playAudio} />
               </View>
@@ -372,6 +381,11 @@ export const BookImage: React.FC<any> = React.memo(({ url, onImageClick }) => {
     <Image
       src={url}
       mode="widthFix"
+      //调试插件
+      // onLoad={e => {
+      //   const { width, height } = e.detail;
+      //   console.log('图片原始像素：', width, height);
+      // }}
       // 将图片自动转换为webp模式
       webp
       // 懒加载

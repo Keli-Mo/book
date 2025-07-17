@@ -25,15 +25,15 @@ export class ClickTracker {
     this.config = {
       storageKey: 'book_click_records',
       // 默认音频基础URL
-      audioBaseUrl: '',
+      audioBaseUrl: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L5_Studentbook-%E9%9F%B3%E9%A2%91/',
       // 默认音频索引起始值
-      audioIndexStart: 17,
+      audioIndexStart: 1,
       // 默认偏移量和调整比例——图标为15x15像素，图片实际尺寸为300x300像素
       offsetX: 28, //15,
-      offsetY: 29, //15,
+      offsetY: 28, //15,
       // 根据偏移量配平
-      widthAdjustment: 0.037,
-      heightAdjustment: 0.135,//0.165,
+      widthAdjustment: 0.035,
+      heightAdjustment: 0.028,//0.165,
       ...config
     };
     
@@ -79,7 +79,7 @@ export class ClickTracker {
           console.log('图片尺寸:', { width: r.width, height: r.height });
 
           const ratioX = (x - this.config.offsetX!) / r.width  + this.config.widthAdjustment!;
-          const ratioY = (y - this.config.offsetY!) / r.height - this.config.heightAdjustment!;
+          const ratioY = (y - this.config.offsetY! - 93) / 571.6 + this.config.heightAdjustment!;
 
           console.log('计算比例:', { ratioX, ratioY });
 
