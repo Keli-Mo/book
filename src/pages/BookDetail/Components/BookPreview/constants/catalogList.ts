@@ -1524,4 +1524,166 @@ export const catalogLists = {
             page: 173
         }
     ],
+
+    // Reading Explorer 3 student book
+    "22": [
+        {
+            name: "Unit 1 Sports and Fitness",
+            page: 7
+        },
+        {
+            name: "Unit 2 Skin Deep",
+            page: 23
+        },
+        {
+            name: "Unit 3 Animals in Danger",
+            page: 39
+        },
+        {
+            name: "Unit 4 Violent Earth",
+            page: 57
+        },
+        {
+            name: "Unit 5 Islands and Beaches",
+            page: 73
+        },
+        {
+            name: "Unit 6 Global Addictions",
+            page: 89
+        },
+        {
+            name: "Unit 7 Energy Solutions",
+            page: 105
+        },
+        {
+            name: "Unit 8 Epic Engineering",
+            page: 121
+        },
+        {
+            name: "Unit 9 High-Tech Solutions",
+            page: 137
+        },
+        {
+            name: "Unit 10 All in the Mind",
+            page: 153
+        },
+        {
+            name: "Unit 11 Visual Pioneers",
+            page: 169
+        },
+        {
+            name: "Unit 12 Far Out",
+            page: 187
+        }
+    ],
+
+    // Reading Explorer 4 student book
+    "23": [
+        {
+            name: "Unit 1 Images of Life",
+            page: 7
+        },
+        {
+            name: "Unit 2 Natural Attraction",
+            page: 25
+        },
+        {
+            name: "Unit 3 Food and Health",
+            page: 43
+        },
+        {
+            name: "Unit 4 Design and Engineering",
+            page: 61
+        },
+        {
+            name: "Unit 5 Human Journey",
+            page: 79
+        },
+        {
+            name: "Unit 6 Money and Trade",
+            page: 97
+        },
+        {
+            name: "Unit 7 Group Behavior",
+            page: 115
+        },
+        {
+            name: "Unit 8 Investigations",
+            page: 133
+        },
+        {
+            name: "Unit 9 Rediscovering the Past",
+            page: 151
+        },
+        {
+            name: "Unit 10 Healthy Living",
+            page: 169
+        },
+        {
+            name: "Unit 11 Green Solutions",
+            page: 187
+        },
+        {
+            name: "Unit 12 Earth and Beyond",
+            page: 203
+        }
+    ],
+
+    // Reading Explorer 5 student book
+    "24": [
+        {
+            name: "Unit 1 Rise and Fall",
+            page: 7
+        },
+        {
+            name: "Unit 2 High Achievers",
+            page: 29
+        },
+        {
+            name: "Unit 3 Science and Progress",
+            page: 51
+        },
+        {
+            name: "Unit 4 Saving Cities",
+            page: 73
+        },
+        {
+            name: "Unit 5 Energy Choices",
+            page: 95
+        },
+        {
+            name: "Unit 6 Survival and Protection",
+            page: 117
+        },
+        {
+            name: "Unit 7 Human Body",
+            page: 139
+        },
+        {
+            name: "Unit 8 Social Behavior",
+            page: 159
+        },
+        {
+            name: "Unit 9 Creativity",
+            page: 179
+        },
+        {
+            name: "Unit 10 New Discoveries",
+            page: 201
+        },
+        {
+            name: "Unit 11 Cultural Encounters",
+            page: 223
+        },
+        {
+            name: "Unit 12 Precious Resources",
+            page: 247
+        }
+    ],
 }
+
+
+
+
+
+

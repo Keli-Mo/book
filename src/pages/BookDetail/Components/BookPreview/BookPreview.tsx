@@ -47,6 +47,9 @@ const titleMap = {
   19: 'RE 0',
   20: 'RE 1',
   21: 'RE 2',
+  22: 'RE 3',
+  23: 'RE 4',
+  24: 'RE 5',
 }
 
 /*
@@ -81,6 +84,9 @@ enum EBookType {
   RE_FOUNDATIONS_STUDENT_BOOK    = "19",
   RE_L1_STUDENT_BOOK        = "20",
   RE_L2_STUDENT_BOOK        = "21",
+  RE_L3_STUDENT_BOOK        = "22",
+  RE_L4_STUDENT_BOOK        = "23",
+  RE_L5_STUDENT_BOOK        = "24",
 }
 
 // 定义一个新的类型枚举，来表示页码显示策略
@@ -118,6 +124,10 @@ const bookPageStrategyMap: Record<EBookType, PageNumberingStrategy> = {
   [EBookType.RE_FOUNDATIONS_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.RE_L1_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.RE_L2_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
+
+  [EBookType.RE_L3_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.RE_L4_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.RE_L5_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
 }
 
 const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCurrentPage }) => {

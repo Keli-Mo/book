@@ -132,6 +132,25 @@ const concatImages = {
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L2_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L2_Studentbook_' + (index + 1) + '.jpg'
         )
     ],
+
+    //Reading Explorer L3 学生用书
+    "22":[
+        ...Array(209).fill(0).map((_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L3_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L3_Studentbook_' + (index + 1) + '.jpg'
+        )
+    ],
+    //Reading Explorer L4 学生用书
+    "23":[
+        ...Array(225).fill(0).map((_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L5_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L4_Studentbook_' + (index + 1) + '.jpg'
+        )
+    ],
+    //Reading Explorer L5 学生用书
+    "24":[
+        ...Array(273).fill(0).map((_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L5_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L5_Studentbook_' + (index + 1) + '.jpg'
+        )
+    ],
     
     ...images,
 }

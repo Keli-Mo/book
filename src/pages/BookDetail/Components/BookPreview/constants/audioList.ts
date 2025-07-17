@@ -13282,6 +13282,24 @@ const audioList21 = {
     ],
 }
 
+//Reading_Explorer_L3_studentbook
+const audioList22 = {
+  1: [],
+  2: [],
+}
+
+//Reading_Explorer_L4_studentbook
+const audioList23 = {
+  1: [],
+  2: [],
+}
+
+//Reading_Explorer_L5_studentbook
+const audioList24 = {
+  1: [],
+  2: [],
+}
+
 export const allAudioList = {
     //广告
     '1': [],
@@ -13308,7 +13326,15 @@ export const allAudioList = {
     '18': audioList18,
     //Foundations Student's Book
     '19': audioList19,
-    //Reading_Explorer_studentbook 1-2    
+    //Reading_Explorer_studentbook 1-5
     '20': audioList20,
     '21': audioList21,
+    '22': audioList21,
+    '23': audioList21,
+    '24': audioList21,
 }
+
+// const audioList22 = {
+//   1: [],
+//   2: [],
+// }

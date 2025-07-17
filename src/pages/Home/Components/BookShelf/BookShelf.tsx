@@ -25,6 +25,9 @@ const titleMap = {
   19: 'RE 0',
   20: 'RE 1',
   21: 'RE 2',
+  22: 'RE 3',
+  23: 'RE 4',
+  24: 'RE 5',
 }
 
 export const BookShelf: React.FC = () => {

@@ -45,6 +45,12 @@ export const images = [
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_Foundations_Studentbook.jpg',
   //Reading_Explorer_L1_Student_Book
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L1_Studentbook.jpg?',
-  //Reading_Explorer_L1_Student_Book
+  //Reading_Explorer_L2_Student_Book
   'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L2_Studentbook.jpg',
+  //Reading_Explorer_L3_Student_Book
+  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L3_Studentbook.jpg',
+  //Reading_Explorer_L4_Student_Book
+  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L4_Studentbook.jpg',
+  //Reading_Explorer_L5_Student_Book
+  'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L5_Studentbook.jpg',
 ];
