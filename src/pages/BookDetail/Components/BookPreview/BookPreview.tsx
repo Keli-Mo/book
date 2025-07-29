@@ -138,6 +138,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   const [showBottomBar, setShowBottomBar] = useState(false);
   const [catalogVisible, setCatalogVisible] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false); // 当前是否有音频正在播放
+  const [isAudioPaused, setIsAudioPaused] = useState(false); // 新增状态，区分暂停
   const [systemInfo, setSystemInfo] = useState("iPhone 12");
   const audioContextRef = useRef<Taro.InnerAudioContext>(Taro.createInnerAudioContext())
   const router = useRouter();
@@ -197,6 +198,13 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   }
 
   const playAudio = (url: string) => {
+    // 如果当前已暂停，直接继续播放
+    if (isAudioPaused) {
+      audioContextRef.current.play();
+      setIsAudioPlaying(true);
+      setIsAudioPaused(false);
+      return;
+    }
     // 关闭之前播放的音频
     stopPlayingAudio();
     // IOS下无法播放音频问题
@@ -224,11 +232,19 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     });
     audioContextRef.current.play();
     setIsAudioPlaying(true);
+    setIsAudioPaused(false);
+  }
+
+  const pausePlayingAudio = () => {
+    audioContextRef.current.pause();
+    setIsAudioPlaying(false);
+    setIsAudioPaused(true);
   }
 
   const stopPlayingAudio = () => {
-    audioContextRef.current.stop()
-    setIsAudioPlaying(false)
+    audioContextRef.current.stop();
+    setIsAudioPlaying(false);
+    setIsAudioPaused(false);
   }
   // //插件
   // // 处理图片点击
@@ -296,10 +312,29 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
             <SwiperItem key={index}>
               <View className="book-page-container">
                 {
-                  <View className={`pause ${isAudioPlaying ? '' : 'hide'}`} onClick={() => stopPlayingAudio()}>
-                    <AtIcon value='pause' color="red" size='20' />
-                    <Text style={{ color: 'red' }}>播放中..</Text>
-                  </View>
+                  index === currentPage && ( // 只在当前页渲染按钮
+                    <View className={`pause`} onClick={() => {
+                      if (isAudioPlaying && !isAudioPaused) {
+                        pausePlayingAudio();
+                      } else if (isAudioPaused) {
+                        playAudio(audioContextRef.current.src);
+                      }
+                    }}>
+                      {
+                        isAudioPlaying && !isAudioPaused ? (
+                          <>
+                            <AtIcon value='pause' color="red" size='20' />
+                            <Text style={{ color: 'red' }}>播放中..</Text>
+                          </>
+                        ) : isAudioPaused ? (
+                          <>
+                            <AtIcon value='play' color="green" size='20' />
+                            <Text style={{ color: 'green' }}>已暂停</Text>
+                          </>
+                        ) : null
+                      }
+                    </View>
+                  )
                 }
                 {/* 插件——以下替换，其他恢复 */}
                 <BookImage url={url} />
@@ -364,7 +399,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
           }
         </AtList>
       </AtFloatLayout>
-      
+
       {/* 插件 */}
       {/* <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View> */}
 
