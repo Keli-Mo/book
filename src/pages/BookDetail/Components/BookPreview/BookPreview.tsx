@@ -313,7 +313,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
               <View className="book-page-container">
                 {
                   index === currentPage && ( // 只在当前页渲染按钮
-                    <View className={`pause`} onClick={() => {
+                    <View className={`pause`} onClick={(e) => {
+                      e.stopPropagation();
                       if (isAudioPlaying && !isAudioPaused) {
                         pausePlayingAudio();
                       } else if (isAudioPaused) {
