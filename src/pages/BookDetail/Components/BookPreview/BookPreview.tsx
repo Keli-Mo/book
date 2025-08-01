@@ -139,6 +139,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   const [catalogVisible, setCatalogVisible] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false); // 当前是否有音频正在播放
   const [isAudioPaused, setIsAudioPaused] = useState(false); // 新增状态，区分暂停
+  const [playbackRate, setPlaybackRate] = useState(1.0); // 新增：播放速度状态
+  const [isLoopEnabled, setIsLoopEnabled] = useState(true); // 新增：循环播放开关
   const [systemInfo, setSystemInfo] = useState("iPhone 12");
   const audioContextRef = useRef<Taro.InnerAudioContext>(Taro.createInnerAudioContext())
   const router = useRouter();
@@ -169,6 +171,19 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
       setSystemInfo(res.model)
     })
 
+    // 新增：设置音频循环播放
+    audioContextRef.current.onEnded(() => {
+      console.log('Audio ended');
+      if (isLoopEnabled) {
+        console.log('Loop enabled, restarting...');
+        audioContextRef.current.play(); // 播放结束后自动重新播放
+      } else {
+        console.log('Loop disabled, stopping...');
+        setIsAudioPlaying(false);
+        setIsAudioPaused(false);
+      }
+    });
+
     return () => {
       audioContextRef.current.destroy()
     }
@@ -197,6 +212,14 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     setCurrentPage(page)
   }
 
+  // 新增：播放速度控制函数
+  const changePlaybackRate = (rate: number) => {
+    setPlaybackRate(rate);
+    if (audioContextRef.current) {
+      audioContextRef.current.playbackRate = rate;
+    }
+  };
+
   const playAudio = (url: string) => {
     // 如果当前已暂停，直接继续播放
     if (isAudioPaused) {
@@ -210,6 +233,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     // IOS下无法播放音频问题
     Taro.setInnerAudioOption({ obeyMuteSwitch: false })
     audioContextRef.current.src = url
+    audioContextRef.current.playbackRate = playbackRate; // 新增：设置播放速度
     audioContextRef.current.onPlay(() => {
       console.log('Start playback')
     })
@@ -334,6 +358,77 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                           </>
                         ) : null
                       }
+                    </View>
+                  )
+                }
+                {/* 新增：播放速度控制 */}
+                {
+                  index === currentPage && (isAudioPlaying || isAudioPaused) && (
+                    <View className="playback-rate-control" style={{
+                      position: 'absolute',
+                      top: '10px',
+                      left: '10px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      borderRadius: '15px',
+                      padding: '5px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}>
+                      <Text style={{ fontSize: '12px', color: gray }}>倍速:</Text>
+                      {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map(rate => (
+                        <Text
+                          key={rate}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            changePlaybackRate(rate);
+                          }}
+                          style={{
+                            fontSize: '12px',
+                            color: playbackRate === rate ? 'red' : gray,
+                            fontWeight: playbackRate === rate ? 'bold' : 'normal',
+                            padding: '2px 4px',
+                            borderRadius: '3px',
+                            backgroundColor: playbackRate === rate ? 'rgba(255, 0, 0, 0.1)' : 'transparent'
+                          }}
+                        >
+                          {rate}x
+                        </Text>
+                      ))}
+                    </View>
+                  )
+                }
+                {/* 新增：循环播放控制 */}
+                {
+                  index === currentPage && (isAudioPlaying || isAudioPaused) && (
+                    <View className="loop-control" style={{
+                      position: 'absolute',
+                      top: '50px',
+                      left: '10px',
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      borderRadius: '15px',
+                      padding: '5px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}>
+                      <Text style={{ fontSize: '12px', color: gray }}>循环:</Text>
+                      <Text
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsLoopEnabled(!isLoopEnabled);
+                        }}
+                        style={{
+                          fontSize: '12px',
+                          color: isLoopEnabled ? 'green' : gray,
+                          fontWeight: isLoopEnabled ? 'bold' : 'normal',
+                          padding: '2px 4px',
+                          borderRadius: '3px',
+                          backgroundColor: isLoopEnabled ? 'rgba(0, 255, 0, 0.1)' : 'transparent'
+                        }}
+                      >
+                        {isLoopEnabled ? '开启' : '关闭'}
+                      </Text>
                     </View>
                   )
                 }
