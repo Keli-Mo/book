@@ -401,12 +401,12 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                       {
                         isAudioPlaying && !isAudioPaused ? (
                           <>
-                            <AtIcon value='pause' color="red" size='20' />
+                            <AtIcon value='pause' color="red" size='14' />
                             <Text style={{ color: 'red' }}>播放中..</Text>
                           </>
                         ) : isAudioPaused ? (
                           <>
-                            <AtIcon value='play' color="green" size='20' />
+                            <AtIcon value='play' color="green" size='14' />
                             <Text style={{ color: 'green' }}>已暂停</Text>
                           </>
                         ) : null
