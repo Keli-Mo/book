@@ -144,7 +144,15 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   const [systemInfo, setSystemInfo] = useState("iPhone 12");
   const audioContextRef = useRef<Taro.InnerAudioContext>(Taro.createInnerAudioContext())
   const router = useRouter();
-
+  const [panelPos, setPanelPos] = useState({ left: 10, top: 10 }); // 新增：控制面板整体位置
+  const dragInfo = useRef({
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    originLeft: 0,
+    originTop: 0
+  });
+  const [isTablet, setIsTablet] = useState(false);
 
   const renderPageNumber = () => {
     switch (bookPageStrategyMap[id]) {
@@ -161,33 +169,50 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     }
   };
 
+
+
   useEffect(() => {
-    setImageUrls(concatImages[id])
-    setCatalogList(catalogLists[id] || [])
-    setAudioList(allAudioList[id])
+  setImageUrls(concatImages[id])
+  setCatalogList(catalogLists[id] || [])
+  setAudioList(allAudioList[id])
 
-    const deviceInfo = wx.getSystemInfo()
-    deviceInfo.then((res) => {
-      setSystemInfo(res.model)
-    })
+  const deviceInfo = wx.getSystemInfo()
+  deviceInfo.then((res) => {
+    // 记录设备型号（原有逻辑）
+    setSystemInfo(res.model)
 
-    // 新增：设置音频循环播放
-    audioContextRef.current.onEnded(() => {
-      console.log('Audio ended');
-      if (isLoopEnabled) {
-        console.log('Loop enabled, restarting...');
-        audioContextRef.current.play(); // 播放结束后自动重新播放
-      } else {
-        console.log('Loop disabled, stopping...');
-        setIsAudioPlaying(false);
-        setIsAudioPaused(false);
-      }
-    });
+    // === 新增：判断是否为“大屏/平板” ===
+    // 依据：1) 型号包含 iPad/Pad/Tablet；2) 任一可视宽/高 >= 900；3) 像素密度下的“较短边”也很宽
+    const model = (res.model || "").toLowerCase()
+    const isModelTablet =
+      model.includes("iPad") || model.includes("pad") || model.includes("tablet")
 
-    return () => {
-      audioContextRef.current.destroy()
+    const sw = Number(res.screenWidth || res.windowWidth || 0)
+    const sh = Number(res.screenHeight || res.windowHeight || 0)
+    const shortest = Math.min(sw, sh)
+
+    // 900 这个阈值在安卓常见大平板上比较稳妥；若你们目标设备更大/更小，可按需微调
+    const isLargeBySize = sw >= 1000 || sh >= 1000 || shortest >= 1000
+
+    // 给后面样式判断用：把 “是否平板” 写到一个 state 或直接 memo
+    setIsTablet(isModelTablet || isLargeBySize)
+  })
+
+  // 循环播放（原有逻辑）
+  audioContextRef.current.onEnded(() => {
+    if (isLoopEnabled) {
+      audioContextRef.current.play();
+    } else {
+      setIsAudioPlaying(false);
+      setIsAudioPaused(false);
     }
-  }, []);
+  });
+
+  return () => {
+    audioContextRef.current.destroy()
+  }
+}, []);
+
 
   useEffect(() => {
   }, [currentPage])
@@ -304,6 +329,34 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
       marginBottom: "30px"
     }
 
+  // 拖拽事件处理
+  const handlePanelTouchStart = (e) => {
+    e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+    const touch = e.touches[0];
+    dragInfo.current.dragging = true;
+    dragInfo.current.startX = touch.clientX;
+    dragInfo.current.startY = touch.clientY;
+    dragInfo.current.originLeft = panelPos.left;
+    dragInfo.current.originTop = panelPos.top;
+  };
+  const handlePanelTouchMove = (e) => {
+    e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+    if (!dragInfo.current.dragging) return;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - dragInfo.current.startX;
+    const deltaY = touch.clientY - dragInfo.current.startY;
+    setPanelPos({
+      left: Math.max(0, dragInfo.current.originLeft + deltaX),
+      top: Math.max(0, dragInfo.current.originTop + deltaY)
+    });
+    return false;
+  };
+  const handlePanelTouchEnd = () => {
+    dragInfo.current.dragging = false;
+  };
+
   return (
     <View className="haisha-book-preview-container">
 
@@ -361,74 +414,70 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                     </View>
                   )
                 }
-                {/* 新增：播放速度控制 */}
+                {/* 合并：倍速+循环控制整体面板 */}
                 {
                   index === currentPage && (isAudioPlaying || isAudioPaused) && (
-                    <View className="playback-rate-control" style={{
-                      position: 'absolute',
-                      top: '10px',
-                      left: '10px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                      borderRadius: '15px',
-                      padding: '5px 10px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}>
-                      <Text style={{ fontSize: '12px', color: gray }}>倍速:</Text>
-                      {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map(rate => (
+                    <View
+                      className="panel-drag-container"
+                      catchMove
+                      style={{
+                        position: 'absolute',
+                        left: panelPos.left,
+                        top: panelPos.top,
+                        zIndex: 999,
+                        backgroundColor: 'rgba(255,255,255,0.75)',
+                        borderRadius: '15px',
+                        padding: '8px 12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                      }}
+                      onTouchStart={handlePanelTouchStart}
+                      onTouchMove={handlePanelTouchMove}
+                      onTouchEnd={handlePanelTouchEnd}
+                    >
+                      <View style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '6px' }}>
+                        <Text style={{ fontSize: '12px', color: gray }}>倍速:</Text>
+                        {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map(rate => (
+                          <Text
+                            key={rate}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              changePlaybackRate(rate);
+                            }}
+                            style={{
+                              fontSize: '12px',
+                              color: playbackRate === rate ? 'red' : gray,
+                              fontWeight: playbackRate === rate ? 'bold' : 'normal',
+                              padding: '2px 4px',
+                              borderRadius: '3px',
+                              backgroundColor: playbackRate === rate ? 'rgba(255, 0, 0, 0.1)' : 'transparent'
+                            }}
+                          >
+                            {rate}x
+                          </Text>
+                        ))}
+                      </View>
+                      <View style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Text style={{ fontSize: '12px', color: gray }}>循环:</Text>
                         <Text
-                          key={rate}
                           onClick={(e) => {
                             e.stopPropagation();
-                            changePlaybackRate(rate);
+                            setIsLoopEnabled(!isLoopEnabled);
                           }}
                           style={{
                             fontSize: '12px',
-                            color: playbackRate === rate ? 'red' : gray,
-                            fontWeight: playbackRate === rate ? 'bold' : 'normal',
+                            color: isLoopEnabled ? 'green' : gray,
+                            fontWeight: isLoopEnabled ? 'bold' : 'normal',
                             padding: '2px 4px',
                             borderRadius: '3px',
-                            backgroundColor: playbackRate === rate ? 'rgba(255, 0, 0, 0.1)' : 'transparent'
+                            backgroundColor: isLoopEnabled ? 'rgba(0, 255, 0, 0.1)' : 'transparent'
                           }}
                         >
-                          {rate}x
+                          {isLoopEnabled ? '开启' : '关闭'}
                         </Text>
-                      ))}
-                    </View>
-                  )
-                }
-                {/* 新增：循环播放控制 */}
-                {
-                  index === currentPage && (isAudioPlaying || isAudioPaused) && (
-                    <View className="loop-control" style={{
-                      position: 'absolute',
-                      top: '50px',
-                      left: '10px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                      borderRadius: '15px',
-                      padding: '5px 10px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}>
-                      <Text style={{ fontSize: '12px', color: gray }}>循环:</Text>
-                      <Text
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsLoopEnabled(!isLoopEnabled);
-                        }}
-                        style={{
-                          fontSize: '12px',
-                          color: isLoopEnabled ? 'green' : gray,
-                          fontWeight: isLoopEnabled ? 'bold' : 'normal',
-                          padding: '2px 4px',
-                          borderRadius: '3px',
-                          backgroundColor: isLoopEnabled ? 'rgba(0, 255, 0, 0.1)' : 'transparent'
-                        }}
-                      >
-                        {isLoopEnabled ? '开启' : '关闭'}
-                      </Text>
+                      </View>
                     </View>
                   )
                 }
