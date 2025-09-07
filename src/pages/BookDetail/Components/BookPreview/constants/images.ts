@@ -114,39 +114,46 @@ const concatImages = {
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_4th-%E5%9B%BE%E7%89%87/OD_4_' + (index + 1) + '.jpg'
         )
     ],
-    //Reading_Explorer_fundation_studentbook
+    //Oxford Discover 5th edition
     "19":[
+        ...Array(202).fill(0).map((_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E5%9B%BE%E7%89%87/od5_' + (index + 1) + '.jpg'
+        )
+    ],
+
+    //Reading_Explorer_fundation_studentbook
+    "20":[
         ...Array(177).fill(0).map((_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_Foundations_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_Foundations_Studentbook_' + (index + 1) + '.jpg'
         )
     ],
     //Reading Explorer L1 学生用书
-    "20":[
+    "21":[
         ...Array(177).fill(0).map((_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L1_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L1_Studentbook_' + (index + 1) + '.jpg?'
         )
     ],
     //Reading Explorer L2 学生用书
-    "21":[
+    "22":[
         ...Array(193).fill(0).map((_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L2_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L2_Studentbook_' + (index + 1) + '.jpg'
         )
     ],
 
     //Reading Explorer L3 学生用书
-    "22":[
+    "23":[
         ...Array(209).fill(0).map((_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L3_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L3_Studentbook_' + (index + 1) + '.jpg'
         )
     ],
     //Reading Explorer L4 学生用书
-    "23":[
+    "24":[
         ...Array(225).fill(0).map((_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L4_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L4_Studentbook_' + (index + 1) + '.jpg'
         )
     ],
     //Reading Explorer L5 学生用书
-    "24":[
+    "25":[
         ...Array(273).fill(0).map((_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L5_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L5_Studentbook_' + (index + 1) + '.jpg'
         )

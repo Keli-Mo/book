@@ -1370,8 +1370,85 @@ export const catalogLists = {
         }
     ],
 
-    //Reading_Explorer_fundation_studentbook
+    // Oxford Discover 5 edition
     "19": [
+        {
+            name: "Unit 1 Dreaming of Dodos",
+            page: 6
+        },
+        {
+            name: "Unit 2 Save Our Tigers!",
+            page: 16
+        },
+        {
+            name: "Unit 3 The Cavity / Have You Any Idea?",
+            page: 26
+        },
+        {
+            name: "Unit 4 Teeth: Not Just for Eating",
+            page: 36
+        },
+        {
+            name: "Unit 5 A Revolution in History",
+            page: 46
+        },
+        {
+            name: "Unit 6 Planet SinRota",
+            page: 56
+        },
+        {
+            name: "Unit 7 Magdi and the Dolphin",
+            page: 68
+        },
+        {
+            name: "Unit 8 Chatterboxes",
+            page: 78
+        },
+        {
+            name: "Unit 9 Journey Back in Time",
+            page: 88
+        },
+        {
+            name: "Unit 10 Choco Choco Boom Boom!",
+            page: 98
+        },
+        {
+            name: "Unit 11 What's So Good About Mountains?",
+            page: 108
+        },
+        {
+            name: "Unit 12 The Lost Explorer",
+            page: 118
+        },
+        {
+            name: "Unit 13 The Sound of Money and the Smell of Soup",
+            page: 130
+        },
+        {
+            name: "Unit 14 The History of Money",
+            page: 140
+        },
+        {
+            name: "Unit 15 One Man's Self-Expression",
+            page: 150
+        },
+        {
+            name: "Unit 16 The Tempest",
+            page: 160
+        },
+        {
+            name: "Unit 17 The World's Most Extraordinary Buildings",
+            page: 170
+        },
+        {
+            name: "Unit 18 The Mystery of Peril Castle",
+            page: 180
+        }
+    ],
+
+
+    //Reading_Explorer_fundation_studentbook
+    "20": [
         {
             name: "Unit 1 Mysteries",
             page: 7
@@ -1423,7 +1500,7 @@ export const catalogLists = {
     ],
 
     //Reading_Explorer_1_studentbook
-    "20": [
+    "21": [
         {
             name: "Unit 1 Amazing Animals",
             page: 7
@@ -1474,7 +1551,7 @@ export const catalogLists = {
         }
     ],
     //Reading_Explorer_2_studentbook
-    "21": [
+    "22": [
         {
             name: "Unit 1 Food and Health",
             page: 7
@@ -1526,7 +1603,7 @@ export const catalogLists = {
     ],
 
     // Reading Explorer 3 student book
-    "22": [
+    "23": [
         {
             name: "Unit 1 Sports and Fitness",
             page: 7
@@ -1578,7 +1655,7 @@ export const catalogLists = {
     ],
 
     // Reading Explorer 4 student book
-    "23": [
+    "24": [
         {
             name: "Unit 1 Images of Life",
             page: 7
@@ -1630,7 +1707,7 @@ export const catalogLists = {
     ],
 
     // Reading Explorer 5 student book
-    "24": [
+    "25": [
         {
             name: "Unit 1 Rise and Fall",
             page: 7

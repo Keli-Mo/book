@@ -25,9 +25,9 @@ export class ClickTracker {
     this.config = {
       storageKey: 'book_click_records',
       // 默认音频基础URL
-      audioBaseUrl: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L5_Studentbook-%E9%9F%B3%E9%A2%91/',
+      audioBaseUrl: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B70',
       // 默认音频索引起始值
-      audioIndexStart: 1,
+      audioIndexStart: 3,
       // 默认偏移量和调整比例——图标为15x15像素，图片实际尺寸为300x300像素
       offsetX: 28, //15,
       offsetY: 28, //15,

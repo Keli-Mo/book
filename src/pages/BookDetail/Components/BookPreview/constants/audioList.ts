@@ -12724,8 +12724,197 @@ const audioList18 = {
 
 }
 
-//Reading_Explorer_fundation_studentbook
+//OD 5
 const audioList19 = {
+    '1': [],
+    '2': [],
+    //CD1
+    10: [
+        {
+        offset: ["68%", "12%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B702.mp3',
+        flag: "Percentage",
+      }
+    ],
+    12: [
+        {
+        offset: ["12%", "3%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B703.mp3',
+        flag: "Percentage",
+      }
+    ],
+    15: [
+        {
+        offset: ["55%", "9%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B704.mp3',
+        flag: "Percentage",
+      }
+    ],
+    16: [
+        {
+        offset: ["34%", "18%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B705.mp3',
+        flag: "Percentage",
+      },
+        {
+        offset: ["50%", "22%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B706.mp3',
+        flag: "Percentage",
+      },
+        {
+        offset: ["18%", "41%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B707.mp3',
+        flag: "Percentage",
+      }
+    ],
+    17: [
+        {
+        offset: ["58%", "25%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B708.mp3',
+        flag: "Percentage",
+      }
+    ],
+    18: [
+        {
+        offset: ["68%", "12%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B709.mp3',
+        flag: "Percentage",
+      }
+    ],
+    20: [
+        {
+        offset: ["12%", "3%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7010.mp3',
+        flag: "Percentage",
+      }
+    ],
+    23: [
+        {
+        offset: ["52%", "9%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7011.mp3',
+        flag: "Percentage",
+      }
+    ],
+    24: [
+        {
+        offset: ["51%", "17%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7012.mp3',
+        flag: "Percentage",
+      },
+        {
+        offset: ["37%", "43%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7013.mp3',
+        flag: "Percentage",
+      },
+        {
+        offset: ["19%", "47%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7014.mp3',
+        flag: "Percentage",
+      }
+    ],
+    25: [
+        {
+        offset: ["75%", "25%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7015.mp3',
+        flag: "Percentage",
+      }
+    ],
+    30: [
+        {
+        offset: ["68%", "12%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7016.mp3',
+        flag: "Percentage",
+      }
+    ],
+    32: [
+        {
+        offset: ["12%", "3%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7017.mp3',
+        flag: "Percentage",
+      }
+    ],
+    35: [
+        {
+        offset: ["58%", "9%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7018.mp3',
+        flag: "Percentage",
+      }
+    ],
+    36: [
+        {
+        offset: ["59%", "24%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7019.mp3',
+        flag: "Percentage",
+      },
+        {
+        offset: ["61%", "27%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7020.mp3',
+        flag: "Percentage",
+      },
+        {
+        offset: ["19%", "41%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7021.mp3',
+        flag: "Percentage",
+      }
+    ],
+    37: [
+        {
+        offset: ["64%", "20%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7022.mp3',
+        flag: "Percentage",
+      }
+    ],
+    38: [
+        {
+        offset: ["68%", "12%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7023.mp3',
+        flag: "Percentage",
+      }
+    ],
+    40: [
+        {
+        offset: ["12%", "3%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7024.mp3',
+        flag: "Percentage",
+      }
+    ],
+    43: [
+        {
+        offset: ["58%", "9%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7025.mp3',
+        flag: "Percentage",
+      }
+    ],
+    44: [
+        {
+        offset: ["23%", "18%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7026.mp3',
+        flag: "Percentage",
+      },
+        {
+        offset: ["51%", "23%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7027.mp3',
+        flag: "Percentage",
+      },
+        {
+        offset: ["19%", "52%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7028.mp3',
+        flag: "Percentage",
+      }
+    ],
+    45: [
+        {
+        offset: ["62%", "21%"],
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B7029.mp3',
+        flag: "Percentage",
+      }
+    ],
+    //Unit5-6
+
+}
+
+//Reading_Explorer_fundation_studentbook
+const audioList20 = {
     '1': [],
     '2': [],
     //Unit 1
@@ -12911,7 +13100,7 @@ const audioList19 = {
 }
 
 //Reading_Explorer_L1_studentbook
-const audioList20 = {
+const audioList21 = {
     '1': [],
     '2': [],
     //Unit 1
@@ -13097,7 +13286,7 @@ const audioList20 = {
 }
 
 //Reading_Explorer_L2_studentbook
-const audioList21 = {
+const audioList22 = {
     '1': [],
     '2': [],
     //Unit 1
@@ -13283,7 +13472,7 @@ const audioList21 = {
 }
 
 //Reading_Explorer_L3_studentbook
-const audioList22 = {
+const audioList23 = {
   1: [],
   2: [],
   //Unit 1
@@ -13470,7 +13659,7 @@ const audioList22 = {
 }
 
 //Reading_Explorer_L4_studentbook
-const audioList23 = {
+const audioList24 = {
   1: [],
   2: [],
     //Unit  1
@@ -13657,7 +13846,7 @@ const audioList23 = {
 }
 
 //Reading_Explorer_L5_studentbook
-const audioList24 = {
+const audioList25 = {
   1: [],
   2: [],
     11: [
@@ -13854,14 +14043,15 @@ export const allAudioList = {
     '16': audioList16,
     '17': audioList17,
     '18': audioList18,
+    '19': audioList19,    
     //Foundations Student's Book
-    '19': audioList19,
-    //Reading_Explorer_studentbook 1-5
     '20': audioList20,
+    //Reading_Explorer_studentbook 1-5
     '21': audioList21,
     '22': audioList22,
     '23': audioList23,
     '24': audioList24,
+    '25': audioList25,
 }
 
 // const audioList22 = {
