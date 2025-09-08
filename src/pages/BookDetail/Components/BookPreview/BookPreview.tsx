@@ -7,7 +7,7 @@ import { allAudioList } from "./constants/audioList";
 import { concatImages } from "./constants/images";
 
 // //插件
-import { clickTracker } from "@/utils/clickTracker";
+// import { clickTracker } from "@/utils/clickTracker";
 //不是插件,保持注释
 // import "@taroify/core/icon/style"
 
@@ -295,25 +295,25 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     setIsAudioPlaying(false);
     setIsAudioPaused(false);
   }
-  //插件
-  // 处理图片点击
-  const handleImageClick = (e) => {
-    // 打印事件坐标
-    console.log('点击事件 e.detail:', e.detail);
-    // 获取图片实际显示区域
-    Taro.createSelectorQuery()
-      .select('.book-page')
-      .boundingClientRect(rect => {
-        console.log('图片 boundingClientRect:', rect);
-      })
-      .exec();
-    clickTracker.handleImageClick(e, currentPage);
-  };
-  //插件
-  // 导出记录按钮逻辑
-  const exportRecords = () => {
-    clickTracker.exportRecords();
-  };
+  // //插件
+  // // 处理图片点击
+  // const handleImageClick = (e) => {
+  //   // 打印事件坐标
+  //   console.log('点击事件 e.detail:', e.detail);
+  //   // 获取图片实际显示区域
+  //   Taro.createSelectorQuery()
+  //     .select('.book-page')
+  //     .boundingClientRect(rect => {
+  //       console.log('图片 boundingClientRect:', rect);
+  //     })
+  //     .exec();
+  //   clickTracker.handleImageClick(e, currentPage);
+  // };
+  // //插件
+  // // 导出记录按钮逻辑
+  // const exportRecords = () => {
+  //   clickTracker.exportRecords();
+  // };
 
 
   // 适配IPad端
@@ -482,9 +482,9 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                   )
                 }
                 {/* 插件——以下替换，其他恢复 */}
-                {/* <BookImage url={url} /> */}
-                <BookImage url={url} onImageClick={handleImageClick} />
-                {/* [(x - 653)/469, (y - 167)/606 */}
+                <BookImage url={url} />
+                {/* <BookImage url={url} onImageClick={handleImageClick} /> */}
+                {/*注释，计算式 [(x - 653)/469, (y - 167)/606 */}
                 <BookAudioTag audioList={audioList} currentPage={currentPage} playAudio={playAudio} />
               </View>
             </SwiperItem>
@@ -546,7 +546,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
       </AtFloatLayout>
 
       {/* 插件 */}
-      <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View>
+      {/* <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View> */}
 
     </View>
   );
@@ -561,11 +561,13 @@ export const BookImage: React.FC<any> = React.memo(({ url, onImageClick }) => {
     <Image
       src={url}
       mode="widthFix"
-      //调试插件
-      onLoad={e => {
-        const { width, height } = e.detail;
-        console.log('图片原始像素：', width, height);
-      }}
+      
+      // //调试插件
+      // onLoad={e => {
+      //   const { width, height } = e.detail;
+      //   console.log('图片原始像素：', width, height);
+      // }}
+
       // 将图片自动转换为webp模式
       webp
       // 懒加载
