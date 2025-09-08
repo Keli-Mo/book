@@ -44,7 +44,7 @@ const titleMap = {
   16: 'OD 2',
   17: 'OD 3',
   18: 'OD 4',
-  19: 'RE 0',
+  19: 'OD 5',
   20: 'RE 1',
   21: 'RE 2',
   22: 'RE 3',
@@ -81,12 +81,13 @@ enum EBookType {
   OD_DICSOVER_2ND_EDITION   = "16",
   OD_DICSOVER_3RD_EDITION   = "17",
   OD_DICSOVER_4TH_EDITION   = "18",
-  RE_FOUNDATIONS_STUDENT_BOOK    = "19",
-  RE_L1_STUDENT_BOOK        = "20",
-  RE_L2_STUDENT_BOOK        = "21",
-  RE_L3_STUDENT_BOOK        = "22",
-  RE_L4_STUDENT_BOOK        = "23",
-  RE_L5_STUDENT_BOOK        = "24",
+  OD_DICSOVER_5TH_EDITION   = "19",
+  RE_FOUNDATIONS_STUDENT_BOOK    = "20",
+  RE_L1_STUDENT_BOOK        = "21",
+  RE_L2_STUDENT_BOOK        = "22",
+  RE_L3_STUDENT_BOOK        = "23",
+  RE_L4_STUDENT_BOOK        = "24",
+  RE_L5_STUDENT_BOOK        = "25",
 }
 
 // 定义一个新的类型枚举，来表示页码显示策略
@@ -120,6 +121,7 @@ const bookPageStrategyMap: Record<EBookType, PageNumberingStrategy> = {
   [EBookType.OD_DICSOVER_2ND_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_3RD_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_4TH_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OD_DICSOVER_5TH_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
 
   [EBookType.RE_FOUNDATIONS_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.RE_L1_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
