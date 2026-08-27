@@ -27,7 +27,7 @@ interface IBookPreviewProps {
 
 const titleMap = {
   1:  '原版教材+剑桥考试课程',
-  2:  '海沙国际课程',
+  2:  '海沙课程',
   3:  'CASA阅读启蒙&自然拼读 1',
   4:  'CASA阅读启蒙&自然拼读 2',
   5:  'CASA阅读启蒙&自然拼读 3',
@@ -207,6 +207,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     } else {
       setIsAudioPlaying(false);
       setIsAudioPaused(false);
+      // 取消保持屏幕常亮
+      Taro.setKeepScreenOn({ keepScreenOn: false });
     }
   });
 
@@ -253,6 +255,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
       audioContextRef.current.play();
       setIsAudioPlaying(true);
       setIsAudioPaused(false);
+      // 保持屏幕常亮
+      Taro.setKeepScreenOn({ keepScreenOn: true });
       return;
     }
     // 关闭之前播放的音频
@@ -263,6 +267,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     audioContextRef.current.playbackRate = playbackRate; // 新增：设置播放速度
     audioContextRef.current.onPlay(() => {
       console.log('Start playback')
+      // 保持屏幕常亮
+      Taro.setKeepScreenOn({ keepScreenOn: true });
     })
     audioContextRef.current.onError((res) => {
       console.log('Audio play error:', res.errMsg);
@@ -284,6 +290,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     audioContextRef.current.play();
     setIsAudioPlaying(true);
     setIsAudioPaused(false);
+    // 保持屏幕常亮
+    Taro.setKeepScreenOn({ keepScreenOn: true });
   }
 
   const pausePlayingAudio = () => {
@@ -296,6 +304,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     audioContextRef.current.stop();
     setIsAudioPlaying(false);
     setIsAudioPaused(false);
+    // 取消保持屏幕常亮
+    Taro.setKeepScreenOn({ keepScreenOn: false });
   }
   // //插件
   // // 处理图片点击
@@ -563,7 +573,7 @@ export const BookImage: React.FC<any> = React.memo(({ url, onImageClick }) => {
     <Image
       src={url}
       mode="widthFix"
-      
+
       // //调试插件
       // onLoad={e => {
       //   const { width, height } = e.detail;
