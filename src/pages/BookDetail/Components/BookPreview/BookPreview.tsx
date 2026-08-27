@@ -7,7 +7,7 @@ import { allAudioList } from "./constants/audioList";
 import { concatImages } from "./constants/images";
 
 // //插件
-import { clickTracker } from "@/utils/clickTracker";
+// import { clickTracker } from "@/utils/clickTracker";
 //不是插件,保持注释
 // import "@taroify/core/icon/style"
 
@@ -27,7 +27,7 @@ interface IBookPreviewProps {
 
 const titleMap = {
   1:  '原版教材+剑桥考试课程',
-  2:  '海沙国际课程',
+  2:  '海沙课程',
   3:  'CASA阅读启蒙&自然拼读 1',
   4:  'CASA阅读启蒙&自然拼读 2',
   5:  'CASA阅读启蒙&自然拼读 3',
@@ -44,7 +44,7 @@ const titleMap = {
   16: 'OD 2',
   17: 'OD 3',
   18: 'OD 4',
-  19: 'RE 0',
+  19: 'OD 5',
   20: 'RE 1',
   21: 'RE 2',
   22: 'RE 3',
@@ -81,12 +81,13 @@ enum EBookType {
   OD_DICSOVER_2ND_EDITION   = "16",
   OD_DICSOVER_3RD_EDITION   = "17",
   OD_DICSOVER_4TH_EDITION   = "18",
-  RE_FOUNDATIONS_STUDENT_BOOK    = "19",
-  RE_L1_STUDENT_BOOK        = "20",
-  RE_L2_STUDENT_BOOK        = "21",
-  RE_L3_STUDENT_BOOK        = "22",
-  RE_L4_STUDENT_BOOK        = "23",
-  RE_L5_STUDENT_BOOK        = "24",
+  OD_DICSOVER_5TH_EDITION   = "19",
+  RE_FOUNDATIONS_STUDENT_BOOK    = "20",
+  RE_L1_STUDENT_BOOK        = "21",
+  RE_L2_STUDENT_BOOK        = "22",
+  RE_L3_STUDENT_BOOK        = "23",
+  RE_L4_STUDENT_BOOK        = "24",
+  RE_L5_STUDENT_BOOK        = "25",
 }
 
 // 定义一个新的类型枚举，来表示页码显示策略
@@ -120,6 +121,7 @@ const bookPageStrategyMap: Record<EBookType, PageNumberingStrategy> = {
   [EBookType.OD_DICSOVER_2ND_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_3RD_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.OD_DICSOVER_4TH_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
+  [EBookType.OD_DICSOVER_5TH_EDITION]: PageNumberingStrategy.EXCLUDE_COVER,
 
   [EBookType.RE_FOUNDATIONS_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
   [EBookType.RE_L1_STUDENT_BOOK]: PageNumberingStrategy.EXCLUDE_COVER,
@@ -205,6 +207,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     } else {
       setIsAudioPlaying(false);
       setIsAudioPaused(false);
+      // 取消保持屏幕常亮
+      Taro.setKeepScreenOn({ keepScreenOn: false });
     }
   });
 
@@ -251,6 +255,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
       audioContextRef.current.play();
       setIsAudioPlaying(true);
       setIsAudioPaused(false);
+      // 保持屏幕常亮
+      Taro.setKeepScreenOn({ keepScreenOn: true });
       return;
     }
     // 关闭之前播放的音频
@@ -261,6 +267,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     audioContextRef.current.playbackRate = playbackRate; // 新增：设置播放速度
     audioContextRef.current.onPlay(() => {
       console.log('Start playback')
+      // 保持屏幕常亮
+      Taro.setKeepScreenOn({ keepScreenOn: true });
     })
     audioContextRef.current.onError((res) => {
       console.log('Audio play error:', res.errMsg);
@@ -282,6 +290,8 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     audioContextRef.current.play();
     setIsAudioPlaying(true);
     setIsAudioPaused(false);
+    // 保持屏幕常亮
+    Taro.setKeepScreenOn({ keepScreenOn: true });
   }
 
   const pausePlayingAudio = () => {
@@ -294,26 +304,28 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     audioContextRef.current.stop();
     setIsAudioPlaying(false);
     setIsAudioPaused(false);
+    // 取消保持屏幕常亮
+    Taro.setKeepScreenOn({ keepScreenOn: false });
   }
-  //插件
-  // 处理图片点击
-  const handleImageClick = (e) => {
-    // 打印事件坐标
-    console.log('点击事件 e.detail:', e.detail);
-    // 获取图片实际显示区域
-    Taro.createSelectorQuery()
-      .select('.book-page')
-      .boundingClientRect(rect => {
-        console.log('图片 boundingClientRect:', rect);
-      })
-      .exec();
-    clickTracker.handleImageClick(e, currentPage);
-  };
-  //插件
-  // 导出记录按钮逻辑
-  const exportRecords = () => {
-    clickTracker.exportRecords();
-  };
+  // //插件
+  // // 处理图片点击
+  // const handleImageClick = (e) => {
+  //   // 打印事件坐标
+  //   console.log('点击事件 e.detail:', e.detail);
+  //   // 获取图片实际显示区域
+  //   Taro.createSelectorQuery()
+  //     .select('.book-page')
+  //     .boundingClientRect(rect => {
+  //       console.log('图片 boundingClientRect:', rect);
+  //     })
+  //     .exec();
+  //   clickTracker.handleImageClick(e, currentPage);
+  // };
+  // //插件
+  // // 导出记录按钮逻辑
+  // const exportRecords = () => {
+  //   clickTracker.exportRecords();
+  // };
 
 
   // 适配IPad端
@@ -482,9 +494,9 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
                   )
                 }
                 {/* 插件——以下替换，其他恢复 */}
-                {/* <BookImage url={url} /> */}
-                <BookImage url={url} onImageClick={handleImageClick} />
-                {/* [(x - 653)/469, (y - 167)/606 */}
+                <BookImage url={url} />
+                {/* <BookImage url={url} onImageClick={handleImageClick} /> */}
+                {/*注释，计算式 [(x - 653)/469, (y - 167)/606 */}
                 <BookAudioTag audioList={audioList} currentPage={currentPage} playAudio={playAudio} />
               </View>
             </SwiperItem>
@@ -546,7 +558,7 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
       </AtFloatLayout>
 
       {/* 插件 */}
-      <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View>
+      {/* <View onClick={exportRecords} style={{position:'fixed',bottom:10,right:10,zIndex:999,background:'#fff',padding:'8px',borderRadius:'8px'}}>导出点击记录</View> */}
 
     </View>
   );
@@ -561,11 +573,13 @@ export const BookImage: React.FC<any> = React.memo(({ url, onImageClick }) => {
     <Image
       src={url}
       mode="widthFix"
-      //调试插件
-      onLoad={e => {
-        const { width, height } = e.detail;
-        console.log('图片原始像素：', width, height);
-      }}
+
+      // //调试插件
+      // onLoad={e => {
+      //   const { width, height } = e.detail;
+      //   console.log('图片原始像素：', width, height);
+      // }}
+
       // 将图片自动转换为webp模式
       webp
       // 懒加载
