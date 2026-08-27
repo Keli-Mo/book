@@ -71,8 +71,7 @@
   }
 }
 
-.practice-audio-status,
-.practice-record-placeholder {
+.practice-audio-status {
   display: flex;
   flex-direction: column;
   margin-top: 22rpx;
@@ -81,9 +80,80 @@
   background: #ffffff;
 
   &__title { font-size: 29rpx; font-weight: 700; }
-  &__value,
-  &__text { margin-top: 10rpx; color: #78867f; font-size: 24rpx; line-height: 1.6; }
+  &__value { margin-top: 10rpx; color: #78867f; font-size: 24rpx; line-height: 1.6; }
 }
+
+.practice-recorder {
+  margin-top: 22rpx;
+  padding: 30rpx 28rpx;
+  border-radius: 22rpx;
+  background: #ffffff;
+
+  &__heading { display: flex; align-items: center; justify-content: space-between; }
+  &__title { color: #24362f; font-size: 29rpx; font-weight: 700; }
+  &__time { color: #2f876b; font-size: 24rpx; font-variant-numeric: tabular-nums; }
+  &__tip { display: block; margin-top: 14rpx; color: #78867f; font-size: 24rpx; line-height: 1.6; }
+}
+
+.record-button,
+.check-in-button,
+.record-actions__secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 24rpx 0 0;
+  border: 0;
+  border-radius: 18rpx;
+  font-size: 27rpx;
+  font-weight: 700;
+  line-height: 88rpx;
+
+  &::after { border: 0; }
+}
+
+.record-button {
+  background: #fff0eb;
+  color: #c9542a;
+
+  &--stop { background: #e85d3d; color: #ffffff; }
+  &__dot {
+    width: 20rpx;
+    height: 20rpx;
+    margin-right: 14rpx;
+    border-radius: 50%;
+    background: #e85d3d;
+  }
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  margin-top: 22rpx;
+  color: #c9542a;
+  font-size: 25rpx;
+
+  &__pulse {
+    width: 18rpx;
+    height: 18rpx;
+    margin-right: 14rpx;
+    border-radius: 50%;
+    background: #e85d3d;
+    box-shadow: 0 0 0 10rpx rgba(232, 93, 61, 0.12);
+  }
+}
+
+.record-actions { display: flex; gap: 16rpx; }
+.record-actions__secondary {
+  flex: 1;
+  border: 2rpx solid #cbd8d3;
+  background: #ffffff;
+  color: #496158;
+  line-height: 76rpx;
+}
+
+.check-in-button { background: #2f896c; color: #ffffff; }
+
+button[disabled] { opacity: 0.5; }
 
 .practice-navigation {
   display: flex;

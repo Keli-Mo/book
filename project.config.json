@@ -1,5 +1,6 @@
 {
   "miniprogramRoot": "dist/",
+  "cloudfunctionRoot": "cloudfunctions/",
   "description": "海沙牛娃英语听力与跟读训练微信小程序，提供课程单元、示范听力、跟读录音和学习打卡服务",
   "setting": {
     "urlCheck": true,

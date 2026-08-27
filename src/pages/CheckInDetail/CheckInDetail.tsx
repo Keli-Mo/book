@@ -1,0 +1,158 @@
+import { Button, Image, Text, View } from "@tarojs/components";
+import Taro, { useRouter, useShareAppMessage } from "@tarojs/taro";
+import { useEffect, useRef, useState } from "react";
+import { sharedImage } from "@/constant";
+import {
+  CheckInDetail as CheckInDetailData,
+  getCheckInDetail,
+  getReadableCloudError,
+} from "@/services/cloudCheckIn";
+import {
+  formatCheckInTime,
+  formatRecordingDuration,
+} from "@/utils/checkInFormat";
+
+import "./CheckInDetail.scss";
+
+export default function CheckInDetail() {
+  const router = useRouter();
+  const recordId = router.params?.id || "";
+  const routeToken = router.params?.token || "";
+  const [detail, setDetail] = useState<CheckInDetailData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<Taro.InnerAudioContext | null>(null);
+
+  useShareAppMessage(() => {
+    if (!detail) {
+      return { title: "海沙牛娃英语跟读训练", path: "/pages/Home/Home", imageUrl: sharedImage };
+    }
+
+    return {
+      title: `我完成了《${detail.bookTitle}》${detail.sectionTitle}跟读打卡`,
+      // 分享口令只授予这一条录音的访问权，不能用于查询其他人的打卡。
+      path: `/pages/CheckInDetail/CheckInDetail?id=${encodeURIComponent(
+        detail.id,
+      )}&token=${encodeURIComponent(detail.shareToken)}`,
+      imageUrl: detail.imageUrl || sharedImage,
+    };
+  });
+
+  useEffect(() => {
+    const audio = Taro.createInnerAudioContext();
+    audio.loop = false;
+    audio.onPlay(() => setIsPlaying(true));
+    audio.onEnded(() => setIsPlaying(false));
+    audio.onStop(() => setIsPlaying(false));
+    audio.onError(() => {
+      setIsPlaying(false);
+      Taro.showToast({ title: "录音播放失败", icon: "none" });
+    });
+    audioRef.current = audio;
+
+    return () => {
+      audio.destroy();
+      audioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      if (!recordId) {
+        setErrorMessage("分享链接缺少打卡编号");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const result = await getCheckInDetail(recordId, routeToken);
+        if (active) setDetail(result);
+      } catch (error) {
+        if (active) setErrorMessage(getReadableCloudError(error));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, [recordId, routeToken]);
+
+  const toggleRecording = () => {
+    const audio = audioRef.current;
+    if (!audio || !detail?.recordingUrl) return;
+    if (isPlaying) {
+      audio.stop();
+      return;
+    }
+    audio.src = detail.recordingUrl;
+    audio.play();
+  };
+
+  const startThisPractice = () => {
+    if (!detail) return;
+    Taro.navigateTo({
+      url: `/pages/Practice/Practice?practice=${detail.practiceIndex}`,
+    });
+  };
+
+  if (loading) {
+    return <View className='check-in-state'>正在读取打卡录音…</View>;
+  }
+
+  if (!detail) {
+    return (
+      <View className='check-in-state'>
+        <Text className='check-in-state__title'>暂时无法打开这条打卡</Text>
+        <Text className='check-in-state__message'>{errorMessage}</Text>
+        <Button className='check-in-state__button' onClick={() => Taro.reLaunch({ url: "/pages/Home/Home" })}>
+          返回首页
+        </Button>
+      </View>
+    );
+  }
+
+  return (
+    <View className='check-in-detail'>
+      <View className='check-in-detail__success'>
+        <Text className='check-in-detail__check'>✓</Text>
+        <Text className='check-in-detail__eyebrow'>FOLLOW-READING CHECK-IN</Text>
+        <Text className='check-in-detail__title'>完成一次英语跟读</Text>
+        <Text className='check-in-detail__time'>{formatCheckInTime(detail.createdAt)}</Text>
+      </View>
+
+      <View className='check-in-course-card'>
+        <Image className='check-in-course-card__image' src={detail.imageUrl} mode='aspectFill' webp />
+        <View className='check-in-course-card__content'>
+          <Text className='check-in-course-card__book'>{detail.bookTitle}</Text>
+          <Text className='check-in-course-card__section'>{detail.sectionTitle}</Text>
+          <Text className='check-in-course-card__meta'>
+            第 {detail.practiceIndex + 1} 个训练 · 教材页 {detail.pageNumber}
+          </Text>
+        </View>
+      </View>
+
+      <View className='shared-recording'>
+        <Text className='shared-recording__label'>本次跟读录音</Text>
+        <Text className='shared-recording__duration'>
+          {formatRecordingDuration(detail.durationMs)}
+        </Text>
+        <Button className='shared-recording__play' onClick={toggleRecording}>
+          <Text className='shared-recording__play-icon'>{isPlaying ? "■" : "▶"}</Text>
+          {isPlaying ? "停止播放" : "播放本次跟读"}
+        </Button>
+        <Text className='shared-recording__privacy'>
+          分享的是本次用户录音和打卡记录，不包含题目、答案或教材原音。
+        </Text>
+      </View>
+
+      <View className='check-in-actions'>
+        <Button className='check-in-actions__share' openType='share'>分享这次打卡</Button>
+        <Button className='check-in-actions__practice' onClick={startThisPractice}>我也来跟读</Button>
+      </View>
+    </View>
+  );
+}

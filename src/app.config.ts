@@ -1,10 +1,20 @@
 export default defineAppConfig({
-  pages: ["pages/Home/Home", "pages/Practice/Practice"],
+  pages: [
+    "pages/Home/Home",
+    "pages/Practice/Practice",
+    "pages/CheckInDetail/CheckInDetail",
+    "pages/MyCheckIns/MyCheckIns",
+  ],
   window: {
     backgroundTextStyle: "light",
     navigationBarBackgroundColor: "#fff",
     navigationBarTitleText: "海沙牛娃英语跟读",
     navigationBarTextStyle: "black",
   },
-  entryPagePath: "pages/Home/Home"
+  permission: {
+    "scope.record": {
+      desc: "用于录制并回听你的英语跟读，确认打卡后才会上传云端",
+    },
+  },
+  entryPagePath: "pages/Home/Home",
 });

@@ -1,0 +1,67 @@
+.my-check-ins {
+  min-height: 100vh;
+  padding: 38rpx 28rpx 80rpx;
+  box-sizing: border-box;
+  background: #f4f7f5;
+  color: #24362f;
+
+  &__intro { display: flex; flex-direction: column; padding: 8rpx 8rpx 30rpx; }
+  &__title { color: #183f34; font-size: 42rpx; font-weight: 800; }
+  &__tip { margin-top: 10rpx; color: #71827b; font-size: 24rpx; }
+}
+
+.check-in-list-card {
+  display: flex;
+  overflow: hidden;
+  margin-bottom: 22rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 32rpx rgba(43, 80, 67, 0.08);
+
+  &__image { width: 176rpx; min-height: 244rpx; flex: 0 0 176rpx; background: #e5eeea; }
+  &__content { display: flex; min-width: 0; flex: 1; flex-direction: column; padding: 26rpx 24rpx 22rpx; }
+  &__section { overflow: hidden; color: #24362f; font-size: 28rpx; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+  &__book { overflow: hidden; margin-top: 8rpx; color: #71827b; font-size: 22rpx; text-overflow: ellipsis; white-space: nowrap; }
+  &__meta { margin-top: 12rpx; color: #8a9691; font-size: 21rpx; line-height: 1.5; }
+  &__actions { display: flex; gap: 12rpx; margin-top: auto; padding-top: 18rpx; }
+  &__open,
+  &__delete {
+    margin: 0;
+    border: 0;
+    border-radius: 12rpx;
+    font-size: 22rpx;
+    line-height: 58rpx;
+
+    &::after { border: 0; }
+  }
+  &__open { flex: 1; background: #e7f4ee; color: #28765e; }
+  &__delete { width: 90rpx; background: #f7f1ef; color: #a85b47; }
+}
+
+.my-check-ins-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 52rpx;
+  box-sizing: border-box;
+  background: #f4f7f5;
+  color: #71827b;
+  text-align: center;
+
+  &__title { color: #2b443b; font-size: 34rpx; font-weight: 700; }
+  &__text { margin-top: 16rpx; font-size: 24rpx; line-height: 1.7; }
+  &__button {
+    width: 330rpx;
+    margin-top: 30rpx;
+    border: 0;
+    border-radius: 18rpx;
+    background: #2f896c;
+    color: #ffffff;
+    font-size: 25rpx;
+    line-height: 82rpx;
+
+    &::after { border: 0; }
+  }
+}
