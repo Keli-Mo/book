@@ -27,7 +27,7 @@ export class ClickTracker {
       // 默认音频基础URL
       audioBaseUrl: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Oxford_Discover__2E_5th-%E9%9F%B3%E9%A2%91/CD1/1%C2%B70',
       // 默认音频索引起始值
-      audioIndexStart: 3,
+      audioIndexStart: 8,
       // 默认偏移量和调整比例——图标为15x15像素，图片实际尺寸为300x300像素
       offsetX: 28, //15,
       offsetY: 28, //15,
@@ -79,7 +79,7 @@ export class ClickTracker {
           console.log('图片尺寸:', { width: r.width, height: r.height });
 
           const ratioX = (x - this.config.offsetX!) / r.width  + this.config.widthAdjustment!;
-          const ratioY = (y - this.config.offsetY! - 93) / 571.6 + this.config.heightAdjustment!;
+          const ratioY = (y - this.config.offsetY! - 93) / r.height + this.config.heightAdjustment!;
 
           console.log('计算比例:', { ratioX, ratioY });
 
