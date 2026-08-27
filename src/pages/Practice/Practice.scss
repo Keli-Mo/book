@@ -1,0 +1,117 @@
+.practice-page {
+  min-height: 100vh;
+  padding: 34rpx 26rpx 80rpx;
+  box-sizing: border-box;
+  background: #f4f7f5;
+  color: #24362f;
+}
+
+.practice-header {
+  display: flex;
+  flex-direction: column;
+  padding: 8rpx 10rpx 28rpx;
+
+  &__course { color: #71827b; font-size: 24rpx; }
+  &__section { margin-top: 10rpx; color: #193f34; font-size: 42rpx; font-weight: 800; }
+  &__progress { margin-top: 12rpx; color: #2f876b; font-size: 25rpx; font-weight: 600; }
+}
+
+.practice-guide {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 22rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 22rpx;
+  background: #e5f4ed;
+
+  &__title { color: #276c58; font-size: 29rpx; font-weight: 700; }
+  &__text { margin-top: 10rpx; color: #5a756b; font-size: 24rpx; line-height: 1.6; }
+}
+
+.practice-book-page {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 16rpx 40rpx rgba(37, 69, 58, 0.12);
+
+  &__image { display: block; width: 100%; }
+}
+
+.audio-hotspot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58rpx;
+  height: 58rpx;
+  border: 4rpx solid #ffffff;
+  border-radius: 50%;
+  background: #ed7040;
+  box-shadow: 0 6rpx 16rpx rgba(132, 48, 17, 0.32);
+  transform: translate(-50%, -50%);
+
+  &--playing { background: #2e8b70; box-shadow: 0 6rpx 18rpx rgba(32, 110, 86, 0.34); }
+  &__icon { margin-left: 2rpx; color: #ffffff; font-size: 20rpx; }
+  &__number {
+    position: absolute;
+    right: -8rpx;
+    bottom: -8rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26rpx;
+    height: 26rpx;
+    border-radius: 50%;
+    background: #ffffff;
+    color: #314c42;
+    font-size: 18rpx;
+    font-weight: 700;
+  }
+}
+
+.practice-audio-status,
+.practice-record-placeholder {
+  display: flex;
+  flex-direction: column;
+  margin-top: 22rpx;
+  padding: 28rpx;
+  border-radius: 22rpx;
+  background: #ffffff;
+
+  &__title { font-size: 29rpx; font-weight: 700; }
+  &__value,
+  &__text { margin-top: 10rpx; color: #78867f; font-size: 24rpx; line-height: 1.6; }
+}
+
+.practice-navigation {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 28rpx;
+
+  &__button {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    height: 92rpx;
+    border: 2rpx solid #cdd9d4;
+    border-radius: 20rpx;
+    background: #ffffff;
+    color: #496158;
+    font-size: 27rpx;
+    font-weight: 700;
+  }
+
+  &__button--primary { border-color: #2f896c; background: #2f896c; color: #ffffff; }
+  &__button--disabled { opacity: 0.36; }
+}
+
+.practice-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: #7c8984;
+}

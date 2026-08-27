@@ -1,6 +1,6 @@
 {
   "miniprogramRoot": "dist/",
-  "description": "海沙牛娃微信小程序，该小程序为教育机构读书服务平台，提供课程配套书籍资源，含电子书、有声读物。用户可参与线上读书课程",
+  "description": "海沙牛娃英语听力与跟读训练微信小程序，提供课程单元、示范听力、跟读录音和学习打卡服务",
   "setting": {
     "urlCheck": true,
     "es6": true,
