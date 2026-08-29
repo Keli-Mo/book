@@ -102,7 +102,22 @@ export const removeCheckIn = (id: string) =>
   callCheckInFunction<{ id: string }>({ action: "remove", id });
 
 export const getReadableCloudError = (error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error || "");
+  const cloudError =
+    error && typeof error === "object"
+      ? (error as {
+          errCode?: string | number;
+          errno?: string | number;
+          errMsg?: string;
+          message?: string;
+        })
+      : undefined;
+  // 微信云开发通常以普通对象返回失败信息，不能直接 String(error)，否则只会得到 [object Object]。
+  const message =
+    (error instanceof Error ? error.message : "") ||
+    cloudError?.errMsg ||
+    cloudError?.message ||
+    String(error || "");
+  const errorCode = cloudError?.errCode ?? cloudError?.errno;
 
   if (/FunctionName|FUNCTION_NOT_FOUND|云函数不存在|-501000/i.test(message)) {
     return "云函数尚未部署，请先在微信开发者工具中上传并部署 checkIn 云函数";
@@ -111,7 +126,8 @@ export const getReadableCloudError = (error: unknown) => {
     return "云数据库尚未创建 checkins 集合，请先按部署说明完成初始化";
   }
   if (/storage|uploadFile|file/i.test(message)) {
-    return "录音上传失败，请检查网络后重试";
+    const codeText = errorCode === undefined ? "" : `（错误码 ${errorCode}）`;
+    return `录音上传失败${codeText}\n${message}`;
   }
 
   return message || "操作失败，请稍后重试";
