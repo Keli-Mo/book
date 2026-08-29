@@ -1,17 +1,19 @@
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SAMPLE_BOOK_ID,
   SAMPLE_BOOK_PRACTICES,
   SAMPLE_BOOK_TITLE,
 } from "@/features/listeningPractice/book3Practice";
+import { buildPracticeDirectoryGroups } from "@/features/listeningPractice/practiceDirectory";
 import {
   createCheckIn,
   getReadableCloudError,
   removeUploadedRecording,
   uploadCheckInRecording,
 } from "@/services/cloudCheckIn";
+import PracticeDirectory from "./PracticeDirectory";
 
 import "./Practice.scss";
 
@@ -32,9 +34,14 @@ const formatDuration = (durationMs: number) => {
 
 export default function Practice() {
   const router = useRouter();
+  const directoryGroups = useMemo(
+    () => buildPracticeDirectoryGroups(SAMPLE_BOOK_PRACTICES),
+    []
+  );
   const [practiceIndex, setPracticeIndex] = useState(() =>
     normalizePracticeIndex(router.params?.practice),
   );
+  const [isDirectoryOpen, setIsDirectoryOpen] = useState(false);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [tempRecordingPath, setTempRecordingPath] = useState("");
@@ -279,9 +286,17 @@ export default function Practice() {
       <View className='practice-header'>
         <Text className='practice-header__course'>{SAMPLE_BOOK_TITLE}</Text>
         <Text className='practice-header__section'>{practice.sectionTitle}</Text>
-        <Text className='practice-header__progress'>
-          跟读训练 {practiceIndex + 1} / {SAMPLE_BOOK_PRACTICES.length}
-        </Text>
+        <View className='practice-header__progress-row'>
+          <Text className='practice-header__progress'>
+            跟读训练 {practiceIndex + 1} / {SAMPLE_BOOK_PRACTICES.length}
+          </Text>
+          <Text
+            className='practice-header__directory'
+            onClick={() => setIsDirectoryOpen(true)}
+          >
+            目录
+          </Text>
+        </View>
       </View>
 
       <View className='practice-guide'>
@@ -314,13 +329,6 @@ export default function Practice() {
             <Text className='audio-hotspot__number'>{index + 1}</Text>
           </View>
         ))}
-      </View>
-
-      <View className='practice-audio-status'>
-        <Text className='practice-audio-status__title'>本页示范听力</Text>
-        <Text className='practice-audio-status__value'>
-          {practice.tracks.length} 段 · 点击图片中的播放标记
-        </Text>
       </View>
 
       <View className='practice-recorder'>
@@ -411,6 +419,17 @@ export default function Practice() {
           <Text>下一个训练</Text>
         </View>
       </View>
+
+      <PracticeDirectory
+        groups={directoryGroups}
+        currentPracticeIndex={practiceIndex}
+        open={isDirectoryOpen}
+        onClose={() => setIsDirectoryOpen(false)}
+        onSelect={(nextIndex) => {
+          setIsDirectoryOpen(false);
+          switchPractice(nextIndex);
+        }}
+      />
     </View>
   );
 }

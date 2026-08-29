@@ -31,6 +31,7 @@
     "validate:book-audio": "node scripts/validate-book-audio-map.cjs",
     "test:check-in": "node scripts/test-check-in-function.cjs",
     "test:practice-directory": "node scripts/test-practice-directory.cjs",
+    "test:practice-directory-component": "node scripts/test-practice-directory-component.cjs",
     "test:recording-interaction": "node scripts/test-recording-interaction.cjs"
   },
   "browserslist": {

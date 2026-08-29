@@ -13,7 +13,21 @@
 
   &__course { color: #71827b; font-size: 24rpx; }
   &__section { margin-top: 10rpx; color: #193f34; font-size: 42rpx; font-weight: 800; }
-  &__progress { margin-top: 12rpx; color: #2f876b; font-size: 25rpx; font-weight: 600; }
+  &__progress-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12rpx;
+  }
+  &__progress { color: #2f876b; font-size: 25rpx; font-weight: 600; }
+  &__directory {
+    padding: 8rpx 18rpx;
+    border-radius: 999rpx;
+    background: #e2f1eb;
+    color: #276c58;
+    font-size: 24rpx;
+    font-weight: 700;
+  }
 }
 
 .practice-guide {
@@ -69,18 +83,6 @@
     font-size: 18rpx;
     font-weight: 700;
   }
-}
-
-.practice-audio-status {
-  display: flex;
-  flex-direction: column;
-  margin-top: 22rpx;
-  padding: 28rpx;
-  border-radius: 22rpx;
-  background: #ffffff;
-
-  &__title { font-size: 29rpx; font-weight: 700; }
-  &__value { margin-top: 10rpx; color: #78867f; font-size: 24rpx; line-height: 1.6; }
 }
 
 .practice-recorder {
@@ -184,4 +186,57 @@ button[disabled] { opacity: 0.5; }
   justify-content: center;
   min-height: 100vh;
   color: #7c8984;
+}
+
+.practice-directory-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(18, 37, 31, 0.48);
+}
+
+.practice-directory-sheet {
+  width: 100%;
+  max-height: 78vh;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-radius: 32rpx 32rpx 0 0;
+  background: #f5f8f6;
+}
+
+.practice-directory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 30rpx 30rpx 22rpx;
+  background: #ffffff;
+}
+
+.practice-directory-title { font-size: 32rpx; font-weight: 800; }
+.practice-directory-close { color: #2f876b; font-size: 25rpx; font-weight: 700; }
+.practice-directory-scroll { height: 62vh; }
+.practice-directory-group { padding: 26rpx 26rpx 0; }
+.practice-directory-group__title { font-size: 27rpx; font-weight: 800; }
+.practice-directory-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 18rpx;
+}
+.practice-directory-item {
+  width: calc(50% - 8rpx);
+  padding: 20rpx;
+  box-sizing: border-box;
+  border: 2rpx solid #d6e0dc;
+  border-radius: 18rpx;
+  background: #ffffff;
+}
+.practice-directory-item--active { border-color: #2f896c; background: #e4f3ed; }
+.practice-directory-item__page { display: block; font-size: 26rpx; font-weight: 700; }
+.practice-directory-item__tracks {
+  display: block;
+  margin-top: 8rpx;
+  color: #78867f;
+  font-size: 22rpx;
 }
