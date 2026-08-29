@@ -29,7 +29,8 @@
     "dev:jd": "npm run build:jd -- --watch",
     "dev:harmony-hybrid": "npm run build:harmony-hybrid -- --watch",
     "validate:book-audio": "node scripts/validate-book-audio-map.cjs",
-    "test:check-in": "node scripts/test-check-in-function.cjs"
+    "test:check-in": "node scripts/test-check-in-function.cjs",
+    "test:practice-directory": "node scripts/test-practice-directory.cjs"
   },
   "browserslist": {
     "development": [
