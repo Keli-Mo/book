@@ -8,6 +8,15 @@ import {
 } from "@/features/listeningPractice/book3Practice";
 import { buildPracticeDirectoryGroups } from "@/features/listeningPractice/practiceDirectory";
 import {
+  getPracticeSwitchPolicy,
+  getRecordingElapsedMs,
+  pauseRecordingTimeline,
+  resumeRecordingTimeline,
+  startRecordingTimeline,
+  type RecordingState,
+  type RecordingTimeline,
+} from "@/features/listeningPractice/recordingInteraction";
+import {
   createCheckIn,
   getReadableCloudError,
   removeUploadedRecording,
@@ -16,8 +25,6 @@ import {
 import PracticeDirectory from "./PracticeDirectory";
 
 import "./Practice.scss";
-
-type RecordingState = "idle" | "recording" | "recorded" | "uploading";
 
 const normalizePracticeIndex = (rawIndex?: string) => {
   const parsed = Number(rawIndex || 0);
@@ -51,7 +58,11 @@ export default function Practice() {
   const modelAudioRef = useRef<Taro.InnerAudioContext | null>(null);
   const recordingAudioRef = useRef<Taro.InnerAudioContext | null>(null);
   const recorderRef = useRef<WechatMiniprogram.RecorderManager | null>(null);
-  const recordingStartedAtRef = useRef(0);
+  const recordingTimelineRef = useRef<RecordingTimeline>({
+    accumulatedMs: 0,
+    activeSinceMs: null,
+  });
+  const pendingRecorderActionRef = useRef<"pause" | "resume" | null>(null);
   const discardNextRecordingRef = useRef(false);
   const submittingRef = useRef(false);
 
@@ -81,17 +92,37 @@ export default function Practice() {
 
     const recorder = wx.getRecorderManager();
     const handleRecorderStart = () => {
-      recordingStartedAtRef.current = Date.now();
+      recordingTimelineRef.current = startRecordingTimeline(Date.now());
       setRecordingElapsedMs(0);
       setRecordingState("recording");
     };
+    const handleRecorderPause = () => {
+      pendingRecorderActionRef.current = null;
+      recordingTimelineRef.current = pauseRecordingTimeline(
+        recordingTimelineRef.current,
+        Date.now()
+      );
+      setRecordingElapsedMs(recordingTimelineRef.current.accumulatedMs);
+      setRecordingState("paused");
+    };
+    const handleRecorderResume = () => {
+      pendingRecorderActionRef.current = null;
+      recordingTimelineRef.current = resumeRecordingTimeline(
+        recordingTimelineRef.current,
+        Date.now()
+      );
+      setRecordingState("recording");
+    };
     const handleRecorderStop = (result: WechatMiniprogram.OnStopCallbackResult) => {
+      pendingRecorderActionRef.current = null;
       if (discardNextRecordingRef.current) {
         discardNextRecordingRef.current = false;
         return;
       }
 
-      const duration = result.duration || Date.now() - recordingStartedAtRef.current;
+      const duration =
+        result.duration ||
+        getRecordingElapsedMs(recordingTimelineRef.current, Date.now());
       if (!result.tempFilePath || duration < 500) {
         setRecordingState("idle");
         Taro.showToast({ title: "录音时间太短，请重新录制", icon: "none" });
@@ -104,11 +135,23 @@ export default function Practice() {
       setRecordingState("recorded");
     };
     const handleRecorderError = () => {
+      const pendingAction = pendingRecorderActionRef.current;
+      pendingRecorderActionRef.current = null;
+      if (pendingAction === "pause") {
+        Taro.showToast({ title: "暂停录音失败，请重试", icon: "none" });
+        return;
+      }
+      if (pendingAction === "resume") {
+        Taro.showToast({ title: "继续录音失败，请重试", icon: "none" });
+        return;
+      }
       setRecordingState("idle");
       Taro.showToast({ title: "录音失败，请检查麦克风权限", icon: "none" });
     };
 
     recorder.onStart(handleRecorderStart);
+    recorder.onPause(handleRecorderPause);
+    recorder.onResume(handleRecorderResume);
     recorder.onStop(handleRecorderStop);
     recorder.onError(handleRecorderError);
     recorderRef.current = recorder;
@@ -116,9 +159,19 @@ export default function Practice() {
     return () => {
       discardNextRecordingRef.current = true;
       recorder.stop();
-      recorder.offStart(handleRecorderStart);
-      recorder.offStop(handleRecorderStop);
-      recorder.offError(handleRecorderError);
+      // 部分基础库提供移除监听接口，旧基础库没有时使用可选调用兼容。
+      const recorderWithCleanup = recorder as typeof recorder & {
+        offStart?: (callback: typeof handleRecorderStart) => void;
+        offPause?: (callback: typeof handleRecorderPause) => void;
+        offResume?: (callback: typeof handleRecorderResume) => void;
+        offStop?: (callback: typeof handleRecorderStop) => void;
+        offError?: (callback: typeof handleRecorderError) => void;
+      };
+      recorderWithCleanup.offStart?.(handleRecorderStart);
+      recorderWithCleanup.offPause?.(handleRecorderPause);
+      recorderWithCleanup.offResume?.(handleRecorderResume);
+      recorderWithCleanup.offStop?.(handleRecorderStop);
+      recorderWithCleanup.offError?.(handleRecorderError);
       modelAudio.destroy();
       recordingAudio.destroy();
       modelAudioRef.current = null;
@@ -131,17 +184,24 @@ export default function Practice() {
     if (recordingState !== "recording") return undefined;
 
     const timer = setInterval(() => {
-      setRecordingElapsedMs(Date.now() - recordingStartedAtRef.current);
+      setRecordingElapsedMs(
+        getRecordingElapsedMs(recordingTimelineRef.current, Date.now())
+      );
     }, 250);
     return () => clearInterval(timer);
   }, [recordingState]);
 
   const playModelAudio = (trackId: string, url: string) => {
     const audio = modelAudioRef.current;
-    if (!audio || recordingState === "recording") return;
+    if (!audio || recordingState === "uploading") return;
 
     recordingAudioRef.current?.stop();
-    // 每次只播放用户主动点击的当前音频，不自动循环或连续播放下一段。
+    if (playingTrackId === trackId) {
+      audio.stop();
+      setPlayingTrackId(null);
+      return;
+    }
+    // 示范音频由用户手动控制，录音中和暂停时也允许播放或切换。
     audio.stop();
     audio.src = url;
     audio.play();
@@ -149,10 +209,15 @@ export default function Practice() {
   };
 
   const resetRecording = () => {
-    if (recordingState === "recording") {
+    if (recordingState === "recording" || recordingState === "paused") {
       discardNextRecordingRef.current = true;
       recorderRef.current?.stop();
     }
+    pendingRecorderActionRef.current = null;
+    recordingTimelineRef.current = {
+      accumulatedMs: 0,
+      activeSinceMs: null,
+    };
     recordingAudioRef.current?.stop();
     setTempRecordingPath("");
     setRecordingDurationMs(0);
@@ -160,11 +225,7 @@ export default function Practice() {
     setRecordingState("idle");
   };
 
-  const switchPractice = (nextIndex: number) => {
-    if (recordingState === "uploading") {
-      Taro.showToast({ title: "打卡上传中，请稍候", icon: "none" });
-      return;
-    }
+  const performPracticeSwitch = (nextIndex: number) => {
     modelAudioRef.current?.stop();
     setPlayingTrackId(null);
     resetRecording();
@@ -172,12 +233,43 @@ export default function Practice() {
     Taro.pageScrollTo({ scrollTop: 0, duration: 200 });
   };
 
+  const requestPracticeSwitch = async (nextIndex: number) => {
+    if (nextIndex === practiceIndex) {
+      setIsDirectoryOpen(false);
+      return;
+    }
+
+    const policy = getPracticeSwitchPolicy(recordingState);
+    if (policy === "block-uploading") {
+      Taro.showToast({ title: "打卡上传中，请稍候", icon: "none" });
+      return;
+    }
+    if (policy === "confirm-discard") {
+      const confirmation = await Taro.showModal({
+        title: "切换训练？",
+        content: "切换后将放弃当前录音，是否继续？",
+        confirmText: "放弃并切换",
+        confirmColor: "#d85b3f",
+      });
+      if (!confirmation.confirm) return;
+    }
+
+    setIsDirectoryOpen(false);
+    performPracticeSwitch(nextIndex);
+  };
+
+  const openPracticeDirectory = () => {
+    if (recordingState === "uploading") {
+      Taro.showToast({ title: "打卡上传中，请稍候", icon: "none" });
+      return;
+    }
+    setIsDirectoryOpen(true);
+  };
+
   const startRecording = async () => {
     if (!recorderRef.current || recordingState === "uploading") return;
 
-    modelAudioRef.current?.stop();
     recordingAudioRef.current?.stop();
-    setPlayingTrackId(null);
     setTempRecordingPath("");
     setRecordingDurationMs(0);
 
@@ -203,8 +295,35 @@ export default function Practice() {
     });
   };
 
+  const pauseRecording = () => {
+    if (recordingState !== "recording" || !recorderRef.current) return;
+
+    pendingRecorderActionRef.current = "pause";
+    try {
+      recorderRef.current.pause();
+    } catch (_error) {
+      pendingRecorderActionRef.current = null;
+      Taro.showToast({ title: "暂停录音失败，请重试", icon: "none" });
+    }
+  };
+
+  const resumeRecording = () => {
+    if (recordingState !== "paused" || !recorderRef.current) return;
+
+    pendingRecorderActionRef.current = "resume";
+    try {
+      recorderRef.current.resume();
+    } catch (_error) {
+      pendingRecorderActionRef.current = null;
+      Taro.showToast({ title: "继续录音失败，请重试", icon: "none" });
+    }
+  };
+
   const stopRecording = () => {
-    if (recordingState === "recording") recorderRef.current?.stop();
+    if (recordingState === "recording" || recordingState === "paused") {
+      pendingRecorderActionRef.current = null;
+      recorderRef.current?.stop();
+    }
   };
 
   const playRecording = () => {
@@ -279,7 +398,9 @@ export default function Practice() {
   }
 
   const shownDuration =
-    recordingState === "recording" ? recordingElapsedMs : recordingDurationMs;
+    recordingState === "recording" || recordingState === "paused"
+      ? recordingElapsedMs
+      : recordingDurationMs;
 
   return (
     <View className='practice-page'>
@@ -292,7 +413,7 @@ export default function Practice() {
           </Text>
           <Text
             className='practice-header__directory'
-            onClick={() => setIsDirectoryOpen(true)}
+            onClick={openPracticeDirectory}
           >
             目录
           </Text>
@@ -357,9 +478,43 @@ export default function Practice() {
               <Text className='recording-indicator__pulse' />
               <Text>正在录音，请完成本页跟读</Text>
             </View>
-            <Button className='record-button record-button--stop' onClick={stopRecording}>
-              结束录音
-            </Button>
+            <View className='recording-controls'>
+              <Button
+                className='record-button record-button--pause'
+                onClick={pauseRecording}
+              >
+                暂停录音
+              </Button>
+              <Button
+                className='record-button record-button--stop'
+                onClick={stopRecording}
+              >
+                结束录音
+              </Button>
+            </View>
+          </>
+        )}
+
+        {recordingState === "paused" && (
+          <>
+            <View className='recording-indicator recording-indicator--paused'>
+              <Text className='recording-indicator__pulse' />
+              <Text>录音已暂停，可播放示范音频后继续</Text>
+            </View>
+            <View className='recording-controls'>
+              <Button
+                className='record-button record-button--resume'
+                onClick={resumeRecording}
+              >
+                继续录音
+              </Button>
+              <Button
+                className='record-button record-button--stop'
+                onClick={stopRecording}
+              >
+                结束录音
+              </Button>
+            </View>
           </>
         )}
 
@@ -401,7 +556,9 @@ export default function Practice() {
           className={`practice-navigation__button ${
             practiceIndex === 0 ? "practice-navigation__button--disabled" : ""
           }`}
-          onClick={() => practiceIndex > 0 && switchPractice(practiceIndex - 1)}
+          onClick={() =>
+            practiceIndex > 0 && requestPracticeSwitch(practiceIndex - 1)
+          }
         >
           <Text>上一个训练</Text>
         </View>
@@ -413,7 +570,7 @@ export default function Practice() {
           }`}
           onClick={() =>
             practiceIndex < SAMPLE_BOOK_PRACTICES.length - 1 &&
-            switchPractice(practiceIndex + 1)
+            requestPracticeSwitch(practiceIndex + 1)
           }
         >
           <Text>下一个训练</Text>
@@ -425,10 +582,7 @@ export default function Practice() {
         currentPracticeIndex={practiceIndex}
         open={isDirectoryOpen}
         onClose={() => setIsDirectoryOpen(false)}
-        onSelect={(nextIndex) => {
-          setIsDirectoryOpen(false);
-          switchPractice(nextIndex);
-        }}
+        onSelect={(nextIndex) => requestPracticeSwitch(nextIndex)}
       />
     </View>
   );

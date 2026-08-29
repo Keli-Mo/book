@@ -118,6 +118,8 @@
   color: #c9542a;
 
   &--stop { background: #e85d3d; color: #ffffff; }
+  &--pause { background: #fff0dd; color: #a9651f; }
+  &--resume { background: #e4f3ed; color: #2f765f; }
   &__dot {
     width: 20rpx;
     height: 20rpx;
@@ -126,6 +128,9 @@
     background: #e85d3d;
   }
 }
+
+.recording-controls { display: flex; gap: 16rpx; }
+.recording-controls .record-button { flex: 1; }
 
 .recording-indicator {
   display: flex;
@@ -141,6 +146,12 @@
     border-radius: 50%;
     background: #e85d3d;
     box-shadow: 0 0 0 10rpx rgba(232, 93, 61, 0.12);
+  }
+
+  &--paused { color: #a9651f; }
+  &--paused &__pulse {
+    background: #e69a3b;
+    box-shadow: none;
   }
 }
 
