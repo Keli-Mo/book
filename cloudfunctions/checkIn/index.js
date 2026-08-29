@@ -27,6 +27,14 @@ const requireInteger = (value, fieldName, min, max) => {
   return value;
 };
 
+const requireDurationMs = (value) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error("录音时长格式不正确");
+  }
+  // 部分真机返回带小数的毫秒值，入库前统一为整数，避免误拒绝有效录音。
+  return requireInteger(Math.round(value), "录音时长", 500, 300000);
+};
+
 const toPublicSummary = (record) => ({
   id: record._id,
   shareToken: record.shareToken,
@@ -52,7 +60,7 @@ const createCheckIn = async (event, openId) => {
     _openid: openId,
     shareToken: crypto.randomBytes(16).toString("hex"),
     recordingFileId,
-    durationMs: requireInteger(event.durationMs, "录音时长", 500, 300000),
+    durationMs: requireDurationMs(event.durationMs),
     bookId: requireText(event.bookId, "教材编号", 30),
     bookTitle: requireText(event.bookTitle, "教材名称", 100),
     practiceId: requireText(event.practiceId, "训练编号", 80),

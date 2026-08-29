@@ -91,7 +91,8 @@ const call = (event) => moduleContainer.exports.main(event);
   const created = await call({
     action: "create",
     recordingFileId: "cloud://test.bucket/checkins/2026-08-27/record.mp3",
-    durationMs: 3200,
+    // 部分真机会返回带小数的毫秒值，云函数应保存为整数而不是拒绝整次打卡。
+    durationMs: 3200.4,
     bookId: "3",
     bookTitle: "CASA阅读启蒙&自然拼读 1",
     practiceId: "3-page-4",
@@ -106,6 +107,7 @@ const call = (event) => moduleContainer.exports.main(event);
   const ownerDetail = await call({ action: "detail", id: created.data.id });
   assert.equal(ownerDetail.ok, true);
   assert.equal(ownerDetail.data.isOwner, true);
+  assert.equal(ownerDetail.data.durationMs, 3200);
   assert.match(ownerDetail.data.recordingUrl, /^https:\/\/example\.test\//);
 
   currentOpenId = "visitor-openid";
