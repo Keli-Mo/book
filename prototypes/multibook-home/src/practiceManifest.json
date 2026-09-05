@@ -1,0 +1,71 @@
+[
+  {
+    "id": "3-page-4",
+    "bookId": "3",
+    "section": "Unit 1 课文",
+    "pageNumber": 4,
+    "image": "/assets/practice/casa1-page-4.png",
+    "tracks": [
+      {
+        "id": "3-4-0",
+        "label": "Track03",
+        "src": "/assets/practice/Track03.mp3",
+        "left": 39.02,
+        "top": 11.06
+      },
+      {
+        "id": "3-4-1",
+        "label": "Track04",
+        "src": "/assets/practice/Track04.mp3",
+        "left": 47.76,
+        "top": 44.22
+      }
+    ]
+  },
+  {
+    "id": "3-page-5",
+    "bookId": "3",
+    "section": "Unit 1 课文",
+    "pageNumber": 5,
+    "image": "/assets/practice/casa1-page-5.png",
+    "tracks": [
+      {
+        "id": "3-5-0",
+        "label": "Track05",
+        "src": "/assets/practice/Track05.mp3",
+        "left": 62.26,
+        "top": 33.99
+      },
+      {
+        "id": "3-5-1",
+        "label": "Track06",
+        "src": "/assets/practice/Track06.mp3",
+        "left": 37.1,
+        "top": 74.75
+      }
+    ]
+  },
+  {
+    "id": "3-page-6",
+    "bookId": "3",
+    "section": "Unit 1 课文",
+    "pageNumber": 6,
+    "image": "/assets/practice/casa1-page-6.png",
+    "tracks": [
+      {
+        "id": "3-6-0",
+        "label": "Track07",
+        "src": "/assets/practice/Track07.mp3",
+        "left": 39.02,
+        "top": 11.22
+      },
+      {
+        "id": "3-6-1",
+        "label": "Track08",
+        "src": "/assets/practice/Track08.mp3",
+        "left": 47.97,
+        "top": 44.22
+      }
+    ]
+  }
+]
