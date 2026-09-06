@@ -23,6 +23,12 @@ assert.doesNotMatch(practiceStyles, /\.practice-guide\b/, "训练页不应保留
 assert.doesNotMatch(home, /班级|showClassPreview/, "首页底栏应只保留当前可用入口");
 assert.match(home, />学习</, "首页底栏应保留学习入口");
 assert.match(home, />我的</, "首页底栏应保留我的入口");
+assert.match(
+  home,
+  /className='library-home__heading'>继续跟读<\/Text>/,
+  "首页继续学习区域应使用直接自然的标题",
+);
+assert.doesNotMatch(home, /接着上次，读一页/, "首页不应保留生硬的引导文案");
 
 assert.doesNotMatch(
   myCheckIns,

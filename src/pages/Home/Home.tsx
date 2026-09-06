@@ -70,7 +70,7 @@ export default function Home() {
       </View>
 
       <View className='library-home__content'>
-        <Text className='library-home__heading'>接着上次，读一页</Text>
+        <Text className='library-home__heading'>继续跟读</Text>
 
         <View className='continue-card'>
           <Image
