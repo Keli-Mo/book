@@ -31,10 +31,20 @@ assert.doesNotMatch(
 );
 assert.match(
   myCheckIns,
-  /getCheckInCover\(record\.bookId, record\.imageUrl\)/,
-  "打卡卡片应优先显示教材封面，并兼容旧记录图片",
+  /src=\{record\.imageUrl\}/,
+  "打卡卡片应显示这次练习对应的教材内页",
 );
-assert.match(myCheckIns, /mode='aspectFit'/, "教材封面应完整显示，不能裁切");
+assert.doesNotMatch(
+  myCheckIns,
+  /BOOKS|getCheckInCover|bookCoverById/,
+  "打卡卡片不应再把教材内页替换成书籍封面",
+);
+assert.match(myCheckIns, /mode='aspectFit'/, "教材内页应完整显示，不能裁切");
+assert.match(
+  myCheckIns,
+  /第\s*\{record\.pageNumber\}\s*页/,
+  "打卡卡片应显示这次练习的教材页数",
+);
 assert.match(
   myCheckInsStyles,
   /&__open,[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*center;/,
@@ -46,4 +56,4 @@ assert.match(
   "打卡操作按钮文字不应换行",
 );
 
-console.log("界面收紧测试通过：提示文案、底栏、封面和按钮布局符合要求。");
+console.log("界面收紧测试通过：提示文案、底栏、教材内页和按钮布局符合要求。");

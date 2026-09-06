@@ -1,7 +1,6 @@
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useCallback, useState } from "react";
-import { BOOKS } from "@/features/bookLibrary/bookCatalog";
 import {
   CheckInSummary,
   getReadableCloudError,
@@ -14,12 +13,6 @@ import {
 } from "@/utils/checkInFormat";
 
 import "./MyCheckIns.scss";
-
-const bookCoverById = new Map(BOOKS.map((book) => [book.id, book.cover]));
-
-// 优先展示完整教材封面；旧记录或未知教材继续用当时保存的页面图兜底。
-const getCheckInCover = (bookId: string, fallbackImageUrl: string) =>
-  bookCoverById.get(bookId) || fallbackImageUrl;
 
 export default function MyCheckIns() {
   const [records, setRecords] = useState<CheckInSummary[]>([]);
@@ -113,10 +106,11 @@ export default function MyCheckIns() {
 
       {records.map((record) => (
         <View className='check-in-list-card' key={record.id}>
-          <View className='check-in-list-card__cover'>
+          <View className='check-in-list-card__preview'>
+            {/* 使用打卡记录中的教材内页，老师可直接确认学生练习的位置。 */}
             <Image
               className='check-in-list-card__image'
-              src={getCheckInCover(record.bookId, record.imageUrl)}
+              src={record.imageUrl}
               mode='aspectFit'
               webp
               lazyLoad
@@ -126,7 +120,7 @@ export default function MyCheckIns() {
             <Text className='check-in-list-card__section'>{record.sectionTitle}</Text>
             <Text className='check-in-list-card__book'>{record.bookTitle}</Text>
             <Text className='check-in-list-card__meta'>
-              {formatCheckInTime(record.createdAt)} · {formatRecordingDuration(record.durationMs)}
+              第 {record.pageNumber} 页 · {formatCheckInTime(record.createdAt)} · {formatRecordingDuration(record.durationMs)}
             </Text>
             <View className='check-in-list-card__actions'>
               <Button className='check-in-list-card__open' onClick={() => openRecord(record)}>回听与分享</Button>
