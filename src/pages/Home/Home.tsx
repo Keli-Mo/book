@@ -1,12 +1,12 @@
 import { Image, Text, View } from "@tarojs/components";
 import Taro, { useShareAppMessage } from "@tarojs/taro";
-import { AtIcon } from "taro-ui";
-import FriendsOutlined from "@taroify/icons/FriendsOutlined";
+import AtIcon from "taro-ui/lib/components/icon";
 import {
   BOOKS,
   BOOK_SERIES,
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
+import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavigation";
 import { sharedImage } from "@/constant";
 
 import "./Home.scss";
@@ -14,7 +14,12 @@ import "./Home.scss";
 const PRIMARY_BOOK = BOOKS.find((book) => book.id === "3") || BOOKS[0];
 
 export default function Home() {
-  const statusBarHeight = Taro.getSystemInfoSync().statusBarHeight || 20;
+  const windowInfo = Taro.getSystemInfoSync();
+  const navigationMetrics = calculateHomeNavigationMetrics(
+    windowInfo.windowWidth,
+    windowInfo.statusBarHeight || 20,
+    Taro.getMenuButtonBoundingClientRect(),
+  );
 
   useShareAppMessage(() => ({
     title: "海沙牛娃英语听力与跟读训练",
@@ -45,20 +50,26 @@ export default function Home() {
     <View className='library-home'>
       <View
         className='library-home__navigation'
-        style={{ paddingTop: `${statusBarHeight}px` }}
+        style={{ paddingTop: `${navigationMetrics.statusBarHeight}px` }}
       >
-        <View className='library-home__navigation-main'>
+        <View
+          className='library-home__navigation-main'
+          style={{
+            height: `${navigationMetrics.navigationHeight}px`,
+            paddingRight: `${navigationMetrics.capsuleReserve}px`,
+          }}
+        >
           <View className='library-home__brand'>
             <AtIcon value='bookmark' size='27' color='#278465' />
             <Text>海沙牛娃</Text>
           </View>
-        </View>
-        <View
-          className='library-home__search'
-          hoverClass='is-pressed'
-          onClick={() => openLibrary("all")}
-        >
-          <AtIcon value='search' size='25' color='#173f34' />
+          <View
+            className='library-home__search'
+            hoverClass='is-pressed'
+            onClick={() => openLibrary("all")}
+          >
+            <AtIcon value='search' size='25' color='#173f34' />
+          </View>
         </View>
       </View>
 
@@ -149,7 +160,7 @@ export default function Home() {
           hoverClass='is-pressed'
           onClick={showClassPreview}
         >
-          <FriendsOutlined size='24' color='#7b827f' />
+          <AtIcon value='home' size='24' color='#7b827f' />
           <Text>班级</Text>
         </View>
         <View

@@ -15,9 +15,8 @@
 
   &__navigation-main {
     display: flex;
-    height: 80rpx;
+    box-sizing: border-box;
     align-items: center;
-    padding-right: 210rpx;
   }
 
   &__brand {

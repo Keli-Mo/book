@@ -24,6 +24,10 @@ export type BookSeries = {
   availableCount: number;
 };
 
+export type BookOpenAction =
+  | { type: "practice"; url: string }
+  | { type: "unavailable"; message: string };
+
 const COVER_ORIGIN =
   "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la";
 
@@ -354,3 +358,14 @@ export const filterBooks = (
     return matchesSeries && (!normalizedQuery || searchableText.includes(normalizedQuery));
   });
 };
+
+/**
+ * 所有书籍入口统一经过这里，防止尚未核对页码与音频的教材误入训练页。
+ */
+export const resolveBookAction = (book: BookCatalogItem): BookOpenAction =>
+  book.available
+    ? { type: "practice", url: "/pages/Practice/Practice?practice=0" }
+    : {
+        type: "unavailable",
+        message: "这本教材正在核对页面与音频，暂未开放",
+      };

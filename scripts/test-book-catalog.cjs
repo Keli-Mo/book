@@ -25,7 +25,8 @@ vm.runInNewContext(compiled.outputText, {
   exports: moduleContainer.exports,
 });
 
-const { BOOKS, BOOK_SERIES, filterBooks } = moduleContainer.exports;
+const { BOOKS, BOOK_SERIES, filterBooks, resolveBookAction } =
+  moduleContainer.exports;
 
 assert.equal(BOOKS.length, 23, "应展示 23 本真实教材，不包含两张课程海报");
 assert.deepEqual(
@@ -54,6 +55,19 @@ assert.deepEqual(
   Array.from(filterBooks(BOOKS, "our-world", "练习册"), (book) => book.id),
   ["12", "14"],
   "搜索与系列筛选应能组合使用",
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(resolveBookAction(BOOKS[0]))),
+  { type: "practice", url: "/pages/Practice/Practice?practice=0" },
+  "CASA 第 1 册应进入现有跟读页",
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(resolveBookAction(BOOKS[1]))),
+  {
+    type: "unavailable",
+    message: "这本教材正在核对页面与音频，暂未开放",
+  },
+  "其他教材必须停留在书架并提示未开放",
 );
 
 console.log("教材目录测试通过：23 本教材、5 个系列、开放状态和搜索筛选均正确。");

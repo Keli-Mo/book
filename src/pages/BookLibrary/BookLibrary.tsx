@@ -1,11 +1,12 @@
 import { Image, Input, ScrollView, Text, View } from "@tarojs/components";
 import Taro, { useRouter, useShareAppMessage } from "@tarojs/taro";
 import { useMemo, useState } from "react";
-import { AtIcon } from "taro-ui";
+import AtIcon from "taro-ui/lib/components/icon";
 import {
   BOOKS,
   BOOK_SERIES,
   filterBooks,
+  resolveBookAction,
   type BookCatalogItem,
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
@@ -37,9 +38,11 @@ export default function BookLibrary() {
   }));
 
   const openBook = (book: BookCatalogItem) => {
-    if (!book.available) {
+    const action = resolveBookAction(book);
+
+    if (action.type === "unavailable") {
       Taro.showToast({
-        title: "这本教材正在核对页面与音频，暂未开放",
+        title: action.message,
         icon: "none",
         duration: 2200,
       });
@@ -47,7 +50,7 @@ export default function BookLibrary() {
     }
 
     // 沿用已验证的训练页，录音、暂停、回听、目录和云打卡逻辑不在此处复制。
-    Taro.navigateTo({ url: "/pages/Practice/Practice?practice=0" });
+    Taro.navigateTo({ url: action.url });
   };
 
   return (
