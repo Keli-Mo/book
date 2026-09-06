@@ -30,18 +30,6 @@
   }
 }
 
-.practice-guide {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 22rpx;
-  padding: 24rpx 28rpx;
-  border-radius: 22rpx;
-  background: #e5f4ed;
-
-  &__title { color: #276c58; font-size: 29rpx; font-weight: 700; }
-  &__text { margin-top: 10rpx; color: #5a756b; font-size: 24rpx; line-height: 1.6; }
-}
-
 .practice-book-page {
   position: relative;
   overflow: hidden;

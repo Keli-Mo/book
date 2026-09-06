@@ -42,10 +42,6 @@ export default function Home() {
     Taro.navigateTo({ url: "/pages/MyCheckIns/MyCheckIns" });
   };
 
-  const showClassPreview = () => {
-    Taro.showToast({ title: "班级功能稍后开放", icon: "none" });
-  };
-
   return (
     <View className='library-home'>
       <View
@@ -154,14 +150,6 @@ export default function Home() {
         <View className='home-tabs__item is-active'>
           <AtIcon value='folder' size='24' color='#2f856a' />
           <Text>学习</Text>
-        </View>
-        <View
-          className='home-tabs__item'
-          hoverClass='is-pressed'
-          onClick={showClassPreview}
-        >
-          <AtIcon value='home' size='24' color='#7b827f' />
-          <Text>班级</Text>
         </View>
         <View
           className='home-tabs__item'

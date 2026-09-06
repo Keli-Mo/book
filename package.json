@@ -35,7 +35,8 @@
     "test:recording-interaction": "node scripts/test-recording-interaction.cjs",
     "test:book-catalog": "node scripts/test-book-catalog.cjs",
     "test:book-library-pages": "node scripts/test-book-library-pages.cjs",
-    "test:home-navigation": "node scripts/test-home-navigation.cjs"
+    "test:home-navigation": "node scripts/test-home-navigation.cjs",
+    "test:ui-refinements": "node scripts/test-ui-refinements.cjs"
   },
   "browserslist": {
     "development": [

@@ -420,13 +420,6 @@ export default function Practice() {
         </View>
       </View>
 
-      <View className='practice-guide'>
-        <Text className='practice-guide__title'>先听示范，再完成自己的跟读</Text>
-        <Text className='practice-guide__text'>
-          点击教材页上的播放标记收听当前位置对应的示范音频。
-        </Text>
-      </View>
-
       <View className='practice-book-page'>
         <Image
           className='practice-book-page__image'
@@ -461,15 +454,10 @@ export default function Practice() {
         </View>
 
         {recordingState === "idle" && (
-          <>
-            <Text className='practice-recorder__tip'>
-              录音先保存在本机，回听满意后再完成打卡。
-            </Text>
-            <Button className='record-button' onClick={startRecording}>
-              <Text className='record-button__dot' />
-              开始跟读录音
-            </Button>
-          </>
+          <Button className='record-button' onClick={startRecording}>
+            <Text className='record-button__dot' />
+            开始跟读录音
+          </Button>
         )}
 
         {recordingState === "recording" && (

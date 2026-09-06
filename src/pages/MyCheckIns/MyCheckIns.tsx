@@ -1,6 +1,7 @@
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { useCallback, useState } from "react";
+import { BOOKS } from "@/features/bookLibrary/bookCatalog";
 import {
   CheckInSummary,
   getReadableCloudError,
@@ -13,6 +14,12 @@ import {
 } from "@/utils/checkInFormat";
 
 import "./MyCheckIns.scss";
+
+const bookCoverById = new Map(BOOKS.map((book) => [book.id, book.cover]));
+
+// 优先展示完整教材封面；旧记录或未知教材继续用当时保存的页面图兜底。
+const getCheckInCover = (bookId: string, fallbackImageUrl: string) =>
+  bookCoverById.get(bookId) || fallbackImageUrl;
 
 export default function MyCheckIns() {
   const [records, setRecords] = useState<CheckInSummary[]>([]);
@@ -101,12 +108,20 @@ export default function MyCheckIns() {
     <View className='my-check-ins'>
       <View className='my-check-ins__intro'>
         <Text className='my-check-ins__title'>我的录音打卡</Text>
-        <Text className='my-check-ins__tip'>共 {records.length} 次 · 仅本人可查看完整列表</Text>
+        <Text className='my-check-ins__tip'>共 {records.length} 次</Text>
       </View>
 
       {records.map((record) => (
         <View className='check-in-list-card' key={record.id}>
-          <Image className='check-in-list-card__image' src={record.imageUrl} mode='aspectFill' webp lazyLoad />
+          <View className='check-in-list-card__cover'>
+            <Image
+              className='check-in-list-card__image'
+              src={getCheckInCover(record.bookId, record.imageUrl)}
+              mode='aspectFit'
+              webp
+              lazyLoad
+            />
+          </View>
           <View className='check-in-list-card__content'>
             <Text className='check-in-list-card__section'>{record.sectionTitle}</Text>
             <Text className='check-in-list-card__book'>{record.bookTitle}</Text>
