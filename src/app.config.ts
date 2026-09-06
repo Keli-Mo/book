@@ -1,6 +1,7 @@
 export default defineAppConfig({
   pages: [
     "pages/Home/Home",
+    "pages/BookLibrary/BookLibrary",
     "pages/Practice/Practice",
     "pages/CheckInDetail/CheckInDetail",
     "pages/MyCheckIns/MyCheckIns",

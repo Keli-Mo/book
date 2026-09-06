@@ -1,19 +1,20 @@
 import { Image, Text, View } from "@tarojs/components";
 import Taro, { useShareAppMessage } from "@tarojs/taro";
+import { AtIcon } from "taro-ui";
+import FriendsOutlined from "@taroify/icons/FriendsOutlined";
 import {
-  SAMPLE_BOOK_COVER,
-  SAMPLE_BOOK_PRACTICES,
-  SAMPLE_BOOK_TITLE,
-} from "@/features/listeningPractice/book3Practice";
+  BOOKS,
+  BOOK_SERIES,
+  type BookSeriesId,
+} from "@/features/bookLibrary/bookCatalog";
 import { sharedImage } from "@/constant";
 
 import "./Home.scss";
 
+const PRIMARY_BOOK = BOOKS.find((book) => book.id === "3") || BOOKS[0];
+
 export default function Home() {
-  const totalTracks = SAMPLE_BOOK_PRACTICES.reduce(
-    (count, practice) => count + practice.tracks.length,
-    0,
-  );
+  const statusBarHeight = Taro.getSystemInfoSync().statusBarHeight || 20;
 
   useShareAppMessage(() => ({
     title: "海沙牛娃英语听力与跟读训练",
@@ -21,7 +22,14 @@ export default function Home() {
     imageUrl: sharedImage,
   }));
 
+  const openLibrary = (seriesId: BookSeriesId | "all" = "all") => {
+    Taro.navigateTo({
+      url: `/pages/BookLibrary/BookLibrary?series=${seriesId}`,
+    });
+  };
+
   const startPractice = () => {
+    // 当前只有 CASA 第 1 册完成了教材页、音频和热点位置核对。
     Taro.navigateTo({ url: "/pages/Practice/Practice?practice=0" });
   };
 
@@ -29,55 +37,129 @@ export default function Home() {
     Taro.navigateTo({ url: "/pages/MyCheckIns/MyCheckIns" });
   };
 
+  const showClassPreview = () => {
+    Taro.showToast({ title: "班级功能稍后开放", icon: "none" });
+  };
+
   return (
-    <View className='practice-home'>
-      <View className='practice-home__hero'>
-        <Text className='practice-home__eyebrow'>LISTEN · REPEAT · CHECK IN</Text>
-        <Text className='practice-home__title'>每天听一点，开口读一遍</Text>
-        <Text className='practice-home__subtitle'>
-          原版示范听力与教材练习位置一一对应，完成跟读后生成你的学习打卡。
-        </Text>
+    <View className='library-home'>
+      <View
+        className='library-home__navigation'
+        style={{ paddingTop: `${statusBarHeight}px` }}
+      >
+        <View className='library-home__navigation-main'>
+          <View className='library-home__brand'>
+            <AtIcon value='bookmark' size='27' color='#278465' />
+            <Text>海沙牛娃</Text>
+          </View>
+        </View>
+        <View
+          className='library-home__search'
+          hoverClass='is-pressed'
+          onClick={() => openLibrary("all")}
+        >
+          <AtIcon value='search' size='25' color='#173f34' />
+        </View>
       </View>
 
-      <View className='practice-home__section-title'>
-        <Text>本期课程</Text>
-        <Text className='practice-home__section-tip'>先从一本书开始</Text>
-      </View>
+      <View className='library-home__content'>
+        <Text className='library-home__heading'>接着上次，读一页</Text>
 
-      <View className='course-card' onClick={startPractice}>
-        <Image
-          className='course-card__cover'
-          src={SAMPLE_BOOK_COVER}
-          mode='aspectFill'
-          webp
-          lazyLoad
-        />
-        <View className='course-card__content'>
-          <Text className='course-card__badge'>英语听力跟读</Text>
-          <Text className='course-card__title'>{SAMPLE_BOOK_TITLE}</Text>
-          <Text className='course-card__summary'>
-            {SAMPLE_BOOK_PRACTICES.length} 个跟读训练 · {totalTracks} 段示范音频
-          </Text>
-          <View className='course-card__action'>
-            <Text>开始今天的训练</Text>
-            <Text className='course-card__arrow'>→</Text>
+        <View className='continue-card'>
+          <Image
+            className='continue-card__cover'
+            src={PRIMARY_BOOK.cover}
+            mode='aspectFit'
+            lazyLoad
+          />
+          <View className='continue-card__body'>
+            <Text className='continue-card__title'>{PRIMARY_BOOK.title}</Text>
+            <Text className='continue-card__progress'>上次练到 Unit 1 · 课文</Text>
+            <View className='continue-card__available'>
+              <AtIcon value='check-circle' size='16' color='#2f856a' />
+              <Text>可跟读</Text>
+            </View>
+            <View
+              className='continue-card__button'
+              hoverClass='is-pressed'
+              onClick={startPractice}
+            >
+              <Text>继续跟读</Text>
+            </View>
+          </View>
+        </View>
+
+        <View className='series-section'>
+          <View className='series-section__heading'>
+            <View>
+              <Text className='series-section__title'>按系列找书</Text>
+              <Text className='series-section__summary'>5 个系列 · 23 册</Text>
+            </View>
+            <View
+              className='series-section__all'
+              hoverClass='is-pressed'
+              onClick={() => openLibrary("all")}
+            >
+              <Text>全部教材</Text>
+              <AtIcon value='chevron-right' size='16' color='#2f856a' />
+            </View>
+          </View>
+
+          <View className='series-list'>
+            {BOOK_SERIES.map((series) => (
+              <View
+                className='series-row'
+                key={series.id}
+                hoverClass='is-pressed'
+                onClick={() => openLibrary(series.id)}
+              >
+                <Image
+                  className='series-row__cover'
+                  src={series.cover}
+                  mode='aspectFit'
+                  lazyLoad
+                />
+                <View className='series-row__text'>
+                  <Text className='series-row__title'>{series.title}</Text>
+                  <Text className='series-row__range'>{series.rangeLabel}</Text>
+                </View>
+                <Text
+                  className={`series-row__state ${
+                    series.availableCount ? "is-available" : ""
+                  }`}
+                >
+                  {series.availableCount
+                    ? `${series.availableCount} 册可练`
+                    : "待上线"}
+                </Text>
+                <AtIcon value='chevron-right' size='18' color='#9aa6a2' />
+              </View>
+            ))}
           </View>
         </View>
       </View>
 
-      <View className='practice-home__notice'>
-        <Text className='practice-home__notice-title'>训练方式</Text>
-        <Text className='practice-home__notice-text'>
-          点击教材页上的播放标记收听对应示范，再完成自己的跟读录音。示范音频不会自动连播或循环。
-        </Text>
-      </View>
-
-      <View className='my-check-ins-entry' onClick={openMyCheckIns}>
-        <View className='my-check-ins-entry__content'>
-          <Text className='my-check-ins-entry__title'>我的跟读打卡</Text>
-          <Text className='my-check-ins-entry__text'>回听、分享或删除已上传的录音</Text>
+      <View className='home-tabs'>
+        <View className='home-tabs__item is-active'>
+          <AtIcon value='folder' size='24' color='#2f856a' />
+          <Text>学习</Text>
         </View>
-        <Text className='my-check-ins-entry__arrow'>›</Text>
+        <View
+          className='home-tabs__item'
+          hoverClass='is-pressed'
+          onClick={showClassPreview}
+        >
+          <FriendsOutlined size='24' color='#7b827f' />
+          <Text>班级</Text>
+        </View>
+        <View
+          className='home-tabs__item'
+          hoverClass='is-pressed'
+          onClick={openMyCheckIns}
+        >
+          <AtIcon value='user' size='24' color='#7b827f' />
+          <Text>我的</Text>
+        </View>
       </View>
     </View>
   );

@@ -1,3 +1,5 @@
 export default definePageConfig({
-  navigationBarTitleText: '英语跟读训练',
+  navigationStyle: "custom",
+  backgroundColor: "#f7faf9",
+  enableShareAppMessage: true,
 })
