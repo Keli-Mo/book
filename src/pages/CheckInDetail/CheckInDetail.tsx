@@ -1,7 +1,15 @@
 import { Button, Image, Text, View } from "@tarojs/components";
-import Taro, { useRouter, useShareAppMessage } from "@tarojs/taro";
+import Taro, {
+  useDidHide,
+  useRouter,
+  useShareAppMessage,
+} from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import { sharedImage } from "@/constant";
+import {
+  getPlaybackPositionMs,
+  stopAudioIfLoaded,
+} from "@/features/listeningPractice/audioPlayback";
 import {
   CheckInDetail as CheckInDetailData,
   getCheckInDetail,
@@ -22,7 +30,9 @@ export default function CheckInDetail() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackPositionMs, setPlaybackPositionMs] = useState(0);
   const audioRef = useRef<Taro.InnerAudioContext | null>(null);
+  const recordingDurationMsRef = useRef(0);
 
   useShareAppMessage(() => {
     if (!detail) {
@@ -43,10 +53,22 @@ export default function CheckInDetail() {
     const audio = Taro.createInnerAudioContext();
     audio.loop = false;
     audio.onPlay(() => setIsPlaying(true));
-    audio.onEnded(() => setIsPlaying(false));
-    audio.onStop(() => setIsPlaying(false));
+    audio.onTimeUpdate(() => {
+      setPlaybackPositionMs(
+        getPlaybackPositionMs(audio.currentTime, recordingDurationMsRef.current),
+      );
+    });
+    audio.onEnded(() => {
+      setIsPlaying(false);
+      setPlaybackPositionMs(0);
+    });
+    audio.onStop(() => {
+      setIsPlaying(false);
+      setPlaybackPositionMs(0);
+    });
     audio.onError(() => {
       setIsPlaying(false);
+      setPlaybackPositionMs(0);
       Taro.showToast({ title: "录音播放失败", icon: "none" });
     });
     audioRef.current = audio;
@@ -56,6 +78,13 @@ export default function CheckInDetail() {
       audioRef.current = null;
     };
   }, []);
+
+  useDidHide(() => {
+    // 页面进入后台或跳转到别页时，立即停止录音回听并复位显示。
+    stopAudioIfLoaded(audioRef.current);
+    setIsPlaying(false);
+    setPlaybackPositionMs(0);
+  });
 
   useEffect(() => {
     let active = true;
@@ -68,7 +97,10 @@ export default function CheckInDetail() {
 
       try {
         const result = await getCheckInDetail(recordId, routeToken);
-        if (active) setDetail(result);
+        if (active) {
+          recordingDurationMsRef.current = result.durationMs;
+          setDetail(result);
+        }
       } catch (error) {
         if (active) setErrorMessage(getReadableCloudError(error));
       } finally {
@@ -85,9 +117,12 @@ export default function CheckInDetail() {
     const audio = audioRef.current;
     if (!audio || !detail?.recordingUrl) return;
     if (isPlaying) {
-      audio.stop();
+      stopAudioIfLoaded(audio);
+      setIsPlaying(false);
+      setPlaybackPositionMs(0);
       return;
     }
+    setPlaybackPositionMs(0);
     audio.src = detail.recordingUrl;
     audio.play();
   };
@@ -138,7 +173,9 @@ export default function CheckInDetail() {
       <View className='shared-recording'>
         <Text className='shared-recording__label'>本次跟读录音</Text>
         <Text className='shared-recording__duration'>
-          {formatRecordingDuration(detail.durationMs)}
+          {isPlaying
+            ? `${formatRecordingDuration(playbackPositionMs)} / ${formatRecordingDuration(detail.durationMs)}`
+            : formatRecordingDuration(detail.durationMs)}
         </Text>
         <Button className='shared-recording__play' onClick={toggleRecording}>
           <Text className='shared-recording__play-icon'>{isPlaying ? "■" : "▶"}</Text>

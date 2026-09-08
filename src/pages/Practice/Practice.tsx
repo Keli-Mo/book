@@ -1,6 +1,7 @@
 import { Button, Image, Text, View } from "@tarojs/components";
-import Taro, { useRouter } from "@tarojs/taro";
+import Taro, { useDidHide, useRouter } from "@tarojs/taro";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { stopAudioIfLoaded } from "@/features/listeningPractice/audioPlayback";
 import {
   SAMPLE_BOOK_ID,
   SAMPLE_BOOK_PRACTICES,
@@ -191,18 +192,26 @@ export default function Practice() {
     return () => clearInterval(timer);
   }, [recordingState]);
 
+  useDidHide(() => {
+    // navigateTo 只会隐藏当前页；在这里停止，避免音频跨页面继续播放。
+    stopAudioIfLoaded(modelAudioRef.current);
+    stopAudioIfLoaded(recordingAudioRef.current);
+    setPlayingTrackId(null);
+    setIsPlayingRecording(false);
+  });
+
   const playModelAudio = (trackId: string, url: string) => {
     const audio = modelAudioRef.current;
     if (!audio || recordingState === "uploading") return;
 
-    recordingAudioRef.current?.stop();
+    stopAudioIfLoaded(recordingAudioRef.current);
     if (playingTrackId === trackId) {
-      audio.stop();
+      stopAudioIfLoaded(audio);
       setPlayingTrackId(null);
       return;
     }
     // 示范音频由用户手动控制，录音中和暂停时也允许播放或切换。
-    audio.stop();
+    stopAudioIfLoaded(audio);
     audio.src = url;
     audio.play();
     setPlayingTrackId(trackId);
@@ -218,7 +227,7 @@ export default function Practice() {
       accumulatedMs: 0,
       activeSinceMs: null,
     };
-    recordingAudioRef.current?.stop();
+    stopAudioIfLoaded(recordingAudioRef.current);
     setTempRecordingPath("");
     setRecordingDurationMs(0);
     setRecordingElapsedMs(0);
@@ -226,7 +235,7 @@ export default function Practice() {
   };
 
   const performPracticeSwitch = (nextIndex: number) => {
-    modelAudioRef.current?.stop();
+    stopAudioIfLoaded(modelAudioRef.current);
     setPlayingTrackId(null);
     resetRecording();
     setPracticeIndex(nextIndex);
@@ -269,7 +278,7 @@ export default function Practice() {
   const startRecording = async () => {
     if (!recorderRef.current || recordingState === "uploading") return;
 
-    recordingAudioRef.current?.stop();
+    stopAudioIfLoaded(recordingAudioRef.current);
     setTempRecordingPath("");
     setRecordingDurationMs(0);
 
@@ -330,10 +339,10 @@ export default function Practice() {
     const audio = recordingAudioRef.current;
     if (!audio || !tempRecordingPath) return;
 
-    modelAudioRef.current?.stop();
+    stopAudioIfLoaded(modelAudioRef.current);
     setPlayingTrackId(null);
     if (isPlayingRecording) {
-      audio.stop();
+      stopAudioIfLoaded(audio);
       return;
     }
     audio.src = tempRecordingPath;
