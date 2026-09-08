@@ -17,7 +17,7 @@ import {
 } from "@/services/cloudCheckIn";
 import {
   formatCheckInTime,
-  formatRecordingDuration,
+  formatPlaybackDurationLabel,
 } from "@/utils/checkInFormat";
 
 import "./CheckInDetail.scss";
@@ -173,9 +173,11 @@ export default function CheckInDetail() {
       <View className='shared-recording'>
         <Text className='shared-recording__label'>本次跟读录音</Text>
         <Text className='shared-recording__duration'>
-          {isPlaying
-            ? `${formatRecordingDuration(playbackPositionMs)} / ${formatRecordingDuration(detail.durationMs)}`
-            : formatRecordingDuration(detail.durationMs)}
+          {formatPlaybackDurationLabel(
+            isPlaying,
+            playbackPositionMs,
+            detail.durationMs,
+          )}
         </Text>
         <Button className='shared-recording__play' onClick={toggleRecording}>
           <Text className='shared-recording__play-icon'>{isPlaying ? "■" : "▶"}</Text>

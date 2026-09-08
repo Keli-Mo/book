@@ -6,6 +6,37 @@ const vm = require("vm");
 const ts = require("typescript");
 
 const projectRoot = path.resolve(__dirname, "..");
+const checkInFormatPath = path.join(
+  projectRoot,
+  "src/utils/checkInFormat.ts",
+);
+const formatCompiled = ts.transpileModule(
+  fs.readFileSync(checkInFormatPath, "utf8"),
+  {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2017,
+    },
+  },
+);
+const formatModule = { exports: {} };
+vm.runInNewContext(formatCompiled.outputText, {
+  module: formatModule,
+  exports: formatModule.exports,
+});
+const { formatPlaybackDurationLabel } = formatModule.exports;
+
+assert.equal(
+  formatPlaybackDurationLabel(false, 3000, 8000),
+  "0:08",
+  "未播放时只显示总时长",
+);
+assert.equal(
+  formatPlaybackDurationLabel(true, 3000, 8000),
+  "0:03 / 0:08",
+  "播放中应显示当前进度和总时长",
+);
+
 const helperPath = path.join(
   projectRoot,
   "src/features/listeningPractice/audioPlayback.ts",
@@ -227,8 +258,8 @@ assert.match(
 );
 assert.match(
   checkInDetail,
-  /formatRecordingDuration\(playbackPositionMs\)[\s\S]*?formatRecordingDuration\(detail\.durationMs\)/,
-  "分享页播放时应同时显示当前时间和总时长",
+  /formatPlaybackDurationLabel\(\s*isPlaying,\s*playbackPositionMs,\s*detail\.durationMs,?\s*\)/,
+  "分享页应使用经过行为测试的播放时长标签函数",
 );
 
 console.log("音频播放测试通过：首次停止保护、离页停止与分享进度均正确。");

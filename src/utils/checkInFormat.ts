@@ -5,6 +5,15 @@ export const formatRecordingDuration = (durationMs: number) => {
   return `${minutes}:${seconds}`;
 };
 
+export const formatPlaybackDurationLabel = (
+  isPlaying: boolean,
+  playbackPositionMs: number,
+  durationMs: number,
+) =>
+  isPlaying
+    ? `${formatRecordingDuration(playbackPositionMs)} / ${formatRecordingDuration(durationMs)}`
+    : formatRecordingDuration(durationMs);
+
 export const formatCheckInTime = (rawValue: unknown) => {
   // 云数据库日期在真机、开发者工具和云函数返回中可能是 Date、字符串或 {$date}。
   const value =
