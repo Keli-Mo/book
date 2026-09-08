@@ -203,6 +203,19 @@ const checkInDetail = fs.readFileSync(
   path.join(projectRoot, "src/pages/CheckInDetail/CheckInDetail.tsx"),
   "utf8",
 );
+const checkInDetailConfig = fs.readFileSync(
+  path.join(
+    projectRoot,
+    "src/pages/CheckInDetail/CheckInDetail.config.ts",
+  ),
+  "utf8",
+);
+
+assert.match(
+  checkInDetailConfig,
+  /homeButton:\s*true/,
+  "分享详情页应在系统导航栏显示原生首页按钮",
+);
 
 assert.match(practice, /useDidHide/, "训练页应监听页面隐藏");
 const practiceHideBody = practice.match(
