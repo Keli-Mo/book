@@ -3,16 +3,25 @@ interface StoppableAudio {
   stop: () => void;
 }
 
-interface TrackAudio extends StoppableAudio {
+interface TrackAudioError {
+  errCode?: number;
+  errMsg?: string;
+}
+
+interface TrackAudio {
+  src: string;
+  loop: boolean;
   play: () => void;
+  destroy: () => void;
+  onEnded: (callback: () => void) => void;
+  onError: (callback: (error: TrackAudioError) => void) => void;
+  onStop: (callback: () => void) => void;
 }
 
 interface TrackAudioController {
   toggle: (trackId: string, url: string) => void;
-  handleStop: () => void;
-  handleEnded: () => void;
-  handleError: () => void;
   stop: () => boolean;
+  dispose: () => boolean;
 }
 
 interface AudioStopController {
@@ -32,89 +41,85 @@ export const stopAudioIfLoaded = (
 };
 
 /**
- * 管理同一个 InnerAudioContext 上的音轨切换。
- * 微信的 onStop 可能延迟到达，因此切换时先等待旧音轨确认停止，再启动新音轨。
+ * 为每次示范播放创建独立会话，并用代次隔离旧实例的迟到事件。
+ * 这样旧音轨的 onStop、onEnded 或 onError 都不会覆盖新音轨状态。
  */
 export const createTrackAudioController = (
-  audio: TrackAudio,
+  createAudio: () => TrackAudio,
   onTrackChange: (trackId: string | null) => void,
+  onPlaybackError?: (error: TrackAudioError) => void,
 ): TrackAudioController => {
-  let activeTrackId: string | null = null;
-  let pendingTrack: { id: string; url: string } | null = null;
-  let waitingForStop = false;
+  let generation = 0;
+  let activeSession: {
+    audio: TrackAudio;
+    generation: number;
+    trackId: string;
+  } | null = null;
 
-  const startTrack = (track: { id: string; url: string }) => {
-    activeTrackId = track.id;
-    audio.src = track.url;
-    audio.play();
-    onTrackChange(track.id);
-  };
+  const isCurrentSession = (sessionGeneration: number) =>
+    activeSession?.generation === sessionGeneration;
 
-  const clearTrack = () => {
-    activeTrackId = null;
-    pendingTrack = null;
-    onTrackChange(null);
-  };
+  const releaseActiveSession = (notify: boolean) => {
+    const session = activeSession;
+    activeSession = null;
+    if (!session) {
+      if (notify) onTrackChange(null);
+      return false;
+    }
 
-  const stopCurrentTrack = () => {
-    if (!audio.src) return false;
-    // 先写入等待状态，兼容基础库同步触发 onStop 的情况。
-    waitingForStop = true;
-    stopAudioIfLoaded(audio);
+    // 先让会话失效再销毁；destroy 同步触发的旧回调也会被代次检查拦截。
+    session.audio.destroy();
+    if (notify) onTrackChange(null);
     return true;
+  };
+
+  const startTrack = (trackId: string, url: string) => {
+    const audio = createAudio();
+    const sessionGeneration = generation + 1;
+    generation = sessionGeneration;
+    activeSession = { audio, generation: sessionGeneration, trackId };
+    audio.loop = false;
+
+    const finishCurrentSession = () => {
+      if (!isCurrentSession(sessionGeneration)) return;
+      activeSession = null;
+      audio.destroy();
+      onTrackChange(null);
+    };
+
+    audio.onEnded(finishCurrentSession);
+    audio.onStop(finishCurrentSession);
+    audio.onError((error) => {
+      if (!isCurrentSession(sessionGeneration)) return;
+      activeSession = null;
+      audio.destroy();
+      onTrackChange(null);
+      onPlaybackError?.(error);
+    });
+
+    audio.src = url;
+    if (!isCurrentSession(sessionGeneration)) return;
+    onTrackChange(trackId);
+    audio.play();
   };
 
   return {
     toggle(trackId, url) {
-      const nextTrack = { id: trackId, url };
-
-      if (activeTrackId === trackId && pendingTrack === null) {
-        clearTrack();
-        if (!waitingForStop) stopCurrentTrack();
+      if (activeSession?.trackId === trackId) {
+        releaseActiveSession(true);
         return;
       }
 
-      if (waitingForStop) {
-        // 连续点击时只保留用户最后选择的音轨。
-        pendingTrack = nextTrack;
-        return;
-      }
-
-      if (activeTrackId !== null) {
-        pendingTrack = nextTrack;
-        if (stopCurrentTrack()) return;
-        pendingTrack = null;
-      }
-
-      startTrack(nextTrack);
-    },
-
-    handleStop() {
-      waitingForStop = false;
-      if (pendingTrack) {
-        const nextTrack = pendingTrack;
-        pendingTrack = null;
-        startTrack(nextTrack);
-        return;
-      }
-      clearTrack();
-    },
-
-    handleEnded() {
-      waitingForStop = false;
-      clearTrack();
-    },
-
-    handleError() {
-      waitingForStop = false;
-      clearTrack();
+      releaseActiveSession(false);
+      startTrack(trackId, url);
     },
 
     stop() {
-      const hasActiveTrack = activeTrackId !== null;
-      clearTrack();
-      if (!hasActiveTrack || waitingForStop) return false;
-      return stopCurrentTrack();
+      return releaseActiveSession(true);
+    },
+
+    dispose() {
+      return releaseActiveSession(false);
     },
   };
 };

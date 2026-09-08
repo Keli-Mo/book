@@ -76,19 +76,14 @@ export default function Practice() {
   const practice = SAMPLE_BOOK_PRACTICES[practiceIndex];
 
   useEffect(() => {
-    const modelAudio = Taro.createInnerAudioContext();
-    modelAudio.loop = false;
     const modelAudioController = createTrackAudioController(
-      modelAudio,
+      () => Taro.createInnerAudioContext(),
       setPlayingTrackId,
+      (error) => {
+        console.error("示范音频播放失败", error.errCode, error.errMsg);
+        Taro.showToast({ title: "示范音频播放失败", icon: "none" });
+      },
     );
-    modelAudio.onEnded(modelAudioController.handleEnded);
-    modelAudio.onStop(modelAudioController.handleStop);
-    modelAudio.onError((error) => {
-      modelAudioController.handleError();
-      console.error("示范音频播放失败", error.errCode, error.errMsg);
-      Taro.showToast({ title: "示范音频播放失败", icon: "none" });
-    });
     modelAudioControllerRef.current = modelAudioController;
 
     const recordingAudio = Taro.createInnerAudioContext();
@@ -184,7 +179,7 @@ export default function Practice() {
       recorderWithCleanup.offResume?.(handleRecorderResume);
       recorderWithCleanup.offStop?.(handleRecorderStop);
       recorderWithCleanup.offError?.(handleRecorderError);
-      modelAudio.destroy();
+      modelAudioController.dispose();
       recordingAudio.destroy();
       modelAudioControllerRef.current = null;
       recordingAudioRef.current = null;

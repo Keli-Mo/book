@@ -51,26 +51,54 @@ assert.equal(
 );
 assert.equal(stopCount, 1, "已有 src 时只停止一次");
 
-const playbackEvents = [];
-let playbackSource = "";
-const fakeTrackAudio = {
-  get src() { return playbackSource; },
-  set src(value) {
-    playbackSource = value;
-    playbackEvents.push(`src:${value}`);
-  },
-  stop: () => playbackEvents.push("stop"),
-  play: () => playbackEvents.push("play"),
+const createFakeTrackAudio = ({ stopOnDestroy = false } = {}) => {
+  let source = "";
+  const events = [];
+  const listeners = {
+    ended: [],
+    error: [],
+    stop: [],
+  };
+
+  const audio = {
+    loop: true,
+    get src() { return source; },
+    set src(value) {
+      source = value;
+      events.push(`src:${value}`);
+    },
+    play: () => events.push("play"),
+    destroy: () => {
+      events.push("destroy");
+      if (stopOnDestroy) listeners.stop.forEach((listener) => listener());
+    },
+    onEnded: (listener) => listeners.ended.push(listener),
+    onError: (listener) => listeners.error.push(listener),
+    onStop: (listener) => listeners.stop.push(listener),
+    emitEnded: () => listeners.ended.forEach((listener) => listener()),
+    emitError: () => listeners.error.forEach((listener) => listener({ errCode: 1, errMsg: "old" })),
+    emitStop: () => listeners.stop.forEach((listener) => listener()),
+    events,
+  };
+  return audio;
 };
+
+const trackAudios = [];
 const shownTrackIds = [];
+const playbackErrors = [];
 const trackController = createTrackAudioController(
-  fakeTrackAudio,
+  () => {
+    const audio = createFakeTrackAudio();
+    trackAudios.push(audio);
+    return audio;
+  },
   (trackId) => shownTrackIds.push(trackId),
+  (error) => playbackErrors.push(error),
 );
 
 trackController.toggle("track-a", "audio-a.mp3");
 assert.deepEqual(
-  playbackEvents,
+  trackAudios[0].events,
   ["src:audio-a.mp3", "play"],
   "首次播放必须先设置 src 再播放，不能提前 stop",
 );
@@ -78,43 +106,47 @@ assert.deepEqual(shownTrackIds, ["track-a"]);
 
 trackController.toggle("track-b", "audio-b.mp3");
 assert.deepEqual(
-  playbackEvents,
-  ["src:audio-a.mp3", "play", "stop"],
-  "切换音轨时应先等待旧音轨停止",
+  trackAudios[0].events,
+  ["src:audio-a.mp3", "play", "destroy"],
+  "切换音轨时应先销毁旧播放会话",
 );
-assert.equal(playbackSource, "audio-a.mp3", "onStop 前不能抢先替换音源");
-
-trackController.handleStop();
 assert.deepEqual(
-  playbackEvents,
-  ["src:audio-a.mp3", "play", "stop", "src:audio-b.mp3", "play"],
-  "收到旧音轨 onStop 后再启动新音轨",
+  trackAudios[1].events,
+  ["src:audio-b.mp3", "play"],
+  "新音轨应使用独立播放会话",
 );
-assert.equal(shownTrackIds.at(-1), "track-b", "旧 onStop 不能清空新音轨状态");
+assert.equal(shownTrackIds.at(-1), "track-b");
 
-const synchronousEvents = [];
-let synchronousSource = "";
-let synchronousController;
-const synchronousAudio = {
-  get src() { return synchronousSource; },
-  set src(value) {
-    synchronousSource = value;
-    synchronousEvents.push(`src:${value}`);
+trackAudios[0].emitStop();
+trackAudios[0].emitEnded();
+trackAudios[0].emitError();
+assert.equal(
+  shownTrackIds.at(-1),
+  "track-b",
+  "旧会话迟到的 stop/end/error 都不能清空新音轨状态",
+);
+assert.equal(playbackErrors.length, 0, "旧会话的错误不能误报到新播放");
+
+trackAudios[1].emitEnded();
+assert.equal(shownTrackIds.at(-1), null, "当前音轨结束后应恢复未播放状态");
+assert.equal(trackAudios[1].events.at(-1), "destroy", "结束后应释放音频实例");
+
+const synchronousAudios = [];
+const synchronousTrackIds = [];
+const synchronousController = createTrackAudioController(
+  () => {
+    const audio = createFakeTrackAudio({ stopOnDestroy: true });
+    synchronousAudios.push(audio);
+    return audio;
   },
-  play: () => synchronousEvents.push("play"),
-  stop: () => {
-    synchronousEvents.push("stop");
-    synchronousController.handleStop();
-  },
-};
-synchronousController = createTrackAudioController(synchronousAudio, () => {});
+  (trackId) => synchronousTrackIds.push(trackId),
+);
 synchronousController.toggle("track-a", "audio-a.mp3");
 synchronousController.toggle("track-b", "audio-b.mp3");
-synchronousController.toggle("track-b", "audio-b.mp3");
 assert.equal(
-  synchronousEvents.filter((event) => event === "stop").length,
-  2,
-  "即使 onStop 同步到达，第二次点击当前音轨也必须真正停止",
+  synchronousTrackIds.at(-1),
+  "track-b",
+  "销毁时同步到达的旧 onStop 不能覆盖新音轨状态",
 );
 
 let modelStopCount = 0;
