@@ -1,7 +1,11 @@
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidHide, useRouter } from "@tarojs/taro";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { stopAudioIfLoaded } from "@/features/listeningPractice/audioPlayback";
+import {
+  createTrackAudioController,
+  stopAudioIfLoaded,
+  stopPracticePlayback,
+} from "@/features/listeningPractice/audioPlayback";
 import {
   SAMPLE_BOOK_ID,
   SAMPLE_BOOK_PRACTICES,
@@ -56,7 +60,9 @@ export default function Practice() {
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [isPlayingRecording, setIsPlayingRecording] = useState(false);
-  const modelAudioRef = useRef<Taro.InnerAudioContext | null>(null);
+  const modelAudioControllerRef = useRef<ReturnType<
+    typeof createTrackAudioController
+  > | null>(null);
   const recordingAudioRef = useRef<Taro.InnerAudioContext | null>(null);
   const recorderRef = useRef<WechatMiniprogram.RecorderManager | null>(null);
   const recordingTimelineRef = useRef<RecordingTimeline>({
@@ -72,13 +78,18 @@ export default function Practice() {
   useEffect(() => {
     const modelAudio = Taro.createInnerAudioContext();
     modelAudio.loop = false;
-    modelAudio.onEnded(() => setPlayingTrackId(null));
-    modelAudio.onStop(() => setPlayingTrackId(null));
-    modelAudio.onError(() => {
-      setPlayingTrackId(null);
+    const modelAudioController = createTrackAudioController(
+      modelAudio,
+      setPlayingTrackId,
+    );
+    modelAudio.onEnded(modelAudioController.handleEnded);
+    modelAudio.onStop(modelAudioController.handleStop);
+    modelAudio.onError((error) => {
+      modelAudioController.handleError();
+      console.error("示范音频播放失败", error.errCode, error.errMsg);
       Taro.showToast({ title: "示范音频播放失败", icon: "none" });
     });
-    modelAudioRef.current = modelAudio;
+    modelAudioControllerRef.current = modelAudioController;
 
     const recordingAudio = Taro.createInnerAudioContext();
     recordingAudio.loop = false;
@@ -175,7 +186,7 @@ export default function Practice() {
       recorderWithCleanup.offError?.(handleRecorderError);
       modelAudio.destroy();
       recordingAudio.destroy();
-      modelAudioRef.current = null;
+      modelAudioControllerRef.current = null;
       recordingAudioRef.current = null;
       recorderRef.current = null;
     };
@@ -194,27 +205,21 @@ export default function Practice() {
 
   useDidHide(() => {
     // navigateTo 只会隐藏当前页；在这里停止，避免音频跨页面继续播放。
-    stopAudioIfLoaded(modelAudioRef.current);
-    stopAudioIfLoaded(recordingAudioRef.current);
+    stopPracticePlayback(
+      modelAudioControllerRef.current,
+      recordingAudioRef.current,
+    );
     setPlayingTrackId(null);
     setIsPlayingRecording(false);
   });
 
   const playModelAudio = (trackId: string, url: string) => {
-    const audio = modelAudioRef.current;
-    if (!audio || recordingState === "uploading") return;
+    const controller = modelAudioControllerRef.current;
+    if (!controller || recordingState === "uploading") return;
 
     stopAudioIfLoaded(recordingAudioRef.current);
-    if (playingTrackId === trackId) {
-      stopAudioIfLoaded(audio);
-      setPlayingTrackId(null);
-      return;
-    }
     // 示范音频由用户手动控制，录音中和暂停时也允许播放或切换。
-    stopAudioIfLoaded(audio);
-    audio.src = url;
-    audio.play();
-    setPlayingTrackId(trackId);
+    controller.toggle(trackId, url);
   };
 
   const resetRecording = () => {
@@ -235,7 +240,7 @@ export default function Practice() {
   };
 
   const performPracticeSwitch = (nextIndex: number) => {
-    stopAudioIfLoaded(modelAudioRef.current);
+    modelAudioControllerRef.current?.stop();
     setPlayingTrackId(null);
     resetRecording();
     setPracticeIndex(nextIndex);
@@ -339,7 +344,7 @@ export default function Practice() {
     const audio = recordingAudioRef.current;
     if (!audio || !tempRecordingPath) return;
 
-    stopAudioIfLoaded(modelAudioRef.current);
+    modelAudioControllerRef.current?.stop();
     setPlayingTrackId(null);
     if (isPlayingRecording) {
       stopAudioIfLoaded(audio);
