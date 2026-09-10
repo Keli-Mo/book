@@ -29,6 +29,8 @@
     "dev:jd": "npm run build:jd -- --watch",
     "dev:harmony-hybrid": "npm run build:harmony-hybrid -- --watch",
     "validate:book-audio": "node scripts/validate-book-audio-map.cjs",
+    "validate:book-assets-remote": "node scripts/validate-book-assets-remote.cjs",
+    "test:book-assets-remote": "node scripts/test-book-assets-remote.cjs",
     "test:book-practice": "node scripts/test-book-practice.cjs",
     "test:practice-book-route": "node scripts/test-practice-book-route.cjs",
     "test:check-in": "node scripts/test-check-in-function.cjs",
