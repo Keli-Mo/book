@@ -1,4 +1,4 @@
-import type { ListeningPractice } from "./book3Practice";
+import type { ListeningPractice } from "./bookPractice";
 
 export interface PracticeDirectoryItem {
   id: string;
