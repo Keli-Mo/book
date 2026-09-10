@@ -35,8 +35,34 @@ const myCheckIns = fs.readFileSync(
   path.join(projectRoot, "src/pages/MyCheckIns/MyCheckIns.tsx"),
   "utf8",
 );
-const parseTsx = (fileName, source) =>
-  ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const createTsxProgram = (fileName, source) => {
+  const absoluteFileName = path.resolve(fileName);
+  const compilerOptions = {
+    jsx: ts.JsxEmit.React,
+    noLib: true,
+    target: ts.ScriptTarget.ESNext,
+  };
+  const host = ts.createCompilerHost(compilerOptions, true);
+  host.getSourceFile = (requestedFileName, languageVersion) =>
+    path.resolve(requestedFileName) === absoluteFileName
+      ? ts.createSourceFile(
+          absoluteFileName,
+          source,
+          languageVersion,
+          true,
+          ts.ScriptKind.TSX,
+        )
+      : undefined;
+  host.fileExists = (requestedFileName) =>
+    path.resolve(requestedFileName) === absoluteFileName;
+  host.readFile = (requestedFileName) =>
+    path.resolve(requestedFileName) === absoluteFileName ? source : undefined;
+  const program = ts.createProgram([absoluteFileName], compilerOptions, host);
+  return {
+    checker: program.getTypeChecker(),
+    sourceFile: program.getSourceFile(absoluteFileName),
+  };
+};
 const findNodes = (node, predicate, results = []) => {
   if (predicate(node)) results.push(node);
   ts.forEachChild(node, (child) => {
@@ -45,33 +71,41 @@ const findNodes = (node, predicate, results = []) => {
   return results;
 };
 const isIdentifier = (node, name) => ts.isIdentifier(node) && node.text === name;
-const hasDefaultBookImport = (sourceFile) =>
-  sourceFile.statements.some(
-    (statement) =>
-      ts.isImportDeclaration(statement) &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text === "@/features/listeningPractice/bookPractice" &&
-      statement.importClause &&
-      statement.importClause.namedBindings &&
-      ts.isNamedImports(statement.importClause.namedBindings) &&
-      statement.importClause.namedBindings.elements.some(
-        (element) =>
-          element.name.text === "DEFAULT_BOOK_ID" &&
-          (!element.propertyName || element.propertyName.text === "DEFAULT_BOOK_ID"),
-      ),
+const isNamedImportBinding = (checker, identifier, moduleSpecifier, exportName) => {
+  const symbol = checker.getSymbolAtLocation(identifier);
+  return Boolean(
+    symbol?.declarations?.some((declaration) => {
+      if (
+        !ts.isImportSpecifier(declaration) ||
+        declaration.name.text !== exportName ||
+        (declaration.propertyName && declaration.propertyName.text !== exportName)
+      ) {
+        return false;
+      }
+
+      let ancestor = declaration.parent;
+      while (ancestor && !ts.isImportDeclaration(ancestor)) ancestor = ancestor.parent;
+      return (
+        ancestor &&
+        ts.isStringLiteral(ancestor.moduleSpecifier) &&
+        ancestor.moduleSpecifier.text === moduleSpecifier
+      );
+    }),
   );
-const hasLocalDefaultBookIdBinding = (sourceFile) =>
-  findNodes(
-    sourceFile,
-    (node) => ts.isVariableDeclaration(node) && isIdentifier(node.name, "DEFAULT_BOOK_ID"),
-  ).length > 0;
-const isDefaultPracticeUrl = (node) =>
+};
+const isDefaultPracticeUrl = (node, checker) =>
   ts.isTemplateExpression(node) &&
   node.head.text === "/pages/Practice/Practice?bookId=" &&
   node.templateSpans.length === 1 &&
   isIdentifier(node.templateSpans[0].expression, "DEFAULT_BOOK_ID") &&
+  isNamedImportBinding(
+    checker,
+    node.templateSpans[0].expression,
+    "@/features/listeningPractice/bookPractice",
+    "DEFAULT_BOOK_ID",
+  ) &&
   node.templateSpans[0].literal.text === "&practice=0";
-const isDefaultPracticeNavigation = (node) => {
+const isDefaultPracticeNavigation = (node, checker) => {
   if (
     !ts.isCallExpression(node) ||
     !ts.isPropertyAccessExpression(node.expression) ||
@@ -87,7 +121,7 @@ const isDefaultPracticeNavigation = (node) => {
     (property) =>
       ts.isPropertyAssignment(property) &&
       isIdentifier(property.name, "url") &&
-      isDefaultPracticeUrl(property.initializer),
+      isDefaultPracticeUrl(property.initializer, checker),
   );
 };
 const getVariableArrowFunction = (sourceFile, name) => {
@@ -102,21 +136,13 @@ const getVariableArrowFunction = (sourceFile, name) => {
   return declaration?.initializer;
 };
 const assertHomeDefaultEntry = (source) => {
-  const sourceFile = parseTsx("Home.tsx", source);
-  assert.ok(
-    hasDefaultBookImport(sourceFile),
-    "首页必须从 @/features/listeningPractice/bookPractice 精确导入 DEFAULT_BOOK_ID",
-  );
-  assert.equal(
-    hasLocalDefaultBookIdBinding(sourceFile),
-    false,
-    "首页实际点击路径不得用局部 DEFAULT_BOOK_ID 遮蔽统一导入",
-  );
+  const { checker, sourceFile } = createTsxProgram("Home.tsx", source);
   const startPractice = getVariableArrowFunction(sourceFile, "startPractice");
   assert.ok(startPractice, "首页必须保留 startPractice 实际点击处理器");
   assert.ok(
-    findNodes(startPractice.body, isDefaultPracticeNavigation).length === 1,
-    "首页 startPractice 必须用 DEFAULT_BOOK_ID 导航至实际训练路由",
+    findNodes(startPractice.body, (node) => isDefaultPracticeNavigation(node, checker))
+      .length === 1,
+    "首页 startPractice 必须用从 bookPractice 导入的 DEFAULT_BOOK_ID 导航至实际训练路由",
   );
   assert.ok(
     findNodes(
@@ -132,16 +158,7 @@ const assertHomeDefaultEntry = (source) => {
   );
 };
 const assertEmptyCheckInDefaultEntry = (source) => {
-  const sourceFile = parseTsx("MyCheckIns.tsx", source);
-  assert.ok(
-    hasDefaultBookImport(sourceFile),
-    "我的打卡必须从 @/features/listeningPractice/bookPractice 精确导入 DEFAULT_BOOK_ID",
-  );
-  assert.equal(
-    hasLocalDefaultBookIdBinding(sourceFile),
-    false,
-    "我的打卡实际点击路径不得用局部 DEFAULT_BOOK_ID 遮蔽统一导入",
-  );
+  const { checker, sourceFile } = createTsxProgram("MyCheckIns.tsx", source);
   const firstPracticeButton = findNodes(
     sourceFile,
     (node) =>
@@ -162,8 +179,10 @@ const assertEmptyCheckInDefaultEntry = (source) => {
       ts.isJsxExpression(click.initializer) &&
       click.initializer.expression &&
       ts.isArrowFunction(click.initializer.expression) &&
-      findNodes(click.initializer.expression.body, isDefaultPracticeNavigation).length === 1,
-    "空打卡按钮必须在实际点击处理器中用 DEFAULT_BOOK_ID 导航至训练路由",
+      findNodes(click.initializer.expression.body, (node) =>
+        isDefaultPracticeNavigation(node, checker),
+      ).length === 1,
+    "空打卡按钮必须在实际点击处理器中用从 bookPractice 导入的 DEFAULT_BOOK_ID 导航至训练路由",
   );
 };
 
@@ -202,40 +221,101 @@ assert.deepEqual(
 assertHomeDefaultEntry(home);
 assertEmptyCheckInDefaultEntry(myCheckIns);
 
-const localConstantMutation = (source) =>
-  source.replace(
-    'import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";',
-    'const DEFAULT_BOOK_ID = "3";',
+const assertDefaultBookReferenceUsesPracticeImport = (source) => {
+  const { checker, sourceFile } = createTsxProgram("DefaultBook.fixture.tsx", source);
+  const template = findNodes(
+    sourceFile,
+    (node) =>
+      ts.isTemplateExpression(node) &&
+      node.head.text === "/pages/Practice/Practice?bookId=" &&
+      node.templateSpans.length === 1 &&
+      isIdentifier(node.templateSpans[0].expression, "DEFAULT_BOOK_ID") &&
+      node.templateSpans[0].literal.text === "&practice=0",
+  )[0];
+  assert.ok(template, "变异 fixture 必须包含默认教材训练 URL");
+  assert.ok(
+    isNamedImportBinding(
+      checker,
+      template.templateSpans[0].expression,
+      "@/features/listeningPractice/bookPractice",
+      "DEFAULT_BOOK_ID",
+    ),
+    "实际 URL 的 DEFAULT_BOOK_ID 必须绑定到 bookPractice 命名导入",
   );
-const shadowedLocalConstantMutation = (source) =>
-  source.replace(
-    "return (",
-    'const DEFAULT_BOOK_ID = "25";\n\n  return (',
-  );
-const deadTokenAndWrongUrlMutation = (source) =>
-  source.replace(
-    'url: `/pages/Practice/Practice?bookId=${DEFAULT_BOOK_ID}&practice=0`,',
-    'url: "/pages/Practice/Practice?practice=0", // bookId=${DEFAULT_BOOK_ID}&practice=0',
-  );
-for (const [name, assertEntry, source] of [
-  ["首页", assertHomeDefaultEntry, home],
-  ["空打卡入口", assertEmptyCheckInDefaultEntry, myCheckIns],
-]) {
+};
+const defaultBookShadowFixtures = [
+  [
+    "函数参数",
+    `import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+function startPractice(DEFAULT_BOOK_ID) {
+  return \`/pages/Practice/Practice?bookId=\${DEFAULT_BOOK_ID}&practice=0\`;
+}`,
+  ],
+  [
+    "箭头参数",
+    `import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+const startPractice = (DEFAULT_BOOK_ID) =>
+  \`/pages/Practice/Practice?bookId=\${DEFAULT_BOOK_ID}&practice=0\`;`,
+  ],
+  [
+    "局部变量",
+    `import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+const startPractice = () => {
+  const DEFAULT_BOOK_ID = "25";
+  return \`/pages/Practice/Practice?bookId=\${DEFAULT_BOOK_ID}&practice=0\`;
+};`,
+  ],
+  [
+    "局部函数",
+    `import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+const startPractice = () => {
+  function DEFAULT_BOOK_ID() { return "25"; }
+  return \`/pages/Practice/Practice?bookId=\${DEFAULT_BOOK_ID}&practice=0\`;
+};`,
+  ],
+  [
+    "局部类",
+    `import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+const startPractice = () => {
+  class DEFAULT_BOOK_ID {}
+  return \`/pages/Practice/Practice?bookId=\${DEFAULT_BOOK_ID}&practice=0\`;
+};`,
+  ],
+  [
+    "catch binding",
+    `import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+const startPractice = () => {
+  try { throw "25"; } catch (DEFAULT_BOOK_ID) {
+    return \`/pages/Practice/Practice?bookId=\${DEFAULT_BOOK_ID}&practice=0\`;
+  }
+};`,
+  ],
+];
+for (const [name, fixture] of defaultBookShadowFixtures) {
   assert.throws(
-    () => assertEntry(localConstantMutation(source)),
-    /精确导入/,
-    `变异负例：${name} 不得用局部同名 DEFAULT_BOOK_ID 代替统一导入`,
-  );
-  assert.throws(
-    () => assertEntry(shadowedLocalConstantMutation(source)),
-    /局部 DEFAULT_BOOK_ID 遮蔽/,
-    `变异负例：${name} 不得保留导入后又用局部 DEFAULT_BOOK_ID 遮蔽它`,
-  );
-  assert.throws(
-    () => assertEntry(deadTokenAndWrongUrlMutation(source)),
-    /实际.*训练路由/,
-    `变异负例：${name} 不得用注释 token 掩盖无 bookId 的实际导航`,
+    () => assertDefaultBookReferenceUsesPracticeImport(fixture),
+    /绑定到 bookPractice/,
+    `变异负例：${name} DEFAULT_BOOK_ID 不得遮蔽 bookPractice 命名导入`,
   );
 }
+
+const myCheckInsArrowParameterFixture = `
+import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+const MyCheckIns = () => {
+  const records = [];
+  if (records.length === 0) {
+    return (
+      <Button onClick={(DEFAULT_BOOK_ID) => Taro.navigateTo({
+        url: \`/pages/Practice/Practice?bookId=\${DEFAULT_BOOK_ID}&practice=0\`,
+      })}>开始第一次跟读</Button>
+    );
+  }
+  return null;
+};`;
+assert.throws(
+  () => assertEmptyCheckInDefaultEntry(myCheckInsArrowParameterFixture),
+  /实际点击处理器/,
+  "变异负例：MyCheckIns 空打卡按钮的 onClick 参数不得遮蔽 bookPractice 默认教材",
+);
 
 console.log("首页导航测试通过：胶囊尺寸及两个默认入口的真实导入和点击路由均正确。");

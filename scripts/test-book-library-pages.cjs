@@ -14,9 +14,57 @@ const findNodes = (node, predicate, results = []) => {
   });
   return results;
 };
-const parseTsx = (source) =>
-  ts.createSourceFile("BookLibrary.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const createTsxProgram = (fileName, source) => {
+  const absoluteFileName = path.resolve(fileName);
+  const compilerOptions = {
+    jsx: ts.JsxEmit.React,
+    noLib: true,
+    target: ts.ScriptTarget.ESNext,
+  };
+  const host = ts.createCompilerHost(compilerOptions, true);
+  host.getSourceFile = (requestedFileName, languageVersion) =>
+    path.resolve(requestedFileName) === absoluteFileName
+      ? ts.createSourceFile(
+          absoluteFileName,
+          source,
+          languageVersion,
+          true,
+          ts.ScriptKind.TSX,
+        )
+      : undefined;
+  host.fileExists = (requestedFileName) =>
+    path.resolve(requestedFileName) === absoluteFileName;
+  host.readFile = (requestedFileName) =>
+    path.resolve(requestedFileName) === absoluteFileName ? source : undefined;
+  const program = ts.createProgram([absoluteFileName], compilerOptions, host);
+  return {
+    checker: program.getTypeChecker(),
+    sourceFile: program.getSourceFile(absoluteFileName),
+  };
+};
 const isIdentifier = (node, name) => ts.isIdentifier(node) && node.text === name;
+const isNamedImportBinding = (checker, identifier, moduleSpecifier, exportName) => {
+  const symbol = checker.getSymbolAtLocation(identifier);
+  return Boolean(
+    symbol?.declarations?.some((declaration) => {
+      if (
+        !ts.isImportSpecifier(declaration) ||
+        declaration.name.text !== exportName ||
+        (declaration.propertyName && declaration.propertyName.text !== exportName)
+      ) {
+        return false;
+      }
+
+      let ancestor = declaration.parent;
+      while (ancestor && !ts.isImportDeclaration(ancestor)) ancestor = ancestor.parent;
+      return (
+        ancestor &&
+        ts.isStringLiteral(ancestor.moduleSpecifier) &&
+        ancestor.moduleSpecifier.text === moduleSpecifier
+      );
+    }),
+  );
+};
 const getVariable = (sourceFile, name) =>
   findNodes(
     sourceFile,
@@ -25,11 +73,17 @@ const getVariable = (sourceFile, name) =>
       isIdentifier(node.name, name) &&
       node.initializer,
   )[0];
-const isCall = (node, name, argumentName) =>
+const isCatalogResolverCall = (node, checker, argumentName) =>
   ts.isCallExpression(node) &&
-  isIdentifier(node.expression, name) &&
+  isIdentifier(node.expression, "resolveBookAction") &&
   node.arguments.length === 1 &&
-  isIdentifier(node.arguments[0], argumentName);
+  isIdentifier(node.arguments[0], argumentName) &&
+  isNamedImportBinding(
+    checker,
+    node.expression,
+    "@/features/bookLibrary/bookCatalog",
+    "resolveBookAction",
+  );
 const isNavigateWithActionUrl = (node) => {
   if (
     !ts.isCallExpression(node) ||
@@ -55,7 +109,7 @@ const isNavigateWithActionUrl = (node) => {
   );
 };
 const assertBookNavigationChain = (source) => {
-  const sourceFile = parseTsx(source);
+  const { checker, sourceFile } = createTsxProgram("BookLibrary.tsx", source);
   const openBook = getVariable(sourceFile, "openBook");
   assert.ok(
     openBook && ts.isArrowFunction(openBook.initializer),
@@ -77,9 +131,12 @@ const assertBookNavigationChain = (source) => {
       ts.isVariableDeclaration(node) &&
       isIdentifier(node.name, "action") &&
       node.initializer &&
-      isCall(node.initializer, "resolveBookAction", "book"),
+      isCatalogResolverCall(node.initializer, checker, "book"),
   )[0];
-  assert.ok(action, "openBook 必须把当前 book 传给 resolveBookAction(book)");
+  assert.ok(
+    action,
+    "openBook 必须把当前 book 传给从 bookCatalog 导入的 resolveBookAction(book)",
+  );
   assert.ok(
     findNodes(openBook.initializer.body, isNavigateWithActionUrl).length > 0,
     "openBook 必须将 resolver 的 action.url 交给 Taro.navigateTo",
@@ -105,7 +162,10 @@ const assertBookNavigationChain = (source) => {
       ts.isJsxExpression(node.initializer) &&
       node.initializer.expression &&
       ts.isArrowFunction(node.initializer.expression) &&
-      isCall(node.initializer.expression.body, "openBook", "book"),
+      ts.isCallExpression(node.initializer.expression.body) &&
+      isIdentifier(node.initializer.expression.body.expression, "openBook") &&
+      node.initializer.expression.body.arguments.length === 1 &&
+      isIdentifier(node.initializer.expression.body.arguments[0], "book"),
   )[0];
   assert.ok(rowClick, "每个书库行点击必须调用 openBook(book)，不能固定其他教材");
 };
@@ -142,32 +202,68 @@ assert.doesNotMatch(
   "书库点击不应再显示正在核对或暂未开放的门禁提示",
 );
 
-const fixedBookMutation = library.replace(
-  "resolveBookAction(book)",
-  "resolveBookAction(BOOKS[0])",
-);
-assert.throws(
-  () => assertBookNavigationChain(fixedBookMutation),
-  /当前 book|当前列表教材|固定其他教材/,
-  "变异负例：固定教材不得绕过书库点击数据链",
-);
-const fixedIdMutation = library.replace(
-  "resolveBookAction(book)",
-  'resolveBookAction({ ...book, id: "3" })',
-);
-assert.throws(
-  () => assertBookNavigationChain(fixedIdMutation),
-  /resolveBookAction\(book\)/,
-  "变异负例：书库点击不得向 resolver 固定教材 ID",
-);
-const bypassResolverMutation = library.replace(
-  "const action = resolveBookAction(book);",
-  'const action = { url: "/pages/Practice/Practice?bookId=3&practice=0" };',
-);
-assert.throws(
-  () => assertBookNavigationChain(bypassResolverMutation),
-  /resolveBookAction/,
-  "变异负例：书库点击不得绕过 resolver",
-);
+const assertResolverCallUsesCatalogImport = (source) => {
+  const { checker, sourceFile } = createTsxProgram("BookLibrary.fixture.tsx", source);
+  const resolverCall = findNodes(
+    sourceFile,
+    (node) =>
+      ts.isCallExpression(node) && isIdentifier(node.expression, "resolveBookAction"),
+  )[0];
+  assert.ok(resolverCall, "变异 fixture 必须包含 resolveBookAction 调用");
+  assert.ok(
+    isNamedImportBinding(
+      checker,
+      resolverCall.expression,
+      "@/features/bookLibrary/bookCatalog",
+      "resolveBookAction",
+    ),
+    "实际 resolveBookAction 调用必须绑定到 bookCatalog 的命名导入",
+  );
+};
+const resolverShadowFixtures = [
+  [
+    "局部函数",
+    `import { resolveBookAction } from "@/features/bookLibrary/bookCatalog";
+const openBook = (book) => {
+  function resolveBookAction(current) { return { url: "/pages/Practice/Practice?bookId=3&practice=0" }; }
+  return resolveBookAction(book);
+};`,
+  ],
+  [
+    "参数",
+    `import { resolveBookAction } from "@/features/bookLibrary/bookCatalog";
+const openBook = (book, resolveBookAction) => resolveBookAction(book);`,
+  ],
+  [
+    "局部变量",
+    `import { resolveBookAction } from "@/features/bookLibrary/bookCatalog";
+const openBook = (book) => {
+  const resolveBookAction = () => ({ url: "/pages/Practice/Practice?bookId=3&practice=0" });
+  return resolveBookAction(book);
+};`,
+  ],
+  [
+    "局部类",
+    `import { resolveBookAction } from "@/features/bookLibrary/bookCatalog";
+const openBook = (book) => {
+  class resolveBookAction {}
+  return resolveBookAction(book);
+};`,
+  ],
+  [
+    "catch binding",
+    `import { resolveBookAction } from "@/features/bookLibrary/bookCatalog";
+const openBook = (book) => {
+  try { throw null; } catch (resolveBookAction) { return resolveBookAction(book); }
+};`,
+  ],
+];
+for (const [name, fixture] of resolverShadowFixtures) {
+  assert.throws(
+    () => assertResolverCallUsesCatalogImport(fixture),
+    /绑定到 bookCatalog/,
+    `变异负例：${name} resolveBookAction 不得遮蔽 bookCatalog 命名导入`,
+  );
+}
 
 console.log("多书页面测试通过：首页入口、页面路由、搜索筛选和当前教材点击数据链正确。");
