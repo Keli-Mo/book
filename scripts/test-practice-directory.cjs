@@ -89,4 +89,21 @@ assert.equal(
 );
 assert.equal(findPracticeDirectoryGroupId(groups, 999), "");
 
+const { buildBookPracticeBundle } = require("./test-practice-book-route.cjs");
+for (const bookId of ["3", "22", "25"]) {
+  const bundle = buildBookPracticeBundle(bookId);
+  const bookGroups = buildPracticeDirectoryGroups(bundle.practices);
+  const items = bookGroups.flatMap((group) => group.items);
+  assert.equal(items.length, bundle.practices.length, "目录应包含当前教材的全部训练");
+  for (const [index, practice] of bundle.practices.entries()) {
+    const item = items.find((candidate) => candidate.practiceIndex === index);
+    assert.equal(item.id, practice.id);
+    assert.equal(item.pageNumber, practice.pageNumber);
+    assert.equal(item.trackCount, practice.tracks.length);
+    const groupId = findPracticeDirectoryGroupId(bookGroups, index);
+    assert.equal(bookGroups.find((group) => group.id === groupId).title, practice.sectionTitle);
+  }
+  assert.equal(findPracticeDirectoryGroupId(bookGroups, bundle.practices.length), "");
+}
+
 console.log("训练目录测试通过：章节分组、页码、音频数与当前分组定位正确。");

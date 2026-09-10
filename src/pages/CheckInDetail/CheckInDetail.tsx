@@ -4,8 +4,9 @@ import Taro, {
   useRouter,
   useShareAppMessage,
 } from "@tarojs/taro";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { sharedImage } from "@/constant";
+import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import {
   getPlaybackPositionMs,
   stopAudioIfLoaded,
@@ -33,6 +34,17 @@ export default function CheckInDetail() {
   const [playbackPositionMs, setPlaybackPositionMs] = useState(0);
   const audioRef = useRef<Taro.InnerAudioContext | null>(null);
   const recordingDurationMsRef = useRef(0);
+  const practiceUrl = useMemo(() => {
+    // 历史记录字段可能缺失或来自旧版本；先核对教材及训练范围，再允许回跳。
+    if (!detail || typeof detail.bookId !== "string" || !Number.isInteger(detail.practiceIndex)) return null;
+    try {
+      const bundle = buildBookPracticeBundle(detail.bookId);
+      if (!bundle || detail.practiceIndex < 0 || detail.practiceIndex >= bundle.practices.length) return null;
+      return `/pages/Practice/Practice?bookId=${encodeURIComponent(detail.bookId)}&practice=${detail.practiceIndex}`;
+    } catch (_error) {
+      return null;
+    }
+  }, [detail]);
 
   useShareAppMessage(() => {
     if (!detail) {
@@ -130,7 +142,7 @@ export default function CheckInDetail() {
   const startThisPractice = () => {
     if (!detail) return;
     Taro.navigateTo({
-      url: `/pages/Practice/Practice?practice=${detail.practiceIndex}`,
+      url: practiceUrl || "/pages/BookLibrary/BookLibrary",
     });
   };
 
@@ -190,7 +202,9 @@ export default function CheckInDetail() {
 
       <View className='check-in-actions'>
         <Button className='check-in-actions__share' openType='share'>分享这次打卡</Button>
-        <Button className='check-in-actions__practice' onClick={startThisPractice}>我也来跟读</Button>
+        <Button className='check-in-actions__practice' onClick={startThisPractice}>
+          {practiceUrl ? "我也来跟读" : "选择教材"}
+        </Button>
       </View>
     </View>
   );

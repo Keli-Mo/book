@@ -276,3 +276,44 @@ assert.match(
 );
 
 console.log("音频播放测试通过：首次停止保护、离页停止与分享进度均正确。");
+
+const { createPage, elements, textOf, byClass } = require("./test-practice-book-route.cjs");
+
+async function testBookPlaybackLifecycle() {
+  const page = createPage("src/pages/Practice/Practice.tsx", { bookId: "22", practice: "0" });
+  let tree = page.render();
+  byClass(tree, "audio-hotspot").props.onClick();
+  const firstModelAudio = page.audios.at(-1);
+  byClass(tree, "practice-header__directory").props.onClick();
+  tree = page.render();
+  assert.equal(firstModelAudio.events.includes("destroy"), false, "打开目录只是布局变化，不能停止示范音频");
+  const directory = elements(tree).find((node) => node.type?.name === "PracticeDirectory");
+  await directory.props.onSelect(1);
+  assert.ok(firstModelAudio.events.includes("destroy"), "换训练应通过现有控制器销毁旧示范音频");
+  tree = page.render();
+  page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200 });
+  tree = page.render();
+  elements(tree).find((node) => node.type === "Button" && textOf(node) === "回听录音").props.onClick();
+  const recording = page.audios.find((audio) => audio.src === "/tmp/recording.mp3");
+  const previousStops = recording.events.filter((event) => event === "stop").length;
+  byClass(tree, "practice-header__directory").props.onClick();
+  tree = page.render();
+  assert.equal(recording.events.filter((event) => event === "stop").length, previousStops, "打开目录不能停止录音回听");
+  await elements(tree).find((node) => node.type?.name === "PracticeDirectory").props.onSelect(2);
+  assert.ok(recording.events.includes("stop"), "换训练应停止旧录音回听");
+  for (const route of [{ bookId: "25", practice: "0" }, { bookId: "25", practice: "23" }]) {
+    tree = page.render();
+    byClass(tree, "audio-hotspot").props.onClick();
+    const oldModel = page.audios.at(-1);
+    // 为回听上下文保留已加载源，验证路由卸载也清理这一路音频。
+    const oldRecording = page.audios.findLast((audio) => !audio.events.includes("destroy") && audio !== oldModel);
+    oldRecording.src = "/tmp/old-recording.mp3";
+    tree = page.setRoute(route);
+    assert.ok(oldModel.events.includes("destroy"), "换书/路由训练应通过现有控制器销毁旧示范音频");
+    assert.ok(oldRecording.events.includes("stop"), "换书/路由训练应停止旧录音回听");
+    assert.ok(oldRecording.events.includes("destroy"), "旧会话的回听上下文应释放");
+    assert.equal(textOf(byClass(tree, "practice-header__course")), "Reading Explorer 5");
+  }
+  console.log("音频教材回归通过：换书、换训练停止两路音频，目录布局变化保持播放。");
+}
+testBookPlaybackLifecycle().catch((error) => { console.error(error); process.exitCode = 1; });

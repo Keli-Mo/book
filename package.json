@@ -30,6 +30,7 @@
     "dev:harmony-hybrid": "npm run build:harmony-hybrid -- --watch",
     "validate:book-audio": "node scripts/validate-book-audio-map.cjs",
     "test:book-practice": "node scripts/test-book-practice.cjs",
+    "test:practice-book-route": "node scripts/test-practice-book-route.cjs",
     "test:check-in": "node scripts/test-check-in-function.cjs",
     "test:practice-directory": "node scripts/test-practice-directory.cjs",
     "test:practice-directory-component": "node scripts/test-practice-directory-component.cjs",

@@ -7,10 +7,10 @@ import {
   stopPracticePlayback,
 } from "@/features/listeningPractice/audioPlayback";
 import {
-  SAMPLE_BOOK_ID,
-  SAMPLE_BOOK_PRACTICES,
-  SAMPLE_BOOK_TITLE,
-} from "@/features/listeningPractice/book3Practice";
+  buildBookPracticeBundle,
+  type BookPracticeBundle,
+  type ListeningPractice,
+} from "@/features/listeningPractice/bookPractice";
 import { buildPracticeDirectoryGroups } from "@/features/listeningPractice/practiceDirectory";
 import {
   getPracticeSwitchPolicy,
@@ -31,12 +31,6 @@ import PracticeDirectory from "./PracticeDirectory";
 
 import "./Practice.scss";
 
-const normalizePracticeIndex = (rawIndex?: string) => {
-  const parsed = Number(rawIndex || 0);
-  if (!Number.isInteger(parsed)) return 0;
-  return Math.min(SAMPLE_BOOK_PRACTICES.length - 1, Math.max(0, parsed));
-};
-
 const formatDuration = (durationMs: number) => {
   const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -46,13 +40,68 @@ const formatDuration = (durationMs: number) => {
 
 export default function Practice() {
   const router = useRouter();
+  const bookId = router.params?.bookId;
+  const rawPracticeIndex = router.params?.practice;
+  const route = useMemo(() => {
+    try {
+      if (typeof bookId !== "string" || !bookId) {
+        throw new Error("训练链接缺少教材，请重新选择教材");
+      }
+      // 只接受明确的十进制整数；缺失、负数或越界都不能悄悄落到首尾页。
+      if (typeof rawPracticeIndex !== "string" || !/^(?:0|[1-9]\d*)$/.test(rawPracticeIndex)) {
+        throw new Error("训练编号无效，请重新选择教材");
+      }
+      const practiceIndex = Number(rawPracticeIndex);
+      const bundle = buildBookPracticeBundle(bookId);
+      if (!bundle) throw new Error("找不到这本教材，请重新选择教材");
+      if (!Number.isSafeInteger(practiceIndex) || practiceIndex >= bundle.practices.length) {
+        throw new Error("训练编号超出本书范围，请重新选择教材");
+      }
+      return { bundle, practiceIndex, practice: bundle.practices[practiceIndex] };
+    } catch (error) {
+      return {
+        bundle: null,
+        errorMessage: error instanceof Error ? error.message : "教材暂时无法读取，请重新选择教材",
+      };
+    }
+  }, [bookId, rawPracticeIndex]);
+
+  if (!route.bundle) {
+    return (
+      <View className='practice-empty'>
+        <Text>暂时无法打开训练</Text>
+        <Text>{route.errorMessage}</Text>
+        <Button onClick={() => Taro.navigateTo({ url: "/pages/BookLibrary/BookLibrary" })}>
+          选择教材
+        </Button>
+      </View>
+    );
+  }
+
+  // 验证通过才挂载会话；换书或外部训练路由时先清理旧会话，保持 Hook 顺序稳定。
+  return (
+    <PracticeSession
+      key={`${route.bundle.book.id}:${route.practiceIndex}`}
+      bundle={route.bundle}
+      initialPracticeIndex={route.practiceIndex}
+      initialPractice={route.practice}
+    />
+  );
+}
+
+function PracticeSession({ bundle, initialPracticeIndex, initialPractice }: {
+  bundle: BookPracticeBundle;
+  initialPracticeIndex: number;
+  initialPractice: ListeningPractice;
+}) {
   const directoryGroups = useMemo(
-    () => buildPracticeDirectoryGroups(SAMPLE_BOOK_PRACTICES),
-    []
+    () => buildPracticeDirectoryGroups(bundle.practices),
+    [bundle]
   );
-  const [practiceIndex, setPracticeIndex] = useState(() =>
-    normalizePracticeIndex(router.params?.practice),
-  );
+  const [{ practiceIndex, practice }, setCurrentPractice] = useState({
+    practiceIndex: initialPracticeIndex,
+    practice: initialPractice,
+  });
   const [isDirectoryOpen, setIsDirectoryOpen] = useState(false);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
@@ -72,8 +121,6 @@ export default function Practice() {
   const pendingRecorderActionRef = useRef<"pause" | "resume" | null>(null);
   const discardNextRecordingRef = useRef(false);
   const submittingRef = useRef(false);
-
-  const practice = SAMPLE_BOOK_PRACTICES[practiceIndex];
 
   useEffect(() => {
     const modelAudioController = createTrackAudioController(
@@ -179,6 +226,8 @@ export default function Practice() {
       recorderWithCleanup.offResume?.(handleRecorderResume);
       recorderWithCleanup.offStop?.(handleRecorderStop);
       recorderWithCleanup.offError?.(handleRecorderError);
+      // 路由换书/换训练会卸载会话，两路音频都需先停止再释放。
+      stopPracticePlayback(modelAudioController, recordingAudio);
       modelAudioController.dispose();
       recordingAudio.destroy();
       modelAudioControllerRef.current = null;
@@ -238,11 +287,12 @@ export default function Practice() {
     modelAudioControllerRef.current?.stop();
     setPlayingTrackId(null);
     resetRecording();
-    setPracticeIndex(nextIndex);
+    setCurrentPractice({ practiceIndex: nextIndex, practice: bundle.practices[nextIndex] });
     Taro.pageScrollTo({ scrollTop: 0, duration: 200 });
   };
 
   const requestPracticeSwitch = async (nextIndex: number) => {
+    if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= bundle.practices.length) return;
     if (nextIndex === practiceIndex) {
       setIsDirectoryOpen(false);
       return;
@@ -362,8 +412,8 @@ export default function Practice() {
       const created = await createCheckIn({
         recordingFileId: uploadedFileId,
         durationMs: recordingDurationMs,
-        bookId: SAMPLE_BOOK_ID,
-        bookTitle: SAMPLE_BOOK_TITLE,
+        bookId: bundle.book.id,
+        bookTitle: bundle.book.title,
         practiceId: practice.id,
         practiceIndex,
         pageNumber: practice.pageNumber,
@@ -398,14 +448,6 @@ export default function Practice() {
     }
   };
 
-  if (!practice) {
-    return (
-      <View className='practice-empty'>
-        <Text>暂时没有可用的跟读训练</Text>
-      </View>
-    );
-  }
-
   const shownDuration =
     recordingState === "recording" || recordingState === "paused"
       ? recordingElapsedMs
@@ -414,11 +456,11 @@ export default function Practice() {
   return (
     <View className='practice-page'>
       <View className='practice-header'>
-        <Text className='practice-header__course'>{SAMPLE_BOOK_TITLE}</Text>
+        <Text className='practice-header__course'>{bundle.book.title}</Text>
         <Text className='practice-header__section'>{practice.sectionTitle}</Text>
         <View className='practice-header__progress-row'>
           <Text className='practice-header__progress'>
-            跟读训练 {practiceIndex + 1} / {SAMPLE_BOOK_PRACTICES.length}
+            跟读训练 {practiceIndex + 1} / {bundle.practices.length}
           </Text>
           <Text
             className='practice-header__directory'
@@ -561,12 +603,12 @@ export default function Practice() {
         </View>
         <View
           className={`practice-navigation__button practice-navigation__button--primary ${
-            practiceIndex === SAMPLE_BOOK_PRACTICES.length - 1
+            practiceIndex === bundle.practices.length - 1
               ? "practice-navigation__button--disabled"
               : ""
           }`}
           onClick={() =>
-            practiceIndex < SAMPLE_BOOK_PRACTICES.length - 1 &&
+            practiceIndex < bundle.practices.length - 1 &&
             requestPracticeSwitch(practiceIndex + 1)
           }
         >
