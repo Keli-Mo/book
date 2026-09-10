@@ -30,8 +30,7 @@ export type PracticeTrack = {
 
 export type ListeningPractice = {
   id: string;
-  // Task 4 替换旧页面前，目录组件仍需兼容 book3Practice 的训练项。
-  bookId?: string;
+  bookId: string;
   imageIndex: number;
   pageNumber: number;
   imageUrl: string;
@@ -52,8 +51,12 @@ const COVER_WHITELIST: Record<string, string> = {
   "14": "OW_Starter_Workbook-1.png",
 };
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
+// 原始数据保留的 18 个无图空占位；只有这些教材/页号且无音频时可例外。
+const EMPTY_PAGE_WHITELIST: Record<string, readonly number[]> = {
+  "3": [0], "4": [0, 2], "5": [0, 2], "6": [0, 2],
+  "7": [0], "8": [0], "9": [0], "10": [0], "11": [0],
+  "12": [0], "13": [0], "14": [0], "15": [0], "16": [0], "17": [0],
+};
 
 const toFiniteCoordinate = (value: unknown, coordinateType: string) => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -105,20 +108,34 @@ export const parseTrackCoordinate = (track: OriginalAudioTrack) => {
     throw new Error(`不支持的热点坐标类型：${track.flag}`);
   }
 
-  const safeLeft = clamp(leftPercent, 1, 96);
-  const safeTop = clamp(topPercent, 1, 96);
+  // 模型保留原始百分比；22px 点击半径的边界收敛由实际图片布局负责。
   return {
-    leftPercent: safeLeft,
-    topPercent: safeTop,
-    positionAdjusted: safeLeft !== leftPercent || safeTop !== topPercent,
+    leftPercent,
+    topPercent,
+    positionAdjusted: false,
   };
+};
+
+// 教材素材使用域名/IPv4 的 HTTP(S) 地址；不依赖小程序缺少的浏览器 URL 全局。
+const isHttpUrl = (value: unknown): value is string => {
+  if (typeof value !== "string" || /[\s\\]/.test(value)) return false;
+  const match = value.match(/^https?:\/\/([a-z\d.-]+)(?::(\d{1,5}))?(?:[/?#].*)?$/i);
+  if (!match) return false;
+  const [, hostname, port] = match;
+  if (port !== undefined && Number(port) > 65535) return false;
+  return hostname.length <= 253 && hostname.split(".").every((label) =>
+    /^[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?$/i.test(label),
+  ) && (!/^[\d.]+$/.test(hostname) || (
+    hostname.split(".").length === 4 && hostname.split(".").every((part) => Number(part) <= 255)
+  ));
 };
 
 const parseImagePageNumber = (imageUrl: string): number | null => {
   try {
     const cleanUrl = decodeURIComponent(imageUrl.split("?")[0]);
     const match = cleanUrl.match(/_(\d+)\.(?:png|jpe?g|webp)$/i);
-    return match ? Number(match[1]) : null;
+    const pageNumber = match ? Number(match[1]) : null;
+    return Number.isSafeInteger(pageNumber) ? pageNumber : null;
   } catch (_error) {
     return null;
   }
@@ -153,7 +170,7 @@ const getSectionTitle = (catalog: readonly CatalogItem[], imageIndex: number) =>
     if (item.page > imageIndex) break;
     currentSection = item;
   }
-  return currentSection?.name || "课程导入";
+  return currentSection?.name ?? "课程导入";
 };
 
 const freezeBundle = (book: BookCatalogItem, practices: ListeningPractice[]) => {
@@ -183,21 +200,22 @@ export const buildBookPracticeBundle = (
   const imageUrls = (concatImages as Record<string, unknown>)[bookId];
   const rawAudioByPage = (allAudioList as Record<string, unknown>)[bookId];
   const rawCatalog = (catalogLists as Record<string, unknown>)[bookId];
-  if (!Array.isArray(imageUrls)) {
-    throw bookDataError(bookId, "图片数据：", "应为图片数组");
+  if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
+    throw bookDataError(bookId, "图片数据：", "应为非空图片数组");
   }
-  if (!rawAudioByPage || typeof rawAudioByPage !== "object") {
+  if (!rawAudioByPage || typeof rawAudioByPage !== "object" || Array.isArray(rawAudioByPage)) {
     throw bookDataError(bookId, "音频数据：", "应为页码映射");
   }
-  if (!Array.isArray(rawCatalog)) {
-    throw bookDataError(bookId, "目录数据：", "应为目录数组");
+  if (!Array.isArray(rawCatalog) || rawCatalog.length === 0) {
+    throw bookDataError(bookId, "目录数据：", "应为非空目录数组");
   }
 
   const catalog = rawCatalog as CatalogItem[];
-  catalog.forEach((item, index) => {
+  Array.from(catalog).forEach((item, index) => {
     if (
       !item ||
       typeof item.name !== "string" ||
+      !item.name.trim() ||
       !Number.isInteger(item.page) ||
       item.page < 0 ||
       item.page >= imageUrls.length ||
@@ -208,8 +226,8 @@ export const buildBookPracticeBundle = (
   });
 
   const imageByPage = new Map<number, { imageIndex: number; imageUrl: string }>();
-  imageUrls.forEach((imageUrl, imageIndex) => {
-    if (typeof imageUrl !== "string") {
+  Array.from(imageUrls).forEach((imageUrl, imageIndex) => {
+    if (!isHttpUrl(imageUrl)) {
       throw bookDataError(bookId, `图片索引 ${imageIndex}：`, "图片地址不合法");
     }
     const pageNumber = parseImagePageNumber(imageUrl);
@@ -227,17 +245,22 @@ export const buildBookPracticeBundle = (
   const tracksByPage = new Map<number, OriginalAudioTrack[]>();
   Object.entries(audioByPage).forEach(([rawPageNumber, rawTracks]) => {
     const pageNumber = Number(rawPageNumber);
-    if (!Number.isInteger(pageNumber)) {
+    // 只接受规范十进制页键，避免 02、2.0、2e0 等键归一化后覆盖同一页。
+    if (!/^(?:0|[1-9]\d*)$/.test(rawPageNumber) || !Number.isSafeInteger(pageNumber)) {
       throw bookDataError(bookId, `音频页 ${rawPageNumber}：`, "页号不合法");
     }
     if (!Array.isArray(rawTracks)) {
       throw bookDataError(bookId, `第 ${pageNumber} 页：`, "音频段应为数组");
     }
-    if (rawTracks.length > 0 && !imageByPage.has(pageNumber)) {
+    if (!imageByPage.has(pageNumber)) {
+      if (rawTracks.length === 0 && EMPTY_PAGE_WHITELIST[bookId]?.includes(pageNumber)) return;
       throw bookDataError(bookId, `第 ${pageNumber} 页：`, "找不到对应图片");
     }
     tracksByPage.set(pageNumber, rawTracks as OriginalAudioTrack[]);
   });
+  if (![...tracksByPage.values()].some((tracks) => tracks.length > 0)) {
+    throw bookDataError(bookId, "音频数据：", "应至少包含一个非空音频页");
+  }
 
   const practices: ListeningPractice[] = [];
   for (const [pageNumber, image] of imageByPage) {
@@ -251,10 +274,10 @@ export const buildBookPracticeBundle = (
       pageNumber,
       imageUrl: image.imageUrl,
       sectionTitle: getSectionTitle(catalog, image.imageIndex),
-      tracks: tracks.map((track, trackIndex) => {
-        const context = `第 ${pageNumber} 页第 ${trackIndex + 1} 段：`;
-        if (!track || typeof track.url !== "string" || !track.url.trim()) {
-          throw bookDataError(bookId, context, "音频地址不合法");
+      tracks: Array.from(tracks, (track, trackIndex) => {
+        const trackContext = `第 ${pageNumber} 页第 ${trackIndex + 1} 段：`;
+        if (!track || Array.isArray(track) || !isHttpUrl(track.url)) {
+          throw bookDataError(bookId, trackContext, "音频地址不合法");
         }
         try {
           const coordinate = parseTrackCoordinate(track);
@@ -268,7 +291,7 @@ export const buildBookPracticeBundle = (
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : "热点坐标不合法";
-          throw bookDataError(bookId, context, message);
+          throw bookDataError(bookId, trackContext, message);
         }
       }),
     });

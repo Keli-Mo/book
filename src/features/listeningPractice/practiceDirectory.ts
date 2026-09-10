@@ -1,5 +1,10 @@
 import type { ListeningPractice } from "./bookPractice";
 
+// 目录仅消费页号、章节和音频数，旧教材模型无需具备完整通用训练项字段。
+type DirectoryPractice = Pick<ListeningPractice, "id" | "pageNumber" | "sectionTitle"> & {
+  tracks: readonly unknown[];
+};
+
 export interface PracticeDirectoryItem {
   id: string;
   practiceIndex: number;
@@ -17,7 +22,7 @@ export interface PracticeDirectoryGroup {
  * 按训练页在书中的先后顺序分组，保证目录顺序与实际翻页顺序一致。
  */
 export const buildPracticeDirectoryGroups = (
-  practices: readonly ListeningPractice[]
+  practices: readonly DirectoryPractice[]
 ): PracticeDirectoryGroup[] => {
   const groups: PracticeDirectoryGroup[] = [];
   const groupByTitle = new Map<string, PracticeDirectoryGroup>();
