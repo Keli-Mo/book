@@ -34,6 +34,10 @@ assert.deepEqual(
   Array.from({ length: 23 }, (_, index) => index + 3),
   "教材 ID 应与现有详情页的 3–25 保持一致",
 );
+assert.ok(
+  BOOKS.every((book) => book.cover.startsWith("https://")),
+  "教材目录中的封面 URL 应全部使用 HTTPS",
+);
 assert.deepEqual(
   Array.from(BOOKS.filter((book) => book.available), (book) => book.id),
   ["3"],

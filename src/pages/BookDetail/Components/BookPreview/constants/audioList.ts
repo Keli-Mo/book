@@ -14039,7 +14039,7 @@ const audioList22 = {
     94: [
         {
         offset: ["78%", "62%"],
-        url: 'ttps://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L2_Studentbook-%E9%9F%B3%E9%A2%91/Level%202%20Unit%206%20Reading%206B.mp3',
+        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L2_Studentbook-%E9%9F%B3%E9%A2%91/Level%202%20Unit%206%20Reading%206B.mp3',
         flag: "Percentage",
       }
     ],
