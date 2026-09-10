@@ -23,6 +23,8 @@ const makeResponse = (status, onCancel = () => {}) => ({
   body: { cancel: async () => onCancel() },
 });
 
+const makeRedirectResponse = (onCancel) => makeResponse(302, onCancel);
+
 const testCollection = () => {
   const shared = "https://allowed.example/shared.bin";
   const assets = collectBookAssets({
@@ -54,13 +56,52 @@ const testCollection = () => {
 const testRealConstantCollection = () => {
   const assets = collectBookAssets(loadBookAssetConstants());
   const sources = assets.flatMap((asset) => asset.sources);
+  assert.equal(assets.length, 6_085);
+  assert.equal(
+    assets.filter((asset) => asset.sources.some((source) => source.type === "image")).length,
+    4_056,
+  );
+  assert.equal(
+    assets.filter((asset) => asset.sources.some((source) => source.type === "audio")).length,
+    2_029,
+  );
   assert.equal(sources.filter((source) => source.type === "image").length, 4_056);
   assert.equal(sources.filter((source) => source.type === "audio").length, 2_082);
-  assert.ok(assets.length <= 4_056 + 2_082, "唯一 URL 数不能超过资源出现总数");
   assert.deepEqual(
     [...new Set(sources.map(({ bookId }) => bookId))],
     Array.from({ length: 23 }, (_, index) => String(index + 3)),
   );
+};
+
+const testRedirectIsNotFollowedOrRetried = async () => {
+  const calls = [];
+  let cancelCount = 0;
+  const [result] = await checkAssets(
+    [
+      {
+        url: "https://allowed.example/redirected.png",
+        sources: [{ bookId: "3", type: "image", imageIndex: 0 }],
+      },
+    ],
+    {
+      allowedHosts: ["allowed.example"],
+      concurrency: 1,
+      timeoutMs: 100,
+      retries: 2,
+      retryDelayMs: 1,
+      fetch: async (_url, options) => {
+        calls.push(options);
+        return makeRedirectResponse(() => cancelCount++);
+      },
+    },
+  );
+
+  assert.equal(result.category, "unexpected-status");
+  assert.equal(result.status, 302);
+  assert.equal(result.attempts, 1, "3xx 是确定性失败，不应重试");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].redirect, "manual");
+  assert.equal(cancelCount, 1, "3xx 响应正文也必须主动取消");
 };
 
 const testUrlValidation = () => {
@@ -286,6 +327,7 @@ const main = async () => {
   testUrlValidation();
   testStatusClassification();
   await testRequestsAndDeduplication();
+  await testRedirectIsNotFollowedOrRetried();
   await testBoundedConcurrency();
   await testRetryPolicyAndTimeout();
   await testInvalidUrlsNeedNoRequest();
