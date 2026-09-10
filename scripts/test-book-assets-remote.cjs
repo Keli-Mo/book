@@ -23,7 +23,10 @@ const makeResponse = (status, onCancel = () => {}) => ({
   body: { cancel: async () => onCancel() },
 });
 
-const makeRedirectResponse = (onCancel) => makeResponse(302, onCancel);
+const makeRedirectResponse = (onCancel) => ({
+  ...makeResponse(302, onCancel),
+  headers: new Headers({ Location: "https://evil.example/asset.mp3" }),
+});
 
 const testCollection = () => {
   const shared = "https://allowed.example/shared.bin";
@@ -76,6 +79,7 @@ const testRealConstantCollection = () => {
 const testRedirectIsNotFollowedOrRetried = async () => {
   const calls = [];
   let cancelCount = 0;
+  const redirectResponse = makeRedirectResponse(() => cancelCount++);
   const [result] = await checkAssets(
     [
       {
@@ -91,7 +95,7 @@ const testRedirectIsNotFollowedOrRetried = async () => {
       retryDelayMs: 1,
       fetch: async (_url, options) => {
         calls.push(options);
-        return makeRedirectResponse(() => cancelCount++);
+        return redirectResponse;
       },
     },
   );
@@ -99,6 +103,7 @@ const testRedirectIsNotFollowedOrRetried = async () => {
   assert.equal(result.category, "unexpected-status");
   assert.equal(result.status, 302);
   assert.equal(result.attempts, 1, "3xx 是确定性失败，不应重试");
+  assert.equal(redirectResponse.headers.get("location"), "https://evil.example/asset.mp3");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].redirect, "manual");
   assert.equal(cancelCount, 1, "3xx 响应正文也必须主动取消");
