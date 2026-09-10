@@ -26,6 +26,15 @@ vm.runInNewContext(compiled.outputText, {
 });
 
 const { calculateHomeNavigationMetrics } = moduleContainer.exports;
+const projectRoot = path.resolve(__dirname, "..");
+const home = fs.readFileSync(
+  path.join(projectRoot, "src/pages/Home/Home.tsx"),
+  "utf8",
+);
+const myCheckIns = fs.readFileSync(
+  path.join(projectRoot, "src/pages/MyCheckIns/MyCheckIns.tsx"),
+  "utf8",
+);
 
 assert.deepEqual(
   JSON.parse(
@@ -60,4 +69,21 @@ assert.deepEqual(
   "应适配 Android 不同状态栏高度",
 );
 
-console.log("首页导航测试通过：iOS 与 Android 胶囊尺寸均能动态适配。");
+assert.match(home, /DEFAULT_BOOK_ID/, "首页默认入口应复用统一默认教材 ID");
+assert.match(
+  home,
+  /bookId=\$\{DEFAULT_BOOK_ID\}&practice=0/,
+  "首页继续跟读入口应显式传递默认教材 ID 和练习序号",
+);
+assert.match(
+  myCheckIns,
+  /DEFAULT_BOOK_ID/,
+  "空打卡入口应复用统一默认教材 ID",
+);
+assert.match(
+  myCheckIns,
+  /bookId=\$\{DEFAULT_BOOK_ID\}&practice=0/,
+  "空打卡入口应显式传递默认教材 ID 和练习序号",
+);
+
+console.log("首页导航测试通过：胶囊尺寸与默认教材跟读入口均正确。");

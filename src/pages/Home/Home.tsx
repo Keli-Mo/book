@@ -7,11 +7,12 @@ import {
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
 import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavigation";
+import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
 import { sharedImage } from "@/constant";
 
 import "./Home.scss";
 
-const PRIMARY_BOOK = BOOKS.find((book) => book.id === "3") || BOOKS[0];
+const PRIMARY_BOOK = BOOKS.find((book) => book.id === DEFAULT_BOOK_ID) || BOOKS[0];
 
 export default function Home() {
   const windowInfo = Taro.getSystemInfoSync();
@@ -34,8 +35,10 @@ export default function Home() {
   };
 
   const startPractice = () => {
-    // 当前只有 CASA 第 1 册完成了教材页、音频和热点位置核对。
-    Taro.navigateTo({ url: "/pages/Practice/Practice?practice=0" });
+    // 默认入口也显式传递教材，避免训练页自行猜测当前教材。
+    Taro.navigateTo({
+      url: `/pages/Practice/Practice?bookId=${DEFAULT_BOOK_ID}&practice=0`,
+    });
   };
 
   const openMyCheckIns = () => {

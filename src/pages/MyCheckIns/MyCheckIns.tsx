@@ -11,6 +11,7 @@ import {
   formatCheckInTime,
   formatRecordingDuration,
 } from "@/utils/checkInFormat";
+import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
 
 import "./MyCheckIns.scss";
 
@@ -89,7 +90,11 @@ export default function MyCheckIns() {
         <Text className='my-check-ins-state__text'>完成一段录音并确认上传后，会显示在这里。</Text>
         <Button
           className='my-check-ins-state__button'
-          onClick={() => Taro.navigateTo({ url: "/pages/Practice/Practice?practice=0" })}
+          onClick={() =>
+            Taro.navigateTo({
+              url: `/pages/Practice/Practice?bookId=${DEFAULT_BOOK_ID}&practice=0`,
+            })
+          }
         >
           开始第一次跟读
         </Button>

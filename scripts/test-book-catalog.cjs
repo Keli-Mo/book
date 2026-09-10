@@ -40,10 +40,23 @@ assert.ok(
 );
 assert.deepEqual(
   Array.from(BOOKS.filter((book) => book.available), (book) => book.id),
-  ["3"],
-  "当前只能开放 CASA 第 1 册",
+  Array.from({ length: 23 }, (_, index) => String(index + 3)),
+  "ID 3–25 的 23 本教材都应开放跟读",
 );
 assert.equal(BOOK_SERIES.length, 5, "首页应展示 5 个教材系列");
+assert.deepEqual(
+  Object.fromEntries(
+    Array.from(BOOK_SERIES, (series) => [series.id, series.availableCount]),
+  ),
+  {
+    casa: 4,
+    "our-world": 4,
+    "oxford-discover": 5,
+    "reading-explorer": 6,
+    cambridge: 4,
+  },
+  "五个系列的开放数量应与各自教材数量一致",
+);
 
 assert.deepEqual(
   Array.from(filterBooks(BOOKS, "reading-explorer", ""), (book) => book.id),
@@ -62,16 +75,22 @@ assert.deepEqual(
 );
 assert.deepEqual(
   JSON.parse(JSON.stringify(resolveBookAction(BOOKS[0]))),
-  { type: "practice", url: "/pages/Practice/Practice?practice=0" },
-  "CASA 第 1 册应进入现有跟读页",
+  { type: "practice", url: "/pages/Practice/Practice?bookId=3&practice=0" },
+  "CASA 第 1 册应显式带上教材 ID 进入跟读页",
 );
 assert.deepEqual(
-  JSON.parse(JSON.stringify(resolveBookAction(BOOKS[1]))),
-  {
-    type: "unavailable",
-    message: "这本教材正在核对页面与音频，暂未开放",
-  },
-  "其他教材必须停留在书架并提示未开放",
+  JSON.parse(JSON.stringify(resolveBookAction(BOOKS[22]))),
+  { type: "practice", url: "/pages/Practice/Practice?bookId=25&practice=0" },
+  "ID 25 应使用其自身教材 ID 进入跟读页",
+);
+assert.deepEqual(
+  Array.from(BOOKS, (book) => resolveBookAction(book).url),
+  Array.from(
+    BOOKS,
+    (book) =>
+      `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`,
+  ),
+  "每本教材都应生成带自身编码 ID 的跟读路由",
 );
 
-console.log("教材目录测试通过：23 本教材、5 个系列、开放状态和搜索筛选均正确。");
+console.log("教材目录测试通过：23 本教材、5 个系列、开放状态、路由和搜索筛选均正确。");

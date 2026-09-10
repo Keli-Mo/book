@@ -40,15 +40,6 @@ export default function BookLibrary() {
   const openBook = (book: BookCatalogItem) => {
     const action = resolveBookAction(book);
 
-    if (action.type === "unavailable") {
-      Taro.showToast({
-        title: action.message,
-        icon: "none",
-        duration: 2200,
-      });
-      return;
-    }
-
     // 沿用已验证的训练页，录音、暂停、回听、目录和云打卡逻辑不在此处复制。
     Taro.navigateTo({ url: action.url });
   };
@@ -129,13 +120,7 @@ export default function BookLibrary() {
                   {book.level} · {book.kind}
                 </Text>
               </View>
-              <Text
-                className={`book-row__state ${
-                  book.available ? "is-available" : ""
-                }`}
-              >
-                {book.available ? "可跟读" : "待上线"}
-              </Text>
+              <Text className='book-row__state is-available'>可跟读</Text>
               <AtIcon value='chevron-right' size='18' color='#9aa6a2' />
             </View>
           ))}

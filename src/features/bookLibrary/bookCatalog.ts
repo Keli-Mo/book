@@ -24,9 +24,7 @@ export type BookSeries = {
   availableCount: number;
 };
 
-export type BookOpenAction =
-  | { type: "practice"; url: string }
-  | { type: "unavailable"; message: string };
+export type BookOpenAction = { type: "practice"; url: string };
 
 const COVER_ORIGIN =
   "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la";
@@ -55,7 +53,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "2.CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BC-%E5%9B%BE%E7%89%87/CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BCReading%20%26%20Phonics%202_1.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "5",
@@ -66,7 +64,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "3.CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BC-%E5%9B%BE%E7%89%87/CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BCReading%20%26%20Phonics%203_1.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "6",
@@ -77,7 +75,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "4.CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BC-%E5%9B%BE%E7%89%87/CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BCReading%20%26%20Phonics%204_1.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "7",
@@ -88,7 +86,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/%E5%89%91%E6%A1%A5PET%E7%BB%BC%E5%90%88%E6%95%99%E7%A8%8B%E5%AD%A6%E7%94%A8%E4%B9%A6B1.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "8",
@@ -99,7 +97,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/%E5%89%91%E6%A1%A5PET%E7%BB%BC%E5%90%88%E6%95%99%E7%A8%8B%E7%BB%83%E4%B9%A0%E5%86%8CB1.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "9",
@@ -110,7 +108,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/%E5%89%91%E6%A1%A5KET%E7%BB%BC%E5%90%88%E6%95%99%E7%A8%8B%E5%AD%A6%E7%94%A8%E4%B9%A6A2.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "10",
@@ -121,7 +119,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/%E5%89%91%E6%A1%A5KET%E7%BB%BC%E5%90%88%E6%95%99%E7%A8%8B%E7%BB%83%E4%B9%A0%E5%86%8CA2.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "11",
@@ -132,7 +130,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_2E_L1_Studentbook.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "12",
@@ -143,7 +141,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_L1_Workbook.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "13",
@@ -154,7 +152,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Studentbook.png",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "14",
@@ -165,7 +163,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Workbook-1.png",
     ),
-    available: false,
+    available: true,
   },
   // 原注释写的是 1st–5th edition，实际资源是第二版的 1–5 级。
   {
@@ -177,7 +175,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L1_1.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "16",
@@ -188,7 +186,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L2_1.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "17",
@@ -199,7 +197,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L3_1.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "18",
@@ -210,7 +208,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L4_1.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "19",
@@ -221,7 +219,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OD_2E_L1_5.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "20",
@@ -232,7 +230,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_Foundations_Studentbook.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "21",
@@ -243,7 +241,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L1_Studentbook.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "22",
@@ -254,7 +252,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L2_Studentbook.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "23",
@@ -265,7 +263,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L3_Studentbook.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "24",
@@ -276,7 +274,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L4_Studentbook.jpg",
     ),
-    available: false,
+    available: true,
   },
   {
     id: "25",
@@ -287,7 +285,7 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover(
       "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/ReadingExplorer_L5_Studentbook.jpg",
     ),
-    available: false,
+    available: true,
   },
 ];
 
@@ -299,47 +297,52 @@ const requireBook = (id: string) => {
   return book;
 };
 
+// 系列开放数直接从同一份教材目录计算，避免教材开放状态与首页文案不同步。
+const createBookSeries = (
+  series: Omit<BookSeries, "availableCount">,
+): BookSeries => ({
+  ...series,
+  availableCount: BOOKS.filter(
+    (book) => book.seriesId === series.id && book.available,
+  ).length,
+});
+
 export const BOOK_SERIES: BookSeries[] = [
-  {
+  createBookSeries({
     id: "casa",
     title: "CASA 阅读与自然拼读",
     shortTitle: "CASA",
     rangeLabel: "1–4 册",
     cover: requireBook("3").cover,
-    availableCount: 1,
-  },
-  {
+  }),
+  createBookSeries({
     id: "our-world",
     title: "Our World",
     shortTitle: "Our World",
     rangeLabel: "Starter · Level 1",
     cover: requireBook("12").cover,
-    availableCount: 0,
-  },
-  {
+  }),
+  createBookSeries({
     id: "oxford-discover",
     title: "Oxford Discover",
     shortTitle: "Oxford",
     rangeLabel: "Level 1–5",
     cover: requireBook("19").cover,
-    availableCount: 0,
-  },
-  {
+  }),
+  createBookSeries({
     id: "reading-explorer",
     title: "Reading Explorer",
     shortTitle: "Reading Explorer",
     rangeLabel: "Foundations · Level 1–5",
     cover: requireBook("23").cover,
-    availableCount: 0,
-  },
-  {
+  }),
+  createBookSeries({
     id: "cambridge",
     title: "剑桥 KET / PET",
     shortTitle: "剑桥",
     rangeLabel: "A2 · B1 · 学生书 / 练习册",
     cover: requireBook("9").cover,
-    availableCount: 0,
-  },
+  }),
 ];
 
 /**
@@ -360,12 +363,10 @@ export const filterBooks = (
 };
 
 /**
- * 所有书籍入口统一经过这里，防止尚未核对页码与音频的教材误入训练页。
+ * 所有书籍入口统一在这里携带教材 ID，训练页无需猜测用户选择的教材。
  */
 export const resolveBookAction = (book: BookCatalogItem): BookOpenAction =>
-  book.available
-    ? { type: "practice", url: "/pages/Practice/Practice?practice=0" }
-    : {
-        type: "unavailable",
-        message: "这本教材正在核对页面与音频，暂未开放",
-      };
+  ({
+    type: "practice",
+    url: `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`,
+  });
