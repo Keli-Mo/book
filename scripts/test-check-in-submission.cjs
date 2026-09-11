@@ -197,6 +197,20 @@ test("同 requestId 去重；上传和退避期取消均不重试、不提交、
   assert.equal(backoff.calls.some(call => call[0] === "commit"), false);
 });
 
+test("首次进度回调内同步取消时不启动上传且结算 cancelled", async () => {
+  const h = harness();
+  let handle;
+  let cancelResult;
+  handle = h.submit(item(), {
+    onProgress: () => { cancelResult = handle.cancel(); },
+  });
+  const result = await handle.promise;
+  assert.equal(cancelResult, true);
+  assert.equal(result.state, "cancelled");
+  assert.equal(h.uploads.length, 0, "取消成功后不得再启动上传");
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "markFailed"]);
+});
+
 test("commit 不确定保留 fileID；重启复用，明确文件不匹配只修复重传一次", async () => {
   const uncertain = harness({ commitPlans: [networkError] }); const first = await uncertain.submit(item()).promise;
   assert.equal(first.state, "failed"); assert.equal(uncertain.values.get(item().requestId).cloudFileId, "cloud://test.bucket/checkins/fresh.mp3");

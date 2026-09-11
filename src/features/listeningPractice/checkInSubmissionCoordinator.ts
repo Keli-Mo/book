@@ -159,8 +159,13 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
         phase = "uploading";
         const attemptToken = ++nextUploadAttempt;
         activeUploadAttempt = attemptToken;
-        emitProgress(null, true);
+        const cancelledPromise = new Promise<never>((_resolve, reject) => {
+          rejectCancellation = reject;
+        });
         try {
+          emitProgress(null, true);
+          // onProgress 是外部回调，可能同步调用 cancel；返回后必须先过取消门闩再启动上传。
+          if (cancelled) await cancelledPromise;
           // start 的同步异常和 result reject 都是上传阶段；其余持久化步骤在循环外，不能重传文件。
           const upload = adapters.startPreparedCheckInUpload(pending.localPath, prepared);
           activeTask = upload.task;
@@ -179,9 +184,6 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
             // 进度是可选能力：保持不确定即可，仍必须消费同一个 upload result。
             emitProgress(null, true);
           }
-          const cancelledPromise = new Promise<never>((_resolve, reject) => {
-            rejectCancellation = reject;
-          });
           const outcome = await Promise.race([result, cancelledPromise]);
           rejectCancellation = undefined;
           activeTask = undefined;
