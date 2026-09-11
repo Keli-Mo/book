@@ -2,13 +2,17 @@
 
 日期：2026-09-11。分支：`codex/local-recording-expiring-share`。这是代码与模拟适配器验证，不是线上部署或真机验收证明。
 
+最近完整验证代码提交：`13bafab`。完成/重录互斥、跳转失败后的文件保护、hide → show → commit 分享状态恢复、保存失败后的原录音重试修复后，重新执行本记录的全部测试、静态检查和构建，结果仍为通过。
+
+独立审查结果：任务审查和整分支增量复审均通过，无未解决 Critical/Important/Minor；Ready to merge: Yes。这里的“可合并”仅指代码质量，不替代下述目标环境验收。
+
 ## 全量脚本
 
-根代理分批独立执行全部 31 个 `scripts/test-*.cjs`，31/31 退出码为 0。首轮发现的默认教材入口与旧 UI 字段断言已修正后重新完整执行；曾停滞的录音测试进程结束后也已独立重跑通过。
+根代理分批独立执行全部 32 个 `scripts/test-*.cjs`，32/32 退出码为 0。首轮发现的默认教材入口与旧 UI 字段断言已修正后重新完整执行；曾停滞的录音测试进程结束后也已独立重跑通过。
 
 | 脚本 | 退出码 |
 | --- | --- |
-+| test-audio-playback.cjs | 0 |
+| test-audio-playback.cjs | 0 |
 | test-book-assets-remote.cjs | 0 |
 | test-book-audio-map-validator.cjs | 0 |
 | test-book-catalog.cjs | 0 |
@@ -24,6 +28,7 @@
 | test-home-navigation.cjs | 0 |
 | test-hotspot-layout.cjs | 0 |
 | test-local-recording-pages.cjs | 0 |
+| test-local-recording-retry-runtime.cjs | 0 |
 | test-local-share-lifecycle.cjs | 0 |
 | test-my-check-ins-pending.cjs | 0 |
 | test-pending-check-in-runtime.cjs | 0 |
@@ -49,6 +54,6 @@
 
 ## 已覆盖与未覆盖
 
-已覆盖保存后真实文件字节/指纹、完成零上传、重启恢复、有效分享复用、30 天失效换代、丢回包恢复、离页取消与迟到事件、分享状态写失败、旧云历史、清理失败重试和新旧文件范围隔离。
+已覆盖保存后真实文件字节/指纹、完成零上传、重启恢复、有效分享复用、30 天失效换代、丢回包恢复、离页取消与迟到事件、分享状态写失败、旧云历史、清理失败重试和新旧文件范围隔离。新增真实页面与真实仓储组合测试覆盖：元数据/文件保存失败后以原编号重试、已经移动的文件不重复移动、新路径回听、保存互斥与迟到授权不启动录音。
 
 尚未执行真实微信麦克风、iOS/Android/Pad 设备录音、实际分享卡片发送、线上权限和短签名到期验证。云函数尚未部署，生产清理未启用；按部署说明完成目标环境验收后才能上线。

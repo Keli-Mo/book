@@ -1,6 +1,16 @@
 # 本地录音限时分享执行记录
 
-## 当前状态：已按用户“继续”恢复
+## 最终状态：代码实现、自测与独立审查通过
+
+- 最新功能代码提交：`13bafab`，分支 `codex/local-recording-expiring-share`；基线 `a7a1e76`。
+- 32/32 测试脚本通过；宽松 TS、修改生产文件 ESLint、微信 no-cache 构建、整分支 diff-check 均通过。既有工具/依赖警告见自测记录。
+- 三项任务审查及整分支审查均已收口；最终复审结论 Ready to merge: Yes，无未解决 Critical/Important/Minor。
+- 最后新增同 ID 重试保存入口，修复一次性本地保存故障的恢复缺口；云端 pending 删除无副作用拒绝、临时录音提示已同步。
+- 已完成源代码与文档交付，未推送/合并、未部署云函数、未启用生产清理、未更改套餐。
+- 上线待办：按 `docs/local-recording-expiring-share-deployment.md` 验证私有存储/短签名、可信定时来源、清理预演及手机/Pad 真机，再启用生产删除。自测详见 `docs/local-recording-expiring-share-test-report.md`。
+- 主目录用户三处改动及工作树 `project.config.json`、`project.private.config.json` 原修改保留，未纳入提交。
+
+## 历史执行轨迹
 
 - 三个原实现代理从现有未提交修改继续，根代理负责集成自测、用途文案及最终交付。
 - 不部署、不推送、不切换套餐、不启动生产删除的边界不变。
@@ -14,6 +24,11 @@
 - 第一轮 30 个测试脚本：home-navigation、ui-refinements 失败待修；recorder-coordinator 测试进程停滞后终止，单独重新执行已通过。其余通过；最终全量尚未通过，不可宣称完成。
 - 当前最新验证：Task 3 已修复上述缺口并补组件运行时脚本，提交 `716646f`；新一轮全量 **31/31** 通过，宽松 TS、修改生产文件 ESLint、微信 no-cache 构建均退出 0。既有工具/依赖警告见自测记录。
 - Task 3 独立审查进行中，Task 4 最终整分支审查待执行；未部署、未启用生产删除、未推送。
+- Task 3 独立审查返回 Needs fixes：完成/重录未同步互斥（导航失败可能让已完成文件进入替换删除）、hide→show→commit成功不刷新分享快照。已交原页面代理增加真实运行时回归并修复，另同步权限文案/移除不可达上传UI。`f51e083` 的31/31验证是这轮修复前的记录，修复后必须重新验证。
+- Task 3 第二轮已在 `155f63e` 修复并独立复审 Approved，无未解决 Critical/Important；完成/重录、导航失败和精确 hide→show→commit 运行时用例通过。
+- `155f63e` 已重新完整验证31/31脚本、宽松TS、生产ESLint、微信no-cache构建，全部退出0。整分支审查代理 `/root/review_local_share_final` 正在审查 `.superpowers/sdd/review-a7a1e76..155f63e.diff`；完成后更新最终状态和保留分支交付。
+- 最终整分支审查结论 With fixes：新增1项Important为temporaryItems在一次性本地保存失败后无显式恢复入口；Minor为pending删除接口和临时提示。统一修复brief在 `.superpowers/sdd/local-share-final-fix-brief.md`，待单一修复代理完成后复审，不可宣称实现完成。
+- 最终修复已提交 `13bafab`：新增分阶段retrySave及两页显式重试、pending删除无副作用拒绝、提示修正。根代理最新32/32脚本、宽松TS、生产ESLint、微信no-cache构建、整分支diff-check均通过；`review_local_share_final` 正在复审 `.superpowers/sdd/review-155f63e..13bafab.diff`。
 
 ## 暂停断点（历史记录）
 
