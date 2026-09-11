@@ -51,6 +51,7 @@ import {
   getRecorderCoordinator,
   type RecorderNativeStopResult,
   type RecorderOwner,
+  type RecorderTerminalSink,
 } from "@/features/listeningPractice/recorderCoordinator";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
 import { getPendingCheckInStore } from "@/features/listeningPractice/pendingCheckInRuntime";
@@ -82,7 +83,6 @@ const RECORDER_OPTIONS = {
   encodeBitRate: 48000,
   format: "mp3" as const,
 };
-const RECORDER_TEARDOWN_TIMEOUT_MS = 8000;
 const RECORDER_ACQUIRE_RETRY_MS = 300;
 
 const recorderOperationError = (reason: string, error?: unknown) =>
@@ -197,13 +197,13 @@ function PracticeSession({
   const pendingCheckInRef = useRef<PendingCheckIn | null>(null);
   const submissionHandleRef = useRef<CheckInSubmissionHandle | null>(null);
   const recorderUnsubscribeRef = useRef<(() => void) | null>(null);
+  const recorderTerminalSinkRef = useRef<RecorderTerminalSink | null>(null);
   const mountedRef = useRef(true);
   const pageHiddenRef = useRef(false);
   const savingRecordingRef = useRef(false);
   const saveGenerationRef = useRef(0);
   const replacementPendingIdsRef = useRef(new Set<string>());
   const teardownAwaitingStopRef = useRef(false);
-  const teardownReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const practiceContextRef = useRef({ practice, practiceIndex });
   practiceContextRef.current = { practice, practiceIndex };
 
@@ -338,13 +338,10 @@ function PracticeSession({
   }, []);
 
   const releaseRecorderOwner = useCallback(() => {
-    if (teardownReleaseTimerRef.current !== null) {
-      clearTimeout(teardownReleaseTimerRef.current);
-      teardownReleaseTimerRef.current = null;
-    }
     teardownAwaitingStopRef.current = false;
     recorderUnsubscribeRef.current?.();
     recorderUnsubscribeRef.current = null;
+    recorderTerminalSinkRef.current = null;
     const owner = recorderOwnerRef.current;
     recorderOwnerRef.current = null;
     owner?.release();
@@ -500,7 +497,7 @@ function PracticeSession({
       }
     };
 
-    const handleStop = (result: RecorderNativeStopResult) => {
+    const handleStop = async (result: RecorderNativeStopResult) => {
       const releaseAfterStop = teardownAwaitingStopRef.current;
       const current = recordingMachineRef.current;
       const next = resolveRecorderCallback(current, {
@@ -540,8 +537,8 @@ function PracticeSession({
         practiceContextRef.current;
 
       // 录音一停止就先移入小程序持久文件，再允许用户上传、切页或重录。
-      void getPendingCheckInStore()
-        .saveRecording({
+      try {
+        const saved = await getPendingCheckInStore().saveRecording({
           tempFilePath: parsed.tempFilePath,
           durationMs: parsed.durationMs,
           fileSizeBytes: parsed.fileSizeBytes,
@@ -554,42 +551,49 @@ function PracticeSession({
             sectionTitle: stoppedPractice.sectionTitle,
             imageUrl: stoppedPractice.imageUrl,
           },
-        })
-        .then(async (saved) => {
-          if (generation !== saveGenerationRef.current) return;
-          // 新录音可恢复后再删除被替换版本；保存失败时旧录音仍是安全备份。
-          if (saved.persisted) await removeReplacementBackups();
-          applyPendingCheckIn(saved.item);
-          if (mountedRef.current) {
-            setTempRecordingPath(saved.item.localPath);
-            setRecordingDurationMs(saved.item.durationMs);
-            setRecordingElapsedMs(saved.item.durationMs);
+        });
+        if (generation !== saveGenerationRef.current) return;
+        applyPendingCheckIn(saved.item);
+        if (mountedRef.current) {
+          setTempRecordingPath(saved.item.localPath);
+          setRecordingDurationMs(saved.item.durationMs);
+          setRecordingElapsedMs(saved.item.durationMs);
+        }
+        if (saved.message && mountedRef.current) {
+          void Taro.showModal({
+            title: saved.persisted ? "录音已保存" : "录音仅临时保存",
+            content: saved.message,
+            showCancel: false,
+          });
+        }
+        // 新录音已经有可恢复副本后再清理旧版本；清理失败不影响本次录音的保存结果。
+        if (saved.persisted) {
+          try {
+            await removeReplacementBackups();
+          } catch (_error) {
+            // 旧副本会继续留在“我的打卡”中，后续仍可手动清理。
           }
-          if (saved.message && mountedRef.current) {
+        }
+      } catch (error) {
+        if (generation === saveGenerationRef.current) {
+          clearRecordingView();
+          applyRecordingMachine(resetRecordingMachine(recordingMachineRef.current));
+          if (mountedRef.current) {
             void Taro.showModal({
-              title: saved.persisted ? "录音已保存" : "录音仅临时保存",
-              content: saved.message,
+              title: "录音保存失败",
+              content: getRecordingErrorMessage(error),
               showCancel: false,
             });
           }
-        })
-        .catch((error) => {
-          if (generation !== saveGenerationRef.current || !mountedRef.current) return;
-          clearRecordingView();
-          applyRecordingMachine(resetRecordingMachine(recordingMachineRef.current));
-          void Taro.showModal({
-            title: "录音保存失败",
-            content: getRecordingErrorMessage(error),
-            showCancel: false,
-          });
-        })
-        .finally(() => {
-          if (generation !== saveGenerationRef.current) return;
+        }
+      } finally {
+        if (generation === saveGenerationRef.current) {
           savingRecordingRef.current = false;
           if (mountedRef.current) setIsSavingRecording(false);
-        });
-      // stop 结果已被接管并开始持久化，页面可以安全释放原生 owner。
-      if (releaseAfterStop) releaseRecorderOwner();
+        }
+        // 卸载后的 terminal 由协调器保留到本地持久化真正结束，再允许下一页开始录音。
+        if (releaseAfterStop) releaseRecorderOwner();
+      }
     };
 
     const handleError = (error: unknown) => {
@@ -616,6 +620,9 @@ function PracticeSession({
         });
       }
     };
+
+    recorderTerminalSinkRef.current = (event) =>
+      event.type === "stop" ? handleStop(event.result) : handleError(event.error);
 
     const subscription = owner.subscribe({
       onStart: handleStart,
@@ -790,17 +797,17 @@ function PracticeSession({
     teardownAwaitingStopRef.current = true;
     if (teardown.command) {
       applyRecordingMachine(teardown.machine);
-      const stopped = owner.stop();
-      if (!stopped.ok) {
-        releaseRecorderOwner();
-        return;
-      }
     }
-    if (teardownAwaitingStopRef.current) {
-      teardownReleaseTimerRef.current = setTimeout(
-        releaseRecorderOwner,
-        RECORDER_TEARDOWN_TIMEOUT_MS,
-      );
+
+    const terminalSink = recorderTerminalSinkRef.current;
+    const released = owner.release({ terminalSink: terminalSink || undefined });
+    // release 已把普通 listener 清空；只保留协调器内部的一次 terminal sink。
+    recorderOwnerRef.current = null;
+    recorderUnsubscribeRef.current = null;
+    recorderTerminalSinkRef.current = null;
+    if (!released.ok) {
+      teardownAwaitingStopRef.current = false;
+      recordingMachineRef.current = disposeRecordingMachine(recordingMachineRef.current);
     }
   });
 

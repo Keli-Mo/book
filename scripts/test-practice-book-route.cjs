@@ -60,6 +60,8 @@ const createPage = (file, params, options = {}) => {
   const recorderHandlers = {};
   const savedRecordings = [];
   const submittedPending = [];
+  const recorderReleaseCalls = [];
+  const recorderTerminalOutcomes = [];
   const pendingItems = [...(options.pendingItems || [])];
   let activeRecorder = null;
   let acquireAttempts = 0;
@@ -128,9 +130,9 @@ const createPage = (file, params, options = {}) => {
       acquireAttempts += 1;
       if (outcome === "busy") return { ok: false, reason: "busy", phase: "draining" };
       if (outcome === "unavailable") return { ok: false, reason: "unavailable" };
-      const session = { listener: null, phase: "idle", released: false };
-      const succeed = (action, options) => {
-        recorderActions.push(options === undefined ? { action } : { action, options });
+      const session = { listener: null, detachedTerminalSink: null, phase: "idle", released: false };
+      const succeed = (action, actionOptions) => {
+        recorderActions.push(actionOptions === undefined ? { action } : { action, options: actionOptions });
         session.phase = action === "start" ? "starting" : action === "stop" ? "stopping" : action === "pause" ? "paused" : "recording";
         return { ok: true };
       };
@@ -139,7 +141,16 @@ const createPage = (file, params, options = {}) => {
         pause: () => succeed("pause"),
         resume: () => succeed("resume"),
         stop: () => succeed("stop"),
-        release() { session.released = true; return { ok: true, phase: session.phase === "idle" ? "idle" : "draining" }; },
+        release(releaseOptions) {
+          recorderReleaseCalls.push(releaseOptions);
+          session.detachedTerminalSink = releaseOptions?.terminalSink || null;
+          if (["starting", "recording", "paused"].includes(session.phase)) {
+            succeed("stop");
+          }
+          session.listener = null;
+          session.released = true;
+          return { ok: true, phase: session.phase === "idle" ? "idle" : "draining" };
+        },
         subscribe(listener) {
           session.listener = listener;
           return { ok: true, unsubscribe: () => { if (session.listener === listener) session.listener = null; } };
@@ -162,12 +173,23 @@ const createPage = (file, params, options = {}) => {
   };
   const dispatchRecorder = (event, value) => {
     const session = activeRecorder;
-    assert.ok(session?.listener, `录音事件 ${event} 必须在 owner 订阅后触发`);
+    const terminalEvent = event === "Stop" || event === "Error";
+    assert.ok(
+      session?.listener || (terminalEvent && session?.detachedTerminalSink),
+      `录音事件 ${event} 必须由页面 listener 或卸载后的 terminal sink 接收`,
+    );
     if (event === "Start") session.phase = "recording";
     if (event === "Pause") session.phase = "paused";
     if (event === "Resume") session.phase = "recording";
     if (event === "Stop" || event === "Error") session.phase = "idle";
-    session.listener[`on${event}`]?.(value);
+    if (session.listener) return session.listener[`on${event}`]?.(value);
+    const terminalSink = session.detachedTerminalSink;
+    session.detachedTerminalSink = null;
+    const outcome = terminalSink(
+      event === "Stop" ? { type: "stop", result: value } : { type: "error", error: value },
+    );
+    recorderTerminalOutcomes.push(outcome);
+    return outcome;
   };
   const primeLegacyStop = () => {
     for (const currentFrame of frames.values()) {
@@ -202,7 +224,7 @@ const createPage = (file, params, options = {}) => {
       const result = event === "Stop" && value?.fileSize === undefined
         ? { ...value, fileSize: 4096 }
         : value;
-      dispatchRecorder(event, result);
+      return dispatchRecorder(event, result);
     };
   }
   recorderHandlers.InterruptionBegin = () => activeRecorder?.listener?.onInterruptionBegin?.();
@@ -300,6 +322,7 @@ const createPage = (file, params, options = {}) => {
   };
   return {
     render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending,
+    recorderReleaseCalls, recorderTerminalOutcomes,
     get acquireAttempts() { return acquireAttempts; },
     stateValues() {
       return [...frames.values()].flatMap((current) =>
@@ -589,10 +612,15 @@ async function testRoutes() {
     "cleanup 等待期间启动新 session 后，旧 pending 只能留在 store",
   );
 
+  const leavingTimers = createFakeTimers();
   const leavingPage = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "22", practice: "0" },
-    { savedFilePath: "/saved/leaving.mp3" },
+    {
+      savedFilePath: "/saved/leaving.mp3",
+      setTimeout: leavingTimers.setTimeout,
+      clearTimeout: leavingTimers.clearTimeout,
+    },
   );
   let leavingTree = leavingPage.render();
   leavingTree = leavingPage.render();
@@ -602,7 +630,15 @@ async function testRoutes() {
   assert.equal(leavingPage.recorderActions.at(-1).action, "pause", "页面隐藏应优先暂停录音");
   leavingPage.unload();
   assert.equal(leavingPage.recorderActions.at(-1).action, "stop", "页面真正卸载前必须收口录音");
-  leavingPage.recorderHandlers.Stop({
+  assert.equal(leavingPage.recorderReleaseCalls.length, 1, "卸载时必须立即把 owner 交还给全局协调器");
+  assert.equal(
+    typeof leavingPage.recorderReleaseCalls[0]?.terminalSink,
+    "function",
+    "卸载活动录音时必须托管一次 terminal sink",
+  );
+  assert.equal(leavingTimers.size, 0, "页面不得再用 8 秒硬截止撤销唯一 stop 消费器");
+  leavingTimers.advance(9000);
+  await leavingPage.recorderHandlers.Stop({
     tempFilePath: "/tmp/leaving.mp3",
     duration: 2300,
     fileSize: 8192,
@@ -610,6 +646,11 @@ async function testRoutes() {
   await settle();
   assert.equal(leavingPage.savedRecordings.length, 1, "离页 stop 结果仍必须进入本地待上传队列");
   assert.equal(leavingPage.savedRecordings[0].durationMs, 2300);
+  assert.equal(
+    typeof leavingPage.recorderTerminalOutcomes[0]?.then,
+    "function",
+    "terminal sink 必须把异步本地持久化 Promise 交还协调器等待",
+  );
 
   const invalidRoutes = [{}, { practice: "0" }, { bookId: "3" }, { bookId: "unknown", practice: "0" }];
   for (const bookId of ["3", "22", "25"]) {

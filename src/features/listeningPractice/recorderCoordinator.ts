@@ -11,14 +11,19 @@ export type RecorderOwnerListener = {
   onStart?: () => void; onPause?: () => void; onResume?: () => void; onStop?: (result: RecorderNativeStopResult) => void;
   onError?: (error: unknown) => void; onInterruptionBegin?: () => void; onInterruptionEnd?: () => void;
 };
+export type RecorderTerminalEvent =
+  | { type: "stop"; result: RecorderNativeStopResult }
+  | { type: "error"; error: unknown };
+export type RecorderTerminalSink = (event: RecorderTerminalEvent) => void | Promise<void>;
+export type RecorderReleaseOptions = { terminalSink?: RecorderTerminalSink };
 export type RecorderOperationResult = { ok: true } | { ok: false; reason: "released" | "busy" | "invalid-phase" | "unsupported" | "native-error"; phase?: RecorderCoordinatorPhase; capability?: "pause" | "resume"; error?: unknown };
 export type RecorderReleaseResult = { ok: true; phase: "idle" | "draining" } | { ok: false; reason: "released" | "native-error"; phase?: RecorderCoordinatorPhase; error?: unknown };
 export type RecorderSubscriptionResult = { ok: true; unsubscribe: () => void } | { ok: false; reason: "released" };
-export type RecorderOwner = { start(options: unknown): RecorderOperationResult; pause(): RecorderOperationResult; resume(): RecorderOperationResult; stop(): RecorderOperationResult; release(): RecorderReleaseResult; subscribe(listener: RecorderOwnerListener): RecorderSubscriptionResult };
+export type RecorderOwner = { start(options: unknown): RecorderOperationResult; pause(): RecorderOperationResult; resume(): RecorderOperationResult; stop(): RecorderOperationResult; release(options?: RecorderReleaseOptions): RecorderReleaseResult; subscribe(listener: RecorderOwnerListener): RecorderSubscriptionResult };
 export type RecorderAcquireResult = { ok: true; owner: RecorderOwner; capabilities: RecordingCapabilities } | { ok: false; reason: "unavailable" | "busy"; phase?: RecorderCoordinatorPhase };
 export type RecorderCoordinator = { acquire(): RecorderAcquireResult; getPhase(): RecorderCoordinatorPhase };
 export type RecorderScheduler = { setTimeout(callback: () => void, delayMs: number): unknown; clearTimeout(handle: unknown): void };
-export type RecorderCoordinatorOptions = { getRecorderManager?: () => RecorderNativeManager | null | undefined; scheduler?: RecorderScheduler; quietWindowMs?: number; operationTimeoutMs?: number };
+export type RecorderCoordinatorOptions = { getRecorderManager?: () => RecorderNativeManager | null | undefined; scheduler?: RecorderScheduler; quietWindowMs?: number; operationTimeoutMs?: number; drainTimeoutMs?: number };
 type Owner = { token: symbol; released: boolean; listeners: Set<RecorderOwnerListener> };
 type EventName = "start" | "pause" | "resume" | "stop" | "error" | "interruptionBegin" | "interruptionEnd";
 
@@ -45,11 +50,15 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
   let resumePending = false;
   let quietTimer: unknown = null;
   let operationTimer: unknown = null;
+  let drainTimer: unknown = null;
+  let detachedTerminalSink: RecorderTerminalSink | null = null;
+  let drainSinkSettling = false;
   let operationGeneration = 0;
   let drainGeneration = 0;
   const scheduler = options.scheduler ?? fallbackScheduler;
   const quietWindowMs = options.quietWindowMs ?? 80;
   const operationTimeoutMs = options.operationTimeoutMs ?? 1000;
+  const drainTimeoutMs = options.drainTimeoutMs ?? 30000;
   const current = (value: Owner) => !value.released && owner?.token === value.token;
   const notify = (key: keyof RecorderOwnerListener, value?: unknown) => {
     if (!owner || owner.released) return;
@@ -67,16 +76,82 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
     systemPausePending = false; pausePending = false; resumePending = false;
     clearOperationWatchdog();
   };
+  const clearDrainWatchdog = () => {
+    if (drainTimer !== null) scheduler.clearTimeout(drainTimer);
+    drainTimer = null;
+  };
+  const armDrainWatchdog = () => {
+    clearDrainWatchdog();
+    const generation = drainGeneration;
+    drainTimer = scheduler.setTimeout(() => {
+      if (generation !== drainGeneration || phase !== "draining") return;
+      // RecorderManager 不提供会话编号；终止事件永久缺失时只能有限隔离后解锁，避免后续页面永远不可录音。
+      drainTimer = null;
+      detachedTerminalSink = null;
+      drainSinkSettling = false;
+      drainGeneration += 1;
+      if (quietTimer !== null) scheduler.clearTimeout(quietTimer);
+      quietTimer = null;
+      phase = "idle";
+    }, drainTimeoutMs);
+  };
   const beginQuiet = () => {
+    clearDrainWatchdog();
     if (quietTimer !== null) scheduler.clearTimeout(quietTimer);
     const generation = drainGeneration;
     quietTimer = scheduler.setTimeout(() => { if (generation === drainGeneration && phase === "draining") { quietTimer = null; phase = "idle"; } }, quietWindowMs);
   };
-  const beginDraining = () => { clearPending(); drainGeneration += 1; phase = "draining"; if (quietTimer !== null) scheduler.clearTimeout(quietTimer); quietTimer = null; };
+  const beginDraining = (terminalSink: RecorderTerminalSink | null = null) => {
+    clearPending();
+    drainGeneration += 1;
+    phase = "draining";
+    detachedTerminalSink = terminalSink;
+    drainSinkSettling = false;
+    if (quietTimer !== null) scheduler.clearTimeout(quietTimer);
+    quietTimer = null;
+    armDrainWatchdog();
+  };
+  const settleDetachedTerminal = (event: RecorderTerminalEvent) => {
+    if (drainSinkSettling) return;
+    const sink = detachedTerminalSink;
+    detachedTerminalSink = null;
+    if (!sink) {
+      beginQuiet();
+      return;
+    }
+
+    drainSinkSettling = true;
+    const generation = drainGeneration;
+    let outcome: unknown;
+    try {
+      outcome = sink(event);
+    } catch (_error) {
+      outcome = undefined;
+    }
+    const finish = () => {
+      if (generation !== drainGeneration || phase !== "draining" || !drainSinkSettling) return;
+      drainSinkSettling = false;
+      beginQuiet();
+    };
+    if (outcome && typeof (outcome as PromiseLike<void>).then === "function") {
+      // 本地 saveFile/元数据写入完成前保持 draining，防止新会话覆盖唯一的临时录音文件。
+      armDrainWatchdog();
+      Promise.resolve(outcome).then(finish, finish);
+    } else {
+      finish();
+    }
+  };
   const consumeTerminal = (key: "onStop" | "onError", value: unknown) => {
     clearPending();
     // 无 session id：仅 drain/连续静默窗内的一切 terminal 可归旧代次，绝不贴给等待 owner。
-    if (phase === "draining") { beginQuiet(); return; }
+    if (phase === "draining") {
+      settleDetachedTerminal(
+        key === "onStop"
+          ? { type: "stop", result: value as RecorderNativeStopResult }
+          : { type: "error", error: value },
+      );
+      return;
+    }
     if (phase === "idle") return;
     notify(key, value);
     beginDraining();
@@ -127,19 +202,24 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
       pause() { if (!current(state)) return fail("released"); if (!caps.canPause) return { ok: false, reason: "unsupported", capability: "pause" }; if (phase !== "recording") return fail("invalid-phase"); pausePending = true; const result = call(() => manager.pause!(), "paused", "recording"); if (!result.ok) clearPending(); else if (pausePending) armOperationWatchdog("pause", manager); return result; },
       resume() { if (!current(state)) return fail("released"); if (!caps.canResume) return { ok: false, reason: "unsupported", capability: "resume" }; if (phase !== "paused") return fail("invalid-phase"); resumePending = true; const result = call(() => manager.resume!(), "recording", "paused"); if (!result.ok) clearPending(); else if (resumePending) armOperationWatchdog("resume", manager); return result; },
       stop() { if (!current(state)) return fail("released"); if (!["starting", "recording", "paused"].includes(phase)) return fail("invalid-phase"); clearPending(); const previous = phase; const result = call(() => manager.stop(), "stopping", previous); return result; },
-      release() {
+      release(releaseOptions = {}) {
         if (!current(state)) return { ok: false, reason: "released" };
+        const terminalSink = releaseOptions.terminalSink ?? null;
         state.released = true; state.listeners.clear(); owner = null;
         clearPending();
         if (phase === "idle") return { ok: true, phase: "idle" };
         if (phase === "draining") return { ok: true, phase: "draining" };
-        if (phase === "stopping") { beginDraining(); return { ok: true, phase: "draining" }; }
-        beginDraining();
-        const revision = drainGeneration;
+        if (phase === "stopping") { beginDraining(terminalSink); return { ok: true, phase: "draining" }; }
+        beginDraining(terminalSink);
         try { manager.stop(); return { ok: true, phase: "draining" }; } catch (error) {
-          // 纯同步 throw 表示没有终止回调、也没有 quiet 出口，可安全解除本次未入队的 drain。
-          // 若 stop 已同步触发 terminal，则 quietTimer/revision 已代表该终止，绝不能覆盖它。
-          if (drainGeneration === revision && quietTimer === null) phase = "idle";
+          if (terminalSink) {
+            settleDetachedTerminal({ type: "error", error });
+          } else {
+            // 纯同步 throw 表示没有终止回调，可立即解除本次未入队的 drain。
+            clearDrainWatchdog();
+            drainGeneration += 1;
+            phase = "idle";
+          }
           return { ok: false, reason: "native-error", phase, error };
         }
       },
