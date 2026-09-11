@@ -31,6 +31,7 @@ vm.runInNewContext(compiled.outputText, {
 });
 
 const {
+  MAX_PENDING_COUNT,
   MAX_PENDING_FILE_BYTES,
   createPendingCheckInStore,
 } = moduleContainer.exports;
@@ -53,6 +54,7 @@ const createAdapters = ({
   records = [],
   saveBehavior,
   storageSetBehavior,
+  storageGetBehavior,
   existingPaths,
   removeBehavior,
 } = {}) => {
@@ -64,6 +66,7 @@ const createAdapters = ({
   const adapters = {
     storage: {
       async get() {
+        if (storageGetBehavior) await storageGetBehavior();
         return JSON.parse(JSON.stringify(savedRecords));
       },
       async set(_key, nextRecords) {
@@ -131,7 +134,8 @@ const createBarrier = () => {
 };
 
 (async () => {
-  assert.equal(MAX_PENDING_FILE_BYTES, 8 * MIB, "持久队列容量应为 8MiB");
+  assert.equal(MAX_PENDING_FILE_BYTES, 100 * MIB, "本地录音库总预算应为 100MiB");
+  assert.equal(MAX_PENDING_COUNT, 500, "本地录音库最多保留 500 条元数据");
 
   const pathSwitch = createAdapters({ existingPaths: ["/tmp/current.mp3"] });
   const store = createPendingCheckInStore(pathSwitch.adapters);
@@ -193,7 +197,7 @@ const createBarrier = () => {
   assert.equal(reboundFailureStore.list()[0].contentSha1, undefined);
 
   const correctedCapacity = createAdapters({
-    records: [pending({ fileSizeBytes: 7 * MIB })],
+    records: [pending({ fileSizeBytes: 99 * MIB })],
     saveBehavior: async () => ({ savedFilePath: "/saved/corrected.mp3", fileSizeBytes: MIB + 1, contentSha1: "d".repeat(40) }),
     existingPaths: ["/saved/existing.mp3", "/saved/corrected.mp3"],
   });
@@ -202,7 +206,7 @@ const createBarrier = () => {
   assert.equal(correctedSaved.persisted, true, "实测越限也必须保住已保存文件的恢复元数据");
   assert.equal(correctedSaved.item.localPath, "/saved/corrected.mp3");
   assert.equal(correctedSaved.item.fileSizeBytes, MIB + 1);
-  assert.match(correctedSaved.message, /8MiB/);
+  assert.match(correctedSaved.message, /100MiB/);
   const blockedByActualSize = await correctedCapacityStore.saveRecording(recording({ fileSizeBytes: 1 }));
   assert.equal(blockedByActualSize.persisted, false, "后续容量判断必须使用修正后的实际字节数");
   assert.equal(correctedCapacity.calls.save.length, 1);
@@ -230,26 +234,26 @@ const createBarrier = () => {
   const exactCapacity = createAdapters({ existingPaths: ["/tmp/exact.mp3"] });
   const exactStore = createPendingCheckInStore(exactCapacity.adapters);
   const exact = await exactStore.saveRecording(
-    recording({ tempFilePath: "/tmp/exact.mp3", fileSizeBytes: 8 * MIB }),
+    recording({ tempFilePath: "/tmp/exact.mp3", fileSizeBytes: 100 * MIB }),
   );
-  assert.equal(exact.persisted, true, "恰好 8MiB 应允许保存");
+  assert.equal(exact.persisted, true, "恰好 100MiB 应允许保存");
   const over = await exactStore.saveRecording(
     recording({ tempFilePath: "/tmp/over.mp3", fileSizeBytes: 1 }),
   );
   assert.equal(over.persisted, false);
   assert.equal(over.item.recoverable, false);
-  assert.match(over.message, /清理历史录音或联网提交/);
+  assert.match(over.message, /清理历史录音/);
   assert.equal(exactCapacity.calls.save.length, 1, "预判容量超限不得移动临时文件");
 
   const countBoundary = createAdapters({
-    records: [pending({ requestId: hex(1) }), pending({ requestId: hex(2) }), pending({ requestId: hex(3) })],
+    records: Array.from({ length: 500 }, (_, index) => pending({ requestId: hex(index + 1), fileSizeBytes: 1 })),
     existingPaths: ["/saved/existing.mp3"],
   });
-  countBoundary.adapters.random.hex = () => hex(4);
+  countBoundary.adapters.random.hex = () => hex(501);
   const countStore = createPendingCheckInStore(countBoundary.adapters);
   const countOver = await countStore.saveRecording(recording({ fileSizeBytes: 1 }));
   assert.equal(countOver.persisted, false, "第三条之后不得再持久保存");
-  assert.match(countOver.message, /最多 3 条/);
+  assert.match(countOver.message, /最多 500 条/);
 
   const cleanupNow = 1_900_000_000_000;
   const cleanup = createAdapters({
@@ -271,8 +275,7 @@ const createBarrier = () => {
   );
   assert.deepEqual(cleanup.calls.remove, [], "自动清理不得删除任何仍存在的录音文件");
   const capacityWithOldRecordings = await cleanupStore.saveRecording(recording({ fileSizeBytes: 1 }));
-  assert.equal(capacityWithOldRecordings.persisted, false, "旧录音仍占用队列容量，满额时需用户处理");
-  assert.match(capacityWithOldRecordings.message, /最多 3 条/);
+  assert.equal(capacityWithOldRecordings.persisted, true, "未达 100MiB/500 条时旧录音不应阻止继续保存");
   assert.deepEqual(cleanup.calls.remove, [], "容量不足也不能自动删除旧录音");
   assert.equal(await cleanupStore.remove(hex(11)), true, "用户显式删除旧录音仍生效");
   assert.deepEqual(cleanup.calls.remove, ["/saved/eight-days.mp3"]);
@@ -325,8 +328,22 @@ const createBarrier = () => {
     "元数据失败的会话项必须保留已生成的同一 requestId",
   );
   assert.equal(metadataFailure.item.recoverable, false);
-  assert.equal(await metadataFailStore.complete(metadataFailure.item.requestId, true), true);
-  assert.deepEqual(metadataFails.calls.remove, ["/saved/1.mp3"]);
+  assert.equal(await metadataFailStore.complete(metadataFailure.item.requestId, true), false, "未持久临时项不能假装长期完成");
+  assert.deepEqual(metadataFails.calls.remove, []);
+
+  let readAttempts = 0;
+  const readFailure = createAdapters({
+    records: [pending({ requestId: hex(95) })],
+    existingPaths: ["/saved/existing.mp3", "/tmp/read-fail.mp3"],
+    storageGetBehavior: () => { readAttempts += 1; if (readAttempts === 1) throw new Error("read failed"); },
+  });
+  const readFailureStore = createPendingCheckInStore(readFailure.adapters);
+  const blockedSave = await readFailureStore.saveRecording(recording({ tempFilePath: "/tmp/read-fail.mp3" }));
+  assert.equal(blockedSave.persisted, false, "索引读取失败时必须 fail-closed");
+  assert.equal(readFailure.calls.set, 0, "不得用空数组覆盖未读出的旧索引");
+  assert.equal(readFailure.calls.save.length, 0, "索引未知时不得移动新录音文件");
+  await readFailureStore.ready();
+  assert.equal(readFailureStore.list()[0].requestId, hex(95), "后续读取成功可恢复原元数据");
 
   const duplicatePersisted = createAdapters({
     records: [pending({ requestId: hex(1) })],
@@ -392,7 +409,49 @@ const createBarrier = () => {
   assert.equal(restarted.list()[0].status, "failed", "重启后应恢复持久状态");
   assert.equal(await restarted.complete(lifecycleSaved.item.requestId, false), false, "未明确打卡成功不得删除");
   assert.equal(await restarted.complete(lifecycleSaved.item.requestId, true), true);
-  assert.equal(restarted.list().length, 0, "明确打卡成功后才删除文件和元数据");
+  assert.equal(restarted.list().length, 1, "完成练习只更新元数据，不能删除本地录音");
+  assert.equal(lifecycle.existing.has(lifecycleSaved.item.localPath), true, "完成后文件必须仍可回听");
+  assert.equal(restarted.list()[0].completedAtMs, 1_800_000_000_000);
+  const completedRestart = createPendingCheckInStore(lifecycle.adapters);
+  await completedRestart.ready();
+  assert.equal(completedRestart.list()[0].completedAtMs, 1_800_000_000_000, "完成时间重启后仍恢复");
+
+  const shareAdapters = createAdapters({
+    now: 1_900_000_000_000,
+    records: [pending({ requestId: hex(91), createdAtMs: 1_800_000_000_000 })],
+    existingPaths: ["/saved/existing.mp3"],
+  });
+  shareAdapters.adapters.random.hex = (() => {
+    const ids = [hex(191), hex(192)];
+    return () => ids.shift();
+  })();
+  const shareStore = createPendingCheckInStore(shareAdapters.adapters);
+  const firstShare = await shareStore.beginShare(hex(91));
+  assert.equal(firstShare.shareRequestId, hex(191), "首次分享须持久化独立云 requestId");
+  assert.equal((await shareStore.beginShare(hex(91))).shareRequestId, hex(191), "未完成或有效代次必须复用");
+  const expiry = 1_900_000_100_000;
+  const marked = await shareStore.markShared(hex(91), { id: "cloud-id", shareToken: "token", expiresAtMs: expiry });
+  assert.equal(marked.share.expiresAtMs, expiry);
+  assert.equal((await shareStore.beginShare(hex(91))).shareRequestId, hex(191), "有效分享不得因再次点击换代");
+  shareAdapters.adapters.clock.now = () => expiry;
+  const nextShare = await shareStore.beginShare(hex(91));
+  assert.equal(nextShare.shareRequestId, hex(192), "到期后下一次主动分享才生成新代");
+  assert.equal(nextShare.share, undefined, "新代不能沿用旧链接");
+  assert.equal(await shareStore.markUploaded(hex(91), "cloud://stale", hex(191)), null, "旧代迟到上传不得污染新代");
+  assert.equal(shareStore.list()[0].cloudFileId, "");
+  assert.equal(await shareStore.markShared(hex(91), { id: "stale", shareToken: "stale", expiresAtMs: expiry + 1 }, hex(191)), null, "旧代迟到提交不得污染新代");
+  assert.equal(shareStore.list()[0].share, undefined);
+  const shareRestart = createPendingCheckInStore(shareAdapters.adapters);
+  await shareRestart.ready();
+  assert.equal(shareRestart.list()[0].shareRequestId, hex(192), "新代写入成功后重启仍保持");
+
+  const generationWriteFailure = createAdapters({
+    records: [pending({ requestId: hex(92) })],
+    existingPaths: ["/saved/existing.mp3"],
+    storageSetBehavior: async () => { throw new Error("cannot persist generation"); },
+  });
+  const generationStore = createPendingCheckInStore(generationWriteFailure.adapters);
+  assert.equal(await generationStore.beginShare(hex(92)), null, "新代元数据未持久化时不得允许上传");
 
   const completeFails = createAdapters({
     records: [pending({ requestId: hex(41), localPath: "/saved/complete-fail.mp3" })],
@@ -402,8 +461,8 @@ const createBarrier = () => {
     },
   });
   const completeFailStore = createPendingCheckInStore(completeFails.adapters);
-  assert.equal(await completeFailStore.complete(hex(41), true), false);
-  assert.equal(completeFailStore.list().length, 1, "完成时删除失败必须保留可重试元数据");
+  assert.equal(await completeFailStore.complete(hex(41), true), true);
+  assert.equal(completeFailStore.list().length, 1, "完成不删除文件，删除适配器异常不应影响完成标记");
 
   const invalidSaveResult = createAdapters({
     saveBehavior: async () => ({ savedFilePath: "" }),
@@ -500,11 +559,11 @@ const createBarrier = () => {
   });
   const completeWriteFailStore = createPendingCheckInStore(completeWriteFails.adapters);
   assert.equal(await completeWriteFailStore.complete(hex(82), true), false);
-  assert.equal(completeWriteFailStore.list().length, 0, "complete 删除文件后不得暴露失效路径");
+  assert.equal(completeWriteFailStore.list().length, 1, "完成标记写失败仍须保留文件与原元数据");
   await completeWriteFailStore.saveRecording(
     recording({ tempFilePath: "/tmp/complete-retry.mp3", fileSizeBytes: 1 }),
   );
-  assert.equal(completeWriteFails.getRecords().length, 1, "后续 mutation 应补写完成删除元数据");
+  assert.equal(completeWriteFails.getRecords().length, 2, "后续保存不能覆盖完成标记失败的原元数据");
 
   const corrupted = createAdapters({ records: [{ requestId: "broken" }] });
   const corruptedStore = createPendingCheckInStore(corrupted.adapters);
@@ -515,7 +574,7 @@ const createBarrier = () => {
     "损坏持久数据不能导致白屏",
   );
 
-  console.log("待上传录音仓储测试通过：保存路径、容量、清理、恢复与完成删除契约正确。");
+  console.log("本地录音仓储测试通过：持久文件、容量、恢复、完成标记与分享代次契约正确。");
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

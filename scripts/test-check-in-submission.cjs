@@ -45,6 +45,7 @@ const createScheduler = () => {
 
 const item = (patch = {}) => ({
   requestId: "abcdef0123456789abcdef0123456789",
+  shareRequestId: "11111111111111111111111111111111",
   localPath: "/saved/record.mp3", recoverable: true,
   context: { bookId: "3", bookTitle: "CASA", practiceId: "3-page-4", practiceIndex: 0, pageNumber: 4, sectionTitle: "导入", imageUrl: "https://example.test/4.png" },
   durationMs: 3200.4, fileSizeBytes: 1800, contentSha1: "a".repeat(40), cloudFileId: "", status: "local", updatedAtMs: 1,
@@ -60,7 +61,7 @@ function harness(overrides = {}) {
   const controls = {
     recordingInfo: { fileSizeBytes: 1800, contentSha1: "a".repeat(40) },
     prepared: { state: "upload-required", id: "server-id", cloudPath: "checkins/owner/request-hash.mp3" },
-    uploadPlans: [], commitPlans: [{ id: "server-id", shareToken: "token" }],
+    uploadPlans: [], commitPlans: [{ id: "server-id", shareToken: "token", expiresAtMs: 9999 }],
     markUploadedResult: undefined, completeResult: true,
     ...overrides,
   };
@@ -85,6 +86,8 @@ function harness(overrides = {}) {
     },
     async markFailed(requestId) { calls.push(["markFailed", requestId]); const current = values.get(requestId); if (!current) return null; const next = { ...current, status: "failed" }; values.set(requestId, next); return next; },
     async complete(requestId, committed) { calls.push(["complete", requestId, committed]); return controls.completeResult; },
+    async markShared(requestId, share, expected) { calls.push(["markShared", requestId, plain(share), expected]); const current = values.get(requestId); if (!current || current.shareRequestId !== expected || controls.completeResult === false) return null; const next = { ...current, share: plain(share) }; values.set(requestId, next); return next; },
+    async markShareExpired(requestId, expected) { calls.push(["markShareExpired", requestId, expected]); const current = values.get(requestId); if (!current || current.shareRequestId !== expected) return false; values.set(requestId, { ...current, shareRequestId: undefined, share: undefined }); return true; },
   };
   const api = {
     pendingStore: store,
@@ -125,8 +128,8 @@ const test = (name, run) => cases.push({ name, run });
 test("实际文件指纹和规范 request/snapshot 贯穿提交", async () => {
   const h = harness(); const result = await h.submit(item({ requestId: "ABCDEF0123456789ABCDEF0123456789" })).promise;
   assert.equal(result.state, "committed");
-  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "upload", "markUploaded", "update", "commit", "complete"]);
-  assert.equal(h.calls[1][1].requestId, "abcdef0123456789abcdef0123456789");
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "upload", "markUploaded", "update", "commit", "markShared"]);
+  assert.equal(h.calls[1][1].requestId, item().shareRequestId);
   assert.equal(h.calls[1][1].contentSha1, "a".repeat(40)); assert.equal(h.calls[1][1].fileSizeBytes, 1800);
   assert.equal(h.calls[5][1].recordingFileId, "cloud://test.bucket/checkins/fresh.mp3");
 });
@@ -216,11 +219,11 @@ test("旧录音指纹保存期间取消仍保留校准结果且不继续prepare"
   assert.equal(h.values.get(item().requestId).contentSha1, "a".repeat(40));
 });
 
-test("prepare 已提交时只完成本地项，不上传也不 commit", async () => {
-  const h = harness({ prepared: { state: "committed", id: "done", shareToken: "stable" } });
+test("prepare 已提交时只回写分享信息，不上传也不 commit", async () => {
+  const h = harness({ prepared: { state: "committed", id: "done", shareToken: "stable", expiresAtMs: 9999 } });
   const result = await h.submit(item()).promise;
-  assert.deepEqual(plain(result), { state: "committed", id: "done", shareToken: "stable", cleanupPending: false });
-  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "complete"]);
+  assert.deepEqual(plain(result), { state: "committed", id: "done", shareToken: "stable", expiresAtMs: 9999, cleanupPending: false });
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "markShared"]);
 });
 
 test("指纹阶段离页可取消，返回后不得继续 prepare 或上传", async () => {
@@ -230,7 +233,7 @@ test("指纹阶段离页可取消，返回后不得继续 prepare 或上传", as
   info.resolve({ fileSizeBytes: 1800, contentSha1: "a".repeat(40) });
   const result = await handle.promise;
   assert.equal(result.state, "cancelled");
-  assert.deepEqual(h.calls.map(call => call[0]), ["info", "markFailed"]);
+  assert.deepEqual(h.calls.map(call => call[0]), ["markFailed"]);
   assert.equal(h.values.get(item().requestId).localPath, item().localPath, "取消后必须保留本地录音");
 });
 
@@ -249,15 +252,43 @@ test("prepare 阶段虽已请求取消，服务端若已提交仍如实报告 co
   const prepare = deferred(); const h = harness({ preparePromise: prepare.promise });
   const handle = h.submit(item()); await flush();
   assert.equal(handle.cancel(), true);
-  prepare.resolve({ state: "committed", id: "done", shareToken: "stable" });
-  assert.deepEqual(plain(await handle.promise), { state: "committed", id: "done", shareToken: "stable", cleanupPending: false });
-  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "complete"]);
+  prepare.resolve({ state: "committed", id: "done", shareToken: "stable", expiresAtMs: 9999 });
+  assert.deepEqual(plain(await handle.promise), { state: "committed", id: "done", shareToken: "stable", expiresAtMs: 9999, cleanupPending: false });
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "markShared"]);
+});
+
+test("有效链接同步复用完成后不会遗留 handle，过期新代可重新提交", async () => {
+  const h = harness();
+  const valid = item({ share: { id: "old", shareToken: "old-token", expiresAtMs: 101 } });
+  assert.equal((await h.submit(valid).promise).id, "old");
+  const fresh = item({ shareRequestId: "22222222222222222222222222222222", share: undefined });
+  const result = await h.submit(fresh).promise;
+  assert.equal(result.state, "committed");
+  assert.equal(h.calls.find(call => call[0] === "prepare")[1].requestId, fresh.shareRequestId);
+});
+
+test("submit 后同步取消会在读取文件前兑现", async () => {
+  const h = harness(); const handle = h.submit(item());
+  assert.equal(handle.cancel(), true);
+  assert.equal((await handle.promise).state, "cancelled");
+  assert.deepEqual(h.calls.map(call => call[0]), ["markFailed"]);
+});
+
+test("服务端判定旧预留过期或已清理时只失效当前代，不在本次点击偷偷重传", async () => {
+  for (const code of ["SHARE_EXPIRED", "REQUEST_DELETED"]) {
+    const h = harness({ prepareError: Object.assign(new Error(code), { code }) });
+    const result = await h.submit(item()).promise;
+    assert.equal(result.state, "failed");
+    assert.equal(h.uploads.length, 0);
+    assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "markShareExpired", "markFailed"]);
+    assert.equal(h.values.get(item().requestId).shareRequestId, undefined);
+  }
 });
 
 test("重启恢复已有 cloudFileId 跳过上传并直接 commit", async () => {
   const h = harness(); const result = await h.submit(item({ cloudFileId: "cloud://test.bucket/checkins/old.mp3", status: "failed" })).promise;
   assert.equal(result.state, "committed");
-  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "update", "commit", "complete"]);
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "update", "commit", "markShared"]);
   assert.equal(h.calls[3][1].recordingFileId, "cloud://test.bucket/checkins/old.mp3");
 });
 
@@ -273,7 +304,7 @@ test("callback UploadTask 进度归一化，成功先持久 fileID 再 creating/
     { requestId: item().requestId, percent: 0, uncertain: false },
     { requestId: item().requestId, percent: 100, uncertain: false },
   ]);
-  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "upload", "markUploaded", "update", "commit", "complete"]);
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "upload", "markUploaded", "update", "commit", "markShared"]);
   assert.deepEqual(h.calls[4][2], { status: "creating" });
 });
 
@@ -365,7 +396,7 @@ test("complete 本地清理失败仍返回云端成功 cleanupPending，冲突/�
 
   for (const code of ["REQUEST_ID_CONFLICT", "REQUEST_DELETED"]) {
     const h = harness({ commitPlans: [Object.assign(new Error(code), { code })] }); const result = await h.submit(item()).promise;
-    assert.equal(result.state, "failed"); assert.equal(h.uploads.length, 1); assert.equal(h.calls.filter(call => call[0] === "prepare")[0][1].requestId, item().requestId);
+    assert.equal(result.state, "failed"); assert.equal(h.uploads.length, 1); assert.equal(h.calls.filter(call => call[0] === "prepare")[0][1].requestId, item().shareRequestId);
     assert.equal(h.calls.filter(call => call[0] === "update").some(call => call[2].cloudFileId === ""), false);
   }
 });
@@ -379,7 +410,7 @@ test("upload 已成功进入 markUploaded 门闩后不可取消，且仍只提�
   const result = await handle.promise;
   assert.equal(result.state, "committed");
   assert.equal(h.calls.filter(call => call[0] === "commit").length, 1);
-  assert.equal(h.calls.filter(call => call[0] === "complete").length, 1);
+  assert.equal(h.calls.filter(call => call[0] === "markShared").length, 1);
 });
 
 test("markUploaded 的 null、同步 throw 与异步 reject 均不触发上传重试", async () => {

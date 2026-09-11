@@ -15,12 +15,16 @@ export interface CreateCheckInInput {
 export interface CreatedCheckIn {
   id: string;
   shareToken: string;
+  expiresAtMs: number;
 }
+
+export type LegacyCreatedCheckIn = Omit<CreatedCheckIn, "expiresAtMs">;
 
 export type PrepareCheckInInput = Omit<CreateCheckInInput, "recordingFileId"> & {
   requestId: string;
   fileSizeBytes: number;
   contentSha1: string;
+  shareVersion?: 2;
 };
 
 export type PreparedCheckInUpload = {
@@ -103,9 +107,9 @@ export const getCheckInRecordingInfo = (filePath: string): Promise<{
   });
 });
 
-/** prepare 完全只读；已提交时返回既有结果，调用方应跳过再次上传。 */
+/** prepare 不上传文件；v2 会幂等预留分享记录，已提交时返回既有结果。 */
 export const prepareCheckIn = (input: PrepareCheckInInput) =>
-  callCheckInFunction<PreparedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), action: "prepare" });
+  callCheckInFunction<PreparedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), shareVersion: 2, action: "prepare" });
 
 /** 返回原生 UploadTask，进度/取消交给页面；上传结果先持久化，再由页面调用 commit。 */
 export const startPreparedCheckInUpload = (filePath: string, prepared: PreparedCheckInUpload): {
@@ -131,7 +135,7 @@ export const startPreparedCheckInUpload = (filePath: string, prepared: PreparedC
 
 /** commit 响应不确定时保留本地/云文件，重试复用原请求，不在本层删除或自动重试。 */
 export const commitCheckIn = (input: CommitCheckInInput) =>
-  callCheckInFunction<CreatedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), action: "commit" });
+  callCheckInFunction<CreatedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), shareVersion: 2, action: "commit" });
 
 /** 兼容旧页面的随机路径上传；新幂等流程使用 prepare + startPreparedCheckInUpload。 */
 export const uploadCheckInRecording = async (
@@ -158,7 +162,7 @@ export const removeUploadedRecording = async (fileId: string) => {
 
 /** 旧 create 不具备请求幂等性，保留供尚未迁移的页面兼容。 */
 export const createCheckIn = (input: CreateCheckInInput) =>
-  callCheckInFunction<CreatedCheckIn>({ action: "create", ...input });
+  callCheckInFunction<LegacyCreatedCheckIn>({ action: "create", ...input });
 
 export const getCheckInDetail = (id: string, shareToken?: string) =>
   callCheckInFunction<CheckInDetail>({

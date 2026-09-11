@@ -1,6 +1,12 @@
 export const PENDING_CHECK_IN_STORAGE_KEY = "pending-check-ins-v1";
-export const MAX_PENDING_COUNT = 3;
-export const MAX_PENDING_FILE_BYTES = 8 * 1024 * 1024;
+export const MAX_PENDING_COUNT = 500;
+export const MAX_PENDING_FILE_BYTES = 100 * 1024 * 1024;
+
+export type RecordingShare = {
+  id: string;
+  shareToken: string;
+  expiresAtMs: number;
+};
 
 export type CheckInContext = {
   bookId: string;
@@ -26,6 +32,10 @@ export type PendingCheckIn = {
   cloudFileId: string;
   status: PendingCheckInStatus;
   updatedAtMs: number;
+  createdAtMs?: number;
+  completedAtMs?: number;
+  shareRequestId?: string;
+  share?: RecordingShare;
 };
 
 export type PendingCheckInStorageAdapter = {
@@ -85,6 +95,12 @@ const isNonNegativeInteger = (value: unknown): value is number =>
 const isText = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
+const isRecordingShare = (value: unknown): value is RecordingShare => {
+  if (!value || typeof value !== "object") return false;
+  const share = value as Partial<RecordingShare>;
+  return isText(share.id) && isText(share.shareToken) && isNonNegativeInteger(share.expiresAtMs);
+};
+
 const isContext = (value: unknown): value is CheckInContext => {
   if (!value || typeof value !== "object") return false;
   const context = value as Partial<CheckInContext>;
@@ -118,7 +134,11 @@ const isPendingCheckIn = (value: unknown): value is PendingCheckIn => {
     (item.contentSha1 === undefined || isContentSha1(item.contentSha1)) &&
     typeof item.cloudFileId === "string" &&
     isStatus(item.status) &&
-    isNonNegativeInteger(item.updatedAtMs)
+    isNonNegativeInteger(item.updatedAtMs) &&
+    (item.createdAtMs === undefined || isNonNegativeInteger(item.createdAtMs)) &&
+    (item.completedAtMs === undefined || isNonNegativeInteger(item.completedAtMs)) &&
+    (item.shareRequestId === undefined || isRequestId(item.shareRequestId)) &&
+    (item.share === undefined || isRecordingShare(item.share))
   );
 };
 
@@ -126,6 +146,7 @@ const freezeItem = (item: PendingCheckIn): PendingCheckIn =>
   Object.freeze({
     ...item,
     context: Object.freeze({ ...item.context }),
+    ...(item.share ? { share: Object.freeze({ ...item.share }) } : {}),
   }) as PendingCheckIn;
 
 const freezeList = (items: readonly PendingCheckIn[]) =>
@@ -134,6 +155,7 @@ const freezeList = (items: readonly PendingCheckIn[]) =>
 const cloneItem = (item: PendingCheckIn): PendingCheckIn => ({
   ...item,
   context: { ...item.context },
+  ...(item.share ? { share: { ...item.share } } : {}),
   ...(item.contentSha1 ? { contentSha1: item.contentSha1.toLowerCase() } : {}),
 });
 
@@ -145,8 +167,8 @@ const isQuotaFailure = (error: unknown) => {
 
 const capacityMessage = (countExceeded: boolean) =>
   countExceeded
-    ? "离线录音已满（最多 3 条），请清理历史录音或联网提交"
-    : "离线录音已满（最多 8MiB），请清理历史录音或联网提交";
+    ? "本地录音已满（最多 500 条），请清理历史录音"
+    : "本地录音已满（总计最多 100MiB），请清理历史录音";
 
 /**
  * 待上传项只持久化已由 saveFile 移入本地文件系统的路径；临时路径只在本次会话内保留。
@@ -155,6 +177,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   let persistedItems: PendingCheckIn[] = [];
   const temporaryItems = new Map<string, PendingCheckIn>();
   let readyPromise: Promise<void> | null = null;
+  let metadataReadable = false;
   let metadataDirty = false;
   let mutationTail: Promise<void> = Promise.resolve();
 
@@ -170,7 +193,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
   const ready = () => {
     if (!readyPromise) {
-      readyPromise = Promise.resolve(adapters.storage.get(PENDING_CHECK_IN_STORAGE_KEY))
+      readyPromise = Promise.resolve().then(() => adapters.storage.get(PENDING_CHECK_IN_STORAGE_KEY))
         .then((raw) => {
           persistedItems = Array.isArray(raw)
             ? raw.reduce<PendingCheckIn[]>((items, item) => {
@@ -183,10 +206,13 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
                 return items;
               }, [])
             : [];
+          metadataReadable = true;
         })
         .catch(() => {
-          // 持久化数据损坏或读取失败时从空队列恢复，不能让训练页白屏。
+          // 列表保持可用，但不允许把“读取失败”误当成空库后覆盖旧索引；下次操作会重试读取。
           persistedItems = [];
+          metadataReadable = false;
+          readyPromise = null;
         });
     }
     return readyPromise;
@@ -215,6 +241,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
   const cleanupInternal = async () => {
     await ready();
+    if (!metadataReadable) return;
     const removableIds = new Set<string>();
 
     for (const item of persistedItems) {
@@ -286,6 +313,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       cloudFileId: "",
       status: "local",
       updatedAtMs,
+      createdAtMs: updatedAtMs,
     };
   };
 
@@ -317,6 +345,10 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     // 先校验原生录音结果，避免为了“修复”无效数据而猜测时长或文件大小。
     validateRecordingInput(input);
     await cleanupInternal();
+    if (!metadataReadable) {
+      const item = createItem(input, input.tempFilePath, false);
+      return createTemporaryResult(item, "无法读取本地录音索引，请重试，现有录音不会被覆盖", "failed");
+    }
     const initialItem = createItem(input, input.tempFilePath, false);
 
     const capacity = hasCapacityFor(input.fileSizeBytes);
@@ -387,8 +419,10 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const updateInternal = async (
     requestId: string,
     patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status" | "fileSizeBytes" | "contentSha1">,
+    expectedShareRequestId?: string,
   ): Promise<PendingCheckIn | null> => {
     await ready();
+    if (!metadataReadable) return null;
     await flushDirtyMetadata();
     if (!isRequestId(requestId)) return null;
     if (patch.status !== undefined && !isStatus(patch.status)) return null;
@@ -412,6 +446,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       (item) => item.requestId === requestId,
     );
     if (persistedIndex >= 0) {
+      if (expectedShareRequestId && persistedItems[persistedIndex].shareRequestId !== expectedShareRequestId) return null;
       const nextItem = updateItem(persistedItems[persistedIndex]);
       const nextItems = [...persistedItems];
       nextItems[persistedIndex] = nextItem;
@@ -432,12 +467,117 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     return freezeItem(nextItem);
   };
 
-  const markUploaded = (requestId: string, cloudFileId: string) => {
+  const markUploaded = (requestId: string, cloudFileId: string, expectedShareRequestId?: string) => {
     if (!isText(cloudFileId)) return Promise.resolve(null);
-    return update(requestId, { status: "uploaded", cloudFileId });
+    return update(requestId, { status: "uploaded", cloudFileId }, expectedShareRequestId);
   };
 
-  const markFailed = (requestId: string) => update(requestId, { status: "failed" });
+  const markFailed = (requestId: string, expectedShareRequestId?: string) => update(requestId, { status: "failed" }, expectedShareRequestId);
+
+  const completeInternal = async (requestId: string, committed: boolean) => {
+    if (!committed || !isRequestId(requestId)) return false;
+    await ready();
+    if (!metadataReadable) return false;
+    await flushDirtyMetadata();
+    const index = persistedItems.findIndex((item) => item.requestId === requestId);
+    if (index < 0) return false;
+    const completedAtMs = adapters.clock.now();
+    if (!isNonNegativeInteger(completedAtMs)) throw new Error("clock.now 必须返回有效时间");
+    const nextItem = { ...persistedItems[index], completedAtMs, updatedAtMs: completedAtMs };
+    const nextItems = [...persistedItems];
+    nextItems[index] = nextItem;
+    try {
+      await persistItems(nextItems);
+      persistedItems = nextItems;
+      metadataDirty = false;
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  };
+
+  const beginShareInternal = async (requestId: string): Promise<PendingCheckIn | null> => {
+    if (!isRequestId(requestId)) return null;
+    await ready();
+    if (!metadataReadable) return null;
+    await flushDirtyMetadata();
+    const index = persistedItems.findIndex((item) => item.requestId === requestId);
+    if (index < 0) return null;
+    const current = persistedItems[index];
+    const nowMs = adapters.clock.now();
+    if (!isNonNegativeInteger(nowMs)) throw new Error("clock.now 必须返回有效时间");
+    // 尚未拿到服务端期限，或链接仍有效时，失败与不确定结果都必须复用原代。
+    if (current.shareRequestId && (!current.share || current.share.expiresAtMs > nowMs)) {
+      return freezeItem(current);
+    }
+    let shareRequestId = "";
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const candidate = adapters.random.hex();
+      if (!isRequestId(candidate)) throw new Error("shareRequestId 必须是 32 位十六进制随机值");
+      if (candidate !== requestId && candidate !== current.shareRequestId) { shareRequestId = candidate; break; }
+    }
+    if (!shareRequestId) throw new Error("无法生成新的分享代次");
+    const nextItem = {
+      ...current,
+      shareRequestId,
+      share: undefined,
+      cloudFileId: "",
+      status: "local" as PendingCheckInStatus,
+      updatedAtMs: nowMs,
+    };
+    const nextItems = [...persistedItems];
+    nextItems[index] = nextItem;
+    try {
+      await persistItems(nextItems);
+      persistedItems = nextItems;
+      metadataDirty = false;
+      return freezeItem(nextItem);
+    } catch (_error) {
+      return null;
+    }
+  };
+
+  const markSharedInternal = async (requestId: string, share: RecordingShare, expectedShareRequestId?: string): Promise<PendingCheckIn | null> => {
+    if (!isRequestId(requestId) || !isRecordingShare(share)) return null;
+    await ready();
+    if (!metadataReadable) return null;
+    await flushDirtyMetadata();
+    const index = persistedItems.findIndex((item) => item.requestId === requestId);
+    if (index < 0 || !persistedItems[index].shareRequestId) return null;
+    if (expectedShareRequestId && persistedItems[index].shareRequestId !== expectedShareRequestId) return null;
+    const nowMs = adapters.clock.now();
+    if (!isNonNegativeInteger(nowMs)) throw new Error("clock.now 必须返回有效时间");
+    const nextItem = { ...persistedItems[index], share: { ...share }, status: "local" as PendingCheckInStatus, updatedAtMs: nowMs };
+    const nextItems = [...persistedItems];
+    nextItems[index] = nextItem;
+    try {
+      await persistItems(nextItems);
+      persistedItems = nextItems;
+      metadataDirty = false;
+      return freezeItem(nextItem);
+    } catch (_error) {
+      return null;
+    }
+  };
+
+  const markShareExpiredInternal = async (requestId: string, expectedShareRequestId: string) => {
+    if (!isRequestId(requestId) || !isRequestId(expectedShareRequestId)) return false;
+    await ready();
+    if (!metadataReadable) return false;
+    const index = persistedItems.findIndex((item) => item.requestId === requestId);
+    if (index < 0 || persistedItems[index].shareRequestId !== expectedShareRequestId) return false;
+    const nowMs = adapters.clock.now();
+    const nextItem = { ...persistedItems[index], shareRequestId: undefined, share: undefined, cloudFileId: "", status: "local" as PendingCheckInStatus, updatedAtMs: nowMs };
+    const nextItems = [...persistedItems];
+    nextItems[index] = nextItem;
+    try {
+      await persistItems(nextItems);
+      persistedItems = nextItems;
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  };
 
   const removeInternal = async (requestId: string): Promise<boolean> => {
     await ready();
@@ -473,10 +613,16 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const update = (
     requestId: string,
     patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status" | "fileSizeBytes" | "contentSha1">,
-  ) => enqueueMutation(() => updateInternal(requestId, patch));
+    expectedShareRequestId?: string,
+  ) => enqueueMutation(() => updateInternal(requestId, patch, expectedShareRequestId));
   const remove = (requestId: string) => enqueueMutation(() => removeInternal(requestId));
   const complete = (requestId: string, committed: boolean) =>
-    committed ? remove(requestId) : Promise.resolve(false);
+    enqueueMutation(() => completeInternal(requestId, committed));
+  const beginShare = (requestId: string) => enqueueMutation(() => beginShareInternal(requestId));
+  const markShared = (requestId: string, share: RecordingShare, expectedShareRequestId?: string) =>
+    enqueueMutation(() => markSharedInternal(requestId, share, expectedShareRequestId));
+  const markShareExpired = (requestId: string, expectedShareRequestId: string) =>
+    enqueueMutation(() => markShareExpiredInternal(requestId, expectedShareRequestId));
 
   return {
     ready,
@@ -488,5 +634,8 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     markUploaded,
     markFailed,
     complete,
+    beginShare,
+    markShared,
+    markShareExpired,
   };
 };

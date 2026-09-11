@@ -59,9 +59,11 @@ test("prepare/commit 保留快照、规范 requestId，不自动上传删除", a
   const h = harness(); const before = plain(input);
   await h.api.prepareCheckIn(input);
   assert.equal(h.calls[0].data.action, "prepare"); assert.equal(h.calls[0].data.requestId, "a".repeat(32));
+  assert.equal(h.calls[0].data.shareVersion, 2);
   assert.equal(h.calls[0].data.contentSha1, input.contentSha1); assert.equal(h.uploads.length, 0);
   await h.api.commitCheckIn({ ...input, recordingFileId: "cloud://test.bucket/checkins/path.mp3" });
   assert.equal(h.calls[1].data.action, "commit"); assert.equal(h.calls[1].data.recordingFileId, "cloud://test.bucket/checkins/path.mp3");
+  assert.equal(h.calls[1].data.shareVersion, 2);
   assert.deepEqual(input, before); assert.equal(h.deletes(), 0);
 });
 test("callback 上传返回原始 UploadTask 与独立结果 Promise", async () => {

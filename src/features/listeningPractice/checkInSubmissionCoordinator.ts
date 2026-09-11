@@ -1,10 +1,10 @@
-import type { PendingCheckIn, PendingCheckInStatus } from "./pendingCheckInStore";
+import type { PendingCheckIn, PendingCheckInStatus, RecordingShare } from "./pendingCheckInStore";
 
 type RecordingInfo = { fileSizeBytes: number; contentSha1: string };
 type PreparedUpload = { state: "upload-required"; id: string; cloudPath: string };
-type PreparedCommitted = { state: "committed"; id: string; shareToken: string };
+type PreparedCommitted = { state: "committed"; id: string; shareToken: string; expiresAtMs: number };
 type PreparedCheckIn = PreparedUpload | PreparedCommitted;
-type CreatedCheckIn = { id: string; shareToken: string };
+type CreatedCheckIn = { id: string; shareToken: string; expiresAtMs: number };
 
 type UploadTask = {
   abort?: () => void;
@@ -18,7 +18,7 @@ export type SubmissionProgress = {
 };
 
 export type SubmissionResult =
-  | { state: "committed"; id: string; shareToken: string; cleanupPending: boolean }
+  | { state: "committed"; id: string; shareToken: string; expiresAtMs: number; cleanupPending: boolean }
   | { state: "failed"; error: unknown }
   | { state: "cancelled"; error: unknown };
 
@@ -30,10 +30,12 @@ export type CheckInSubmissionHandle = {
 
 export type CheckInSubmissionCoordinatorAdapters = {
   pendingStore: {
-    update(requestId: string, patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status" | "fileSizeBytes" | "contentSha1">): Promise<PendingCheckIn | null>;
-    markUploaded(requestId: string, cloudFileId: string): Promise<PendingCheckIn | null>;
-    markFailed(requestId: string): Promise<PendingCheckIn | null>;
+    update(requestId: string, patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status" | "fileSizeBytes" | "contentSha1">, expectedShareRequestId?: string): Promise<PendingCheckIn | null>;
+    markUploaded(requestId: string, cloudFileId: string, expectedShareRequestId?: string): Promise<PendingCheckIn | null>;
+    markFailed(requestId: string, expectedShareRequestId?: string): Promise<PendingCheckIn | null>;
     complete(requestId: string, committed: boolean): Promise<boolean>;
+    markShared(requestId: string, share: RecordingShare, expectedShareRequestId?: string): Promise<PendingCheckIn | null>;
+    markShareExpired?(requestId: string, expectedShareRequestId: string): Promise<boolean>;
   };
   getRecordingInfo(filePath: string): Promise<RecordingInfo>;
   prepareCheckIn(input: {
@@ -48,6 +50,7 @@ export type CheckInSubmissionCoordinatorAdapters = {
     pageNumber: number;
     sectionTitle: string;
     imageUrl: string;
+    shareVersion?: 2;
   }): Promise<PreparedCheckIn>;
   startPreparedCheckInUpload(filePath: string, prepared: PreparedUpload): {
     task?: UploadTask;
@@ -66,6 +69,7 @@ export type CheckInSubmissionCoordinatorAdapters = {
     sectionTitle: string;
     imageUrl: string;
     recordingFileId: string;
+    shareVersion?: 2;
   }): Promise<CreatedCheckIn>;
   scheduler: {
     setTimeout(callback: () => void, delayMs: number): unknown;
@@ -128,6 +132,7 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
     let nextUploadAttempt = 0;
     let activeUploadAttempt = 0;
     const cancelledError = createError("UPLOAD_CANCELLED", "用户取消了录音上传");
+    const shareRequestId = pending.shareRequestId?.toLowerCase();
 
     const emitProgress = (percent: number | null, uncertain: boolean) => {
       try {
@@ -139,7 +144,7 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
 
     const markFailedSafely = async () => {
       try {
-        await adapters.pendingStore.markFailed(pending.requestId);
+        await adapters.pendingStore.markFailed(pending.requestId, shareRequestId);
       } catch (_error) {
         // 保留原始网络/协议错误；仓储下一次 mutation 会继续处理其自身持久化失败。
       }
@@ -210,7 +215,8 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
     };
 
     const buildPayload = (recording: RecordingInfo) => ({
-      requestId: requestKey,
+      requestId: shareRequestId || "",
+      shareVersion: 2 as const,
       fileSizeBytes: recording.fileSizeBytes,
       contentSha1: recording.contentSha1.toLowerCase(),
       durationMs: pending.durationMs,
@@ -223,8 +229,15 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
       imageUrl: pending.context.imageUrl,
     });
 
-    const promise = (async (): Promise<SubmissionResult> => {
+    // 先把 handle 登记进同录音去重表，再启动流水线；有效链接可能在首个 await 前直接完成。
+    const promise = Promise.resolve().then(async (): Promise<SubmissionResult> => {
       try {
+        if (cancelled) throw cancelledError;
+        if (pending.share && pending.share.expiresAtMs > adapters.clock.now()) {
+          phase = "done";
+          return { state: "committed", ...pending.share, cleanupPending: false };
+        }
+        if (!shareRequestId) throw createError("SHARE_GENERATION_REQUIRED", "分享代次尚未持久化，请重新点击分享");
         phase = "preparing";
         const recording = await adapters.getRecordingInfo(pending.localPath);
         if (cancelled) throw cancelledError;
@@ -257,17 +270,17 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
             contentSha1: recording.contentSha1.toLowerCase(),
             cloudFileId: "",
             status: "local",
-          });
+          }, shareRequestId);
           if (!calibrated) throw createError("PENDING_PERSIST_FAILED", "无法保存录音文件信息，已保留本地录音，请重试");
           if (cancelled) throw cancelledError;
         }
         const payload = buildPayload(recording);
         const prepared = await adapters.prepareCheckIn(payload);
         if (prepared.state === "committed") {
-          let cleaned = false;
-          try { cleaned = await adapters.pendingStore.complete(pending.requestId, true); } catch (_error) { cleaned = false; }
+          let shared: PendingCheckIn | null = null;
+          try { shared = await adapters.pendingStore.markShared(pending.requestId, prepared, shareRequestId); } catch (_error) { shared = null; }
           phase = "done";
-          return { state: "committed", id: prepared.id, shareToken: prepared.shareToken, cleanupPending: !cleaned };
+          return { state: "committed", id: prepared.id, shareToken: prepared.shareToken, expiresAtMs: prepared.expiresAtMs, cleanupPending: !shared };
         }
         // prepare 可能已在云端确认成功；只在明确需要上传时兑现此前的离页取消。
         if (cancelled) throw cancelledError;
@@ -277,21 +290,21 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
           if (!cloudFileId) {
             cloudFileId = await runUpload(prepared);
             // 仅在上传 result 已成功后持久化 fileID；此处错误不得回到 runUpload 的网络重试循环。
-            const uploaded = await adapters.pendingStore.markUploaded(pending.requestId, cloudFileId);
+            const uploaded = await adapters.pendingStore.markUploaded(pending.requestId, cloudFileId, shareRequestId);
             if (!uploaded) throw createError("PENDING_PERSIST_FAILED", "录音上传结果未能保存，不能提交打卡");
           }
           phase = "committing";
-          const creating = await adapters.pendingStore.update(pending.requestId, { status: "creating" as PendingCheckInStatus });
+          const creating = await adapters.pendingStore.update(pending.requestId, { status: "creating" as PendingCheckInStatus }, shareRequestId);
           if (!creating) throw createError("PENDING_PERSIST_FAILED", "无法保存打卡创建状态");
           try {
             const created = await adapters.commitCheckIn({ ...payload, recordingFileId: cloudFileId });
-            let cleaned = false;
-            try { cleaned = await adapters.pendingStore.complete(pending.requestId, true); } catch (_error) { cleaned = false; }
+            let shared: PendingCheckIn | null = null;
+            try { shared = await adapters.pendingStore.markShared(pending.requestId, created, shareRequestId); } catch (_error) { shared = null; }
             phase = "done";
-            return { state: "committed", id: created.id, shareToken: created.shareToken, cleanupPending: !cleaned };
+            return { state: "committed", id: created.id, shareToken: created.shareToken, expiresAtMs: created.expiresAtMs, cleanupPending: !shared };
           } catch (error) {
             if (!repaired && isRepairableRecordingError(error) && pending.localPath) {
-              const reset = await adapters.pendingStore.update(pending.requestId, { cloudFileId: "", status: "local" });
+              const reset = await adapters.pendingStore.update(pending.requestId, { cloudFileId: "", status: "local" }, shareRequestId);
               if (!reset) throw createError("PENDING_PERSIST_FAILED", "无法保存录音重传状态");
               cloudFileId = "";
               repaired = true;
@@ -302,6 +315,10 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
         }
       } catch (error) {
         phase = "done";
+        const terminalShareCode = String(errorCode(error) || "").toUpperCase();
+        if ((terminalShareCode === "SHARE_EXPIRED" || terminalShareCode === "REQUEST_DELETED") && shareRequestId) {
+          try { await adapters.pendingStore.markShareExpired?.(pending.requestId, shareRequestId); } catch (_error) { /* 下一次主动点击仍可重试当前代。 */ }
+        }
         await markFailedSafely();
         return cancelled || error === cancelledError
           ? { state: "cancelled", error: cancelledError }
@@ -309,12 +326,12 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
       } finally {
         activeByRequest.delete(requestKey);
       }
-    })();
+    });
 
     const handle: CheckInSubmissionHandle = {
       promise,
       cancel: () => {
-        if (cancelled || (phase !== "preparing" && phase !== "uploading" && phase !== "backoff")) return false;
+        if (cancelled || (phase !== "idle" && phase !== "preparing" && phase !== "uploading" && phase !== "backoff")) return false;
         cancelled = true;
         activeUploadAttempt = 0;
         if (timer !== undefined) {
@@ -331,5 +348,6 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
     return handle;
   };
 
-  return { submit };
+  const isSubmitting = (requestId: string) => activeByRequest.has(requestId.toLowerCase());
+  return { submit, isSubmitting };
 };
