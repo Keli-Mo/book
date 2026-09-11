@@ -1,14 +1,31 @@
-export type RecordingState =
-  | "idle"
-  | "recording"
-  | "paused"
-  | "recorded"
-  | "uploading";
+import type { RecordingState } from "./recordingStateMachine";
+
+export type { PauseReason, RecordingState } from "./recordingStateMachine";
 
 export interface RecordingTimeline {
   accumulatedMs: number;
   activeSinceMs: number | null;
 }
+
+/** 保留微信原始错误；未知录音失败不能一律归因为麦克风权限。 */
+export const getRecordingErrorMessage = (error: unknown): string => {
+  const details =
+    error && typeof error === "object"
+      ? (error as {
+          errMsg?: string;
+          message?: string;
+          errCode?: string | number;
+          errno?: string | number;
+        })
+      : undefined;
+  const message =
+    details?.errMsg ||
+    details?.message ||
+    (typeof error === "string" ? error : "");
+  const code = details?.errCode ?? details?.errno;
+  const reason = message || "微信未返回具体原因，请重新进入小程序后重试。";
+  return code === undefined ? reason : `${reason}\n错误码：${code}`;
+};
 
 /** 从零开始记录本轮实际录音时长。 */
 export const startRecordingTimeline = (nowMs: number): RecordingTimeline => ({
@@ -50,5 +67,7 @@ export const getPracticeSwitchPolicy = (
     return "block-uploading";
   }
 
-  return state === "idle" ? "allow" : "confirm-discard";
+  return state === "idle" || state === "unsupported" || state === "checking"
+    ? "allow"
+    : "confirm-discard";
 };
