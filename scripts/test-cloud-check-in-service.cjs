@@ -15,7 +15,7 @@ function harness() {
     getFileInfo(options) {
       infoCalls.push(options);
       if (controls.infoError) options.fail(controls.infoError);
-      else options.success({ size: 1000, digest: "A".repeat(40) });
+      else options.success(controls.infoResult || { size: 1000, digest: "A".repeat(40) });
     },
     cloud: {
       async callFunction({ name, data }) { calls.push({ name, data }); if (controls.error) throw controls.error; return { result: controls.response }; },
@@ -43,6 +43,17 @@ test("原生 getFileInfo 使用 sha1 和实际 saved 路径", async () => {
   assert.equal(h.infoCalls[0].filePath, "/saved/record.mp3"); assert.equal(h.infoCalls[0].digestAlgorithm, "sha1");
   const error = { errMsg: "getFileInfo:fail", code: "ENOENT" }; h.controls.infoError = error;
   await assert.rejects(h.api.getCheckInRecordingInfo("/missing"), e => e === error);
+});
+test("文件信息原生回调数据无效时明确拒绝，不能被当成可上传文件", async () => {
+  for (const infoResult of [
+    { size: 0, digest: "a".repeat(40) },
+    { size: 1000, digest: undefined },
+    { size: 1000, digest: "invalid" },
+    { size: 1.5, digest: "a".repeat(40) },
+  ]) {
+    const h = harness(); h.controls.infoResult = infoResult;
+    await assert.rejects(h.api.getCheckInRecordingInfo("/saved/record.mp3"), error => error.code === "RECORDING_INFO_INVALID");
+  }
 });
 test("prepare/commit 保留快照、规范 requestId，不自动上传删除", async () => {
   const h = harness(); const before = plain(input);

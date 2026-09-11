@@ -47,7 +47,7 @@ const item = (patch = {}) => ({
   requestId: "abcdef0123456789abcdef0123456789",
   localPath: "/saved/record.mp3", recoverable: true,
   context: { bookId: "3", bookTitle: "CASA", practiceId: "3-page-4", practiceIndex: 0, pageNumber: 4, sectionTitle: "导入", imageUrl: "https://example.test/4.png" },
-  durationMs: 3200.4, fileSizeBytes: 1800, cloudFileId: "", status: "local", updatedAtMs: 1,
+  durationMs: 3200.4, fileSizeBytes: 1800, contentSha1: "a".repeat(40), cloudFileId: "", status: "local", updatedAtMs: 1,
   ...patch,
 });
 
@@ -66,7 +66,13 @@ function harness(overrides = {}) {
   };
   const values = new Map();
   const store = {
-    async update(requestId, patch) { calls.push(["update", requestId, plain(patch)]); const current = values.get(requestId); if (!current) return null; const next = { ...current, ...patch }; values.set(requestId, next); return next; },
+    async update(requestId, patch) {
+      calls.push(["update", requestId, plain(patch)]);
+      if (controls.updateResult === null) return null;
+      if (controls.updatePromise) await controls.updatePromise;
+      const current = values.get(requestId); if (!current) return null;
+      const next = { ...current, ...patch }; values.set(requestId, next); return next;
+    },
     markUploaded(requestId, cloudFileId) {
       calls.push(["markUploaded", requestId, cloudFileId]);
       const plan = controls.markUploadedPlans?.shift();
@@ -116,18 +122,98 @@ function harness(overrides = {}) {
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
 
-test("实际文件指纹大小必须匹配且规范 request/snapshot 贯穿", async () => {
-  const bad = harness({ recordingInfo: { fileSizeBytes: 1801, contentSha1: "a".repeat(40) } });
-  const rejected = await bad.submit(item()).promise;
-  assert.equal(rejected.state, "failed"); assert.equal(rejected.error.code, "RECORDING_SIZE_MISMATCH");
-  assert.deepEqual(bad.calls.map(call => call[0]), ["info", "markFailed"]);
-
+test("实际文件指纹和规范 request/snapshot 贯穿提交", async () => {
   const h = harness(); const result = await h.submit(item({ requestId: "ABCDEF0123456789ABCDEF0123456789" })).promise;
   assert.equal(result.state, "committed");
   assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "upload", "markUploaded", "update", "commit", "complete"]);
   assert.equal(h.calls[1][1].requestId, "abcdef0123456789abcdef0123456789");
   assert.equal(h.calls[1][1].contentSha1, "a".repeat(40)); assert.equal(h.calls[1][1].fileSizeBytes, 1800);
   assert.equal(h.calls[5][1].recordingFileId, "cloud://test.bucket/checkins/fresh.mp3");
+});
+
+test("旧录音回调大小有偏差时以实际文件建立基准并提交，原录音不丢失", async () => {
+  for (const actualBytes of [1799, 1801, 2400]) {
+    const h = harness({ recordingInfo: { fileSizeBytes: actualBytes, contentSha1: "A".repeat(40) } });
+    const original = item({ contentSha1: undefined, status: "failed" });
+    const result = await h.submit(original).promise;
+    assert.equal(result.state, "committed", "旧大小与实际大小不等不能让完好的录音永久无法提交");
+    assert.equal(original.fileSizeBytes, 1800, "不能偷偷改调用者的旧快照");
+    const prepared = h.calls.find(call => call[0] === "prepare")[1];
+    const committed = h.calls.find(call => call[0] === "commit")[1];
+    assert.equal(prepared.fileSizeBytes, actualBytes);
+    assert.equal(prepared.contentSha1, "a".repeat(40));
+    assert.equal(committed.fileSizeBytes, prepared.fileSizeBytes);
+    assert.equal(committed.contentSha1, prepared.contentSha1);
+    assert.equal(h.uploads[0].filePath, original.localPath);
+    assert.equal(h.values.get(original.requestId).fileSizeBytes, actualBytes);
+    assert.equal(h.values.get(original.requestId).contentSha1, "a".repeat(40));
+    assert.deepEqual(h.calls.slice(0, 3).map(call => call[0]), ["info", "update", "prepare"]);
+  }
+});
+
+test("旧录音修正大小后不复用旧摘要路径的云文件", async () => {
+  const h = harness({ recordingInfo: { fileSizeBytes: 1801, contentSha1: "a".repeat(40) } });
+  const result = await h.submit(item({ contentSha1: undefined, cloudFileId: "cloud://old-digest", status: "uploaded" })).promise;
+  assert.equal(result.state, "committed");
+  assert.equal(h.uploads.length, 1);
+  assert.equal(h.calls.find(call => call[0] === "commit")[1].recordingFileId, "cloud://test.bucket/checkins/fresh.mp3");
+});
+
+test("已保存实际指纹后发生大小或同大小内容变化必须拦截且保留文件", async () => {
+  for (const recordingInfo of [
+    { fileSizeBytes: 1801, contentSha1: "a".repeat(40) },
+    { fileSizeBytes: 1800, contentSha1: "b".repeat(40) },
+  ]) {
+    const h = harness({ recordingInfo });
+    const result = await h.submit(item()).promise;
+    assert.equal(result.state, "failed");
+    assert.equal(result.error.code, "RECORDING_FILE_CHANGED");
+    assert.deepEqual(h.calls.map(call => call[0]), ["info", "markFailed"]);
+    assert.equal(h.values.get(item().requestId).localPath, item().localPath);
+  }
+});
+
+test("旧录音没有指纹时不复用无法确认内容的旧云路径，即使大小相同", async () => {
+  const h = harness({ recordingInfo: { fileSizeBytes: 1800, contentSha1: "b".repeat(40) } });
+  const result = await h.submit(item({ contentSha1: undefined, cloudFileId: "cloud://path-from-old-sha", status: "uploaded" })).promise;
+  assert.equal(result.state, "committed");
+  assert.equal(h.uploads.length, 1, "旧摘要不可知，需按prepare返回的新路径上传");
+  assert.equal(h.calls.find(call => call[0] === "commit")[1].recordingFileId, "cloud://test.bucket/checkins/fresh.mp3");
+});
+
+test("实际文件为空、大小无效或超限不能提交，旧回调值不能放行", async () => {
+  for (const actualBytes of [0, -1, 1.5, NaN, Infinity, 8 * 1024 * 1024 + 1]) {
+    const h = harness({ recordingInfo: { fileSizeBytes: actualBytes, contentSha1: "a".repeat(40) } });
+    const result = await h.submit(item({ contentSha1: undefined })).promise;
+    assert.equal(result.state, "failed");
+    assert.equal(result.error.code, "RECORDING_SIZE_INVALID");
+    assert.deepEqual(h.calls.map(call => call[0]), ["info", "markFailed"]);
+  }
+});
+
+test("旧录音指纹无法持久保存时不上传，下一次可继续使用同一录音", async () => {
+  const h = harness({ updateResult: null, recordingInfo: { fileSizeBytes: 1801, contentSha1: "a".repeat(40) } });
+  const original = item({ contentSha1: undefined });
+  const result = await h.submit(original).promise;
+  assert.equal(result.state, "failed");
+  assert.equal(result.error.code, "PENDING_PERSIST_FAILED");
+  assert.equal(h.uploads.length, 0);
+  assert.equal(h.calls.some(call => call[0] === "prepare"), false);
+  assert.equal(h.values.get(original.requestId).localPath, original.localPath);
+  delete h.controls.updateResult;
+  assert.equal((await h.submit(h.values.get(original.requestId)).promise).state, "committed");
+});
+
+test("旧录音指纹保存期间取消仍保留校准结果且不继续prepare", async () => {
+  const gate = deferred();
+  const h = harness({ updatePromise: gate.promise });
+  const handle = h.submit(item({ contentSha1: undefined }));
+  await flush();
+  assert.equal(handle.cancel(), true);
+  gate.resolve();
+  assert.equal((await handle.promise).state, "cancelled");
+  assert.equal(h.calls.some(call => call[0] === "prepare"), false);
+  assert.equal(h.values.get(item().requestId).contentSha1, "a".repeat(40));
 });
 
 test("prepare 已提交时只完成本地项，不上传也不 commit", async () => {

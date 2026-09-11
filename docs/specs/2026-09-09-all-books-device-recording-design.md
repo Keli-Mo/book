@@ -196,11 +196,11 @@ checking → unsupported
 ### 6.5 文件与上传
 
 - 最低微信基础库版本为 **2.3.0**。录音使用 `sampleRate: 16000`、单声道 `numberOfChannels: 1`、`encodeBitRate: 48000`、`format: "mp3"`；五分钟 MP3 约 1.8MB，作为离线容量估算值，不替代原生文件大小。
-- `onStop` 的原生 `duration` 与 `fileSize` 是时长和容量记账的唯一权威值，不能用 JS 计时器推算或覆盖。收到有效 `onStop` 后先调用 `saveFile`；保存成功即刻把内存状态、`PendingCheckIn.localPath` 和后续上传 `filePath` 切换为回调给出的 `savedFilePath`，不得继续使用临时路径。
-- 微信持久化本地文件总额最多 10MB。离线 `PendingCheckIn` 队列最多保留 3 条，且已保存文件合计不超过 `8 * 1024 * 1024` 字节（8MiB），为其他小程序持久化文件预留空间；每条记录持久化原生 `fileSize`，以便精确计算队列总量。
-- 启动、创建新录音前和 `saveFile` 前都清理超过 7 天或已找不到本地文件的记录；`saveFile` 因配额满失败时，先执行该清理并只重试一次。若新文件仍会超过 3 条或 8MiB，不能静默删除仍可恢复的待上传录音：提示“离线录音已满（最多 3 条、8MiB），请清理历史录音或联网提交后再保存”。用户确认删除指定旧项后才删除其本地文件和记录。当前临时文件仍可即时回听/上传，但标记 `recoverable: false`，并提示“关闭小程序后可能无法恢复”。
+- 时长取 `onStop.duration`，大小和 SHA-1 取保存后实际文件。收到有效 `onStop` 后先调用 `saveFile`，后续回听和上传仅使用 `savedFilePath`。最终文件信息读取失败时仍保留已保存路径，提交时可重读；不能回退到已被移动的临时路径。
+- 离线 `PendingCheckIn` 队列预算为最多 3 条、合计 `8 * 1024 * 1024` 字节（8MiB），实际保存还受微信文件接口配额约束。实测大小与 SHA-1 一并持久化；旧无指纹录音首次提交先建立实际文件基准。后续提交检查大小和摘要是否变化，云端仍严格核对收到的内容。实际大小修正导致已保存文件越预算时保留文件及恢复信息，并限制后续保存。
+- 未提交录音不按时间自动删除。启动和保存前只清理已确认不存在的文件引用；权限或 IO 错误保留原记录。配额满时重试一次，不静默删除有效项；仍超限则提示用户处理指定旧录音或联网提交。用户主动删除或云端确认打卡完成后才删除本地副本。超过预算或保存失败的临时文件仍可即时回听/提交，但标记 `recoverable: false` 并提示关闭后可能无法恢复。
 - `requestId` 在录音成功后生成，格式为 32 位十六进制随机值，同一待上传录音的所有重试必须复用。相同 ID 但训练快照或录音摘要不一致时服务端返回冲突。
-- 上传使用微信云存储 callback 形式的 `Taro.cloud.uploadFile`（底层 `wx.cloud.uploadFile`），取得云存储 `UploadTask` 后注册 `onProgressUpdate` 展示百分比，并保存任务以支持用户取消时调用 `abort()`；无进度事件时显示不确定进度。服务端 `prepare` 返回确定性路径 `checkins/<openid-hash>/<requestId>.mp3`，所有重试都上传到同一 `cloudPath`。网络错误最多自动重试 2 次（1 秒、3 秒退避），之后保留待上传项供用户手动重试。
+- 上传使用微信云存储 callback 形式的 `Taro.cloud.uploadFile`（底层 `wx.cloud.uploadFile`），取得云存储 `UploadTask` 后注册 `onProgressUpdate` 展示百分比，并保存任务以支持用户取消时调用 `abort()`；无进度事件时显示不确定进度。服务端 `prepare` 返回确定性路径 `checkins/<openid-hash>/<requestId>-<payloadDigest>.mp3`，同一载荷的重试上传到同一 `cloudPath`。旧无指纹记录校准后不复用未经确认的旧 `cloudFileId`。网络错误最多自动重试 2 次（1 秒、3 秒退避），之后保留待上传项供用户手动重试。
 - 云函数用 `sha256(openId + ":" + requestId)` 派生确定性记录 `_id`，在数据库事务中读取并创建。重复请求且载荷摘要相同，返回原 `id/shareToken`；摘要不同返回冲突。旧记录没有 `requestId/status` 时按 `created` 读取。
 - 上传成功后先持久化 `cloudFileId` 再创建记录；直到 `commit` 明确成功前始终保留 `savedFilePath` 和待上传记录。创建响应不确定、上传被取消或网络失败时，用同一 `requestId`/`cloudPath` 重试，绝不立即删除。只有服务端明确拒绝且确认未建记录时才清理文件。
 - 删除先把本人记录标记为 `deletePending`，随后删云文件，再删数据库记录；任一步失败都允许同一删除请求重试。`deletePending` 不出现在普通列表，详情显示“正在删除”，旧记录缺 `status` 按 `created` 处理。

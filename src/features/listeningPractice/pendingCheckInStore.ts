@@ -1,6 +1,4 @@
 export const PENDING_CHECK_IN_STORAGE_KEY = "pending-check-ins-v1";
-export const DAY_MS = 24 * 60 * 60 * 1000;
-export const RETENTION_MS = 7 * DAY_MS;
 export const MAX_PENDING_COUNT = 3;
 export const MAX_PENDING_FILE_BYTES = 8 * 1024 * 1024;
 
@@ -23,6 +21,8 @@ export type PendingCheckIn = {
   context: CheckInContext;
   durationMs: number;
   fileSizeBytes: number;
+  /** 旧版本录音可能没有指纹；首次提交时读取实际文件建立基准。 */
+  contentSha1?: string;
   cloudFileId: string;
   status: PendingCheckInStatus;
   updatedAtMs: number;
@@ -33,10 +33,16 @@ export type PendingCheckInStorageAdapter = {
   set(key: string, value: PendingCheckIn[]): void | Promise<void>;
 };
 
+export type SavedPendingRecordingFile = {
+  savedFilePath: string;
+  fileSizeBytes?: number;
+  contentSha1?: string;
+};
+
 export type PendingCheckInFileAdapter = {
   save(tempFilePath: string):
-    | { savedFilePath: string }
-    | Promise<{ savedFilePath: string }>;
+    | SavedPendingRecordingFile
+    | Promise<SavedPendingRecordingFile>;
   exists(filePath: string): boolean | Promise<boolean>;
   remove(filePath: string): void | Promise<void>;
 };
@@ -66,6 +72,9 @@ const isRequestId = (value: unknown): value is string =>
 
 const isPositiveInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+
+const isContentSha1 = (value: unknown): value is string =>
+  typeof value === "string" && /^[0-9a-f]{40}$/i.test(value);
 
 const isPositiveFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -106,6 +115,7 @@ const isPendingCheckIn = (value: unknown): value is PendingCheckIn => {
     isContext(item.context) &&
     isPositiveFiniteNumber(item.durationMs) &&
     isPositiveInteger(item.fileSizeBytes) &&
+    (item.contentSha1 === undefined || isContentSha1(item.contentSha1)) &&
     typeof item.cloudFileId === "string" &&
     isStatus(item.status) &&
     isNonNegativeInteger(item.updatedAtMs)
@@ -124,6 +134,7 @@ const freezeList = (items: readonly PendingCheckIn[]) =>
 const cloneItem = (item: PendingCheckIn): PendingCheckIn => ({
   ...item,
   context: { ...item.context },
+  ...(item.contentSha1 ? { contentSha1: item.contentSha1.toLowerCase() } : {}),
 });
 
 const isQuotaFailure = (error: unknown) => {
@@ -204,32 +215,22 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
   const cleanupInternal = async () => {
     await ready();
-    const nowMs = adapters.clock.now();
     const removableIds = new Set<string>();
 
     for (const item of persistedItems) {
-      const expired = nowMs - item.updatedAtMs >= RETENTION_MS;
       let exists = false;
       try {
         exists = await adapters.file.exists(item.localPath);
       } catch (_error) {
         continue;
       }
-      if (!expired && exists) continue;
-
-      if (exists) {
-        try {
-          await adapters.file.remove(item.localPath);
-        } catch (_error) {
-          // 文件删除失败时元数据必须保留，下一次启动仍可继续清理。
-          continue;
-        }
-      }
+      // 未提交录音不按时间自动删除；这里只清理已确认不存在的文件引用。
+      if (exists) continue;
       removableIds.add(item.requestId);
     }
 
     if (removableIds.size > 0) {
-      // 文件已经删除就立刻从当前可见队列移除，持久化失败由 dirty 标记在后续 mutation 补写。
+      // 文件已不存在就移除无效引用，持久化失败由 dirty 标记在后续 mutation 补写。
       persistedItems = persistedItems.filter(
         (item) => !removableIds.has(item.requestId),
       );
@@ -326,16 +327,14 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       );
     }
 
-    let savedFilePath: string;
+    let saved: SavedPendingRecordingFile;
     try {
-      const saved = await adapters.file.save(input.tempFilePath);
-      savedFilePath = saved.savedFilePath;
+      saved = await adapters.file.save(input.tempFilePath);
     } catch (error) {
       if (isQuotaFailure(error)) {
         await cleanupInternal();
         try {
-          const saved = await adapters.file.save(input.tempFilePath);
-          savedFilePath = saved.savedFilePath;
+          saved = await adapters.file.save(input.tempFilePath);
         } catch (_retryError) {
           return createTemporaryResult(
             initialItem,
@@ -350,6 +349,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       }
     }
 
+    const { savedFilePath } = saved;
     if (!isText(savedFilePath) || savedFilePath === input.tempFilePath) {
       return createTemporaryResult(
         initialItem,
@@ -358,13 +358,23 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       );
     }
 
-    const item = { ...initialItem, localPath: savedFilePath, recoverable: true };
+    // onStop 的大小只作初步容量判断；最终保存文件的实测大小与摘要才是内容基准。
+    const actualMetadata = isPositiveInteger(saved.fileSizeBytes) && isContentSha1(saved.contentSha1)
+      ? { fileSizeBytes: saved.fileSizeBytes, contentSha1: saved.contentSha1.toLowerCase() }
+      : {};
+    const item = { ...initialItem, ...actualMetadata, localPath: savedFilePath, recoverable: true };
+    const actualCapacity = hasCapacityFor(item.fileSizeBytes);
     try {
       const nextItems = [...persistedItems, item];
       await persistItems(nextItems);
       persistedItems = nextItems;
       metadataDirty = false;
-      return { item: freezeItem(item), persisted: true, message: "" };
+      // 已保存文件因实测修正而越限时仍保留恢复信息，后续录音按实际累计大小限制保存。
+      return {
+        item: freezeItem(item),
+        persisted: true,
+        message: actualCapacity.byteExceeded ? capacityMessage(false) : "",
+      };
     } catch (_error) {
       // 已移动的文件仍可用于当前会话，不把未写入元数据的路径伪装成可恢复记录。
       return createTemporaryResult(
@@ -376,7 +386,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
   const updateInternal = async (
     requestId: string,
-    patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status">,
+    patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status" | "fileSizeBytes" | "contentSha1">,
   ): Promise<PendingCheckIn | null> => {
     await ready();
     await flushDirtyMetadata();
@@ -385,12 +395,17 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     if (patch.cloudFileId !== undefined && typeof patch.cloudFileId !== "string") {
       return null;
     }
+    if (patch.fileSizeBytes !== undefined && !isPositiveInteger(patch.fileSizeBytes)) return null;
+    if (patch.contentSha1 !== undefined && !isContentSha1(patch.contentSha1)) return null;
     const nowMs = adapters.clock.now();
     if (!isNonNegativeInteger(nowMs)) throw new Error("clock.now 必须返回有效时间");
 
     const updateItem = (item: PendingCheckIn) => ({
       ...item,
-      ...patch,
+      ...(patch.cloudFileId !== undefined ? { cloudFileId: patch.cloudFileId } : {}),
+      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.fileSizeBytes !== undefined ? { fileSizeBytes: patch.fileSizeBytes } : {}),
+      ...(patch.contentSha1 !== undefined ? { contentSha1: patch.contentSha1.toLowerCase() } : {}),
       updatedAtMs: nowMs,
     });
     const persistedIndex = persistedItems.findIndex(
@@ -457,7 +472,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     enqueueMutation(() => saveRecordingInternal(input));
   const update = (
     requestId: string,
-    patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status">,
+    patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status" | "fileSizeBytes" | "contentSha1">,
   ) => enqueueMutation(() => updateInternal(requestId, patch));
   const remove = (requestId: string) => enqueueMutation(() => removeInternal(requestId));
   const complete = (requestId: string, committed: boolean) =>

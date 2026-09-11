@@ -30,7 +30,7 @@ export type CheckInSubmissionHandle = {
 
 export type CheckInSubmissionCoordinatorAdapters = {
   pendingStore: {
-    update(requestId: string, patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status">): Promise<PendingCheckIn | null>;
+    update(requestId: string, patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status" | "fileSizeBytes" | "contentSha1">): Promise<PendingCheckIn | null>;
     markUploaded(requestId: string, cloudFileId: string): Promise<PendingCheckIn | null>;
     markFailed(requestId: string): Promise<PendingCheckIn | null>;
     complete(requestId: string, committed: boolean): Promise<boolean>;
@@ -209,10 +209,10 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
       }
     };
 
-    const buildPayload = (recordingFileId?: string) => ({
+    const buildPayload = (recording: RecordingInfo) => ({
       requestId: requestKey,
-      fileSizeBytes: pending.fileSizeBytes,
-      contentSha1: "",
+      fileSizeBytes: recording.fileSizeBytes,
+      contentSha1: recording.contentSha1.toLowerCase(),
       durationMs: pending.durationMs,
       bookId: pending.context.bookId,
       bookTitle: pending.context.bookTitle,
@@ -221,7 +221,6 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
       pageNumber: pending.context.pageNumber,
       sectionTitle: pending.context.sectionTitle,
       imageUrl: pending.context.imageUrl,
-      ...(recordingFileId ? { recordingFileId } : {}),
     });
 
     const promise = (async (): Promise<SubmissionResult> => {
@@ -229,13 +228,40 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
         phase = "preparing";
         const recording = await adapters.getRecordingInfo(pending.localPath);
         if (cancelled) throw cancelledError;
-        if (recording.fileSizeBytes !== pending.fileSizeBytes) {
-          throw createError("RECORDING_SIZE_MISMATCH", "实际录音大小与停止录音时保存的大小不一致");
+        if (!Number.isSafeInteger(recording.fileSizeBytes) || recording.fileSizeBytes <= 0 || recording.fileSizeBytes > 8 * 1024 * 1024) {
+          throw createError("RECORDING_SIZE_INVALID", "录音文件为空、大小无效或超过 8 MiB，请回听检查后重新录制");
         }
         if (typeof recording.contentSha1 !== "string" || !/^[a-f0-9]{40}$/i.test(recording.contentSha1)) {
           throw createError("RECORDING_SHA1_INVALID", "实际录音 SHA-1 无效");
         }
-        const payload = { ...buildPayload(), contentSha1: recording.contentSha1.toLowerCase() };
+        let cloudFileId = pending.cloudFileId;
+        if (pending.contentSha1) {
+          // 仅将同一实际文件的两次指纹作比较；onStop.fileSize 不是保存后文件的可靠基准。
+          if (recording.fileSizeBytes !== pending.fileSizeBytes || recording.contentSha1.toLowerCase() !== pending.contentSha1.toLowerCase()) {
+            throw Object.assign(createError("RECORDING_FILE_CHANGED", "本地录音文件发生变化，已保留录音，请回听检查后重新录制"), {
+              expectedSizeBytes: pending.fileSizeBytes,
+              actualSizeBytes: recording.fileSizeBytes,
+            });
+          }
+        } else {
+          // 旧版本仅存回调大小。用可读取的实际文件建立基准，避免原录音永久无法重试。
+          const sizeChanged = recording.fileSizeBytes !== pending.fileSizeBytes;
+          if (sizeChanged) {
+            console.warn("录音大小已按实际文件校正", { reportedSizeBytes: pending.fileSizeBytes, actualSizeBytes: recording.fileSizeBytes });
+          }
+          // 旧项没有内容基准，即使大小相同也无法确认原云路径摘要；按prepare新路径上传。
+          // 若云端其实已提交，prepare仍返回已有结果，不重复上传，也不删除旧云文件。
+          cloudFileId = "";
+          const calibrated = await adapters.pendingStore.update(pending.requestId, {
+            fileSizeBytes: recording.fileSizeBytes,
+            contentSha1: recording.contentSha1.toLowerCase(),
+            cloudFileId: "",
+            status: "local",
+          });
+          if (!calibrated) throw createError("PENDING_PERSIST_FAILED", "无法保存录音文件信息，已保留本地录音，请重试");
+          if (cancelled) throw cancelledError;
+        }
+        const payload = buildPayload(recording);
         const prepared = await adapters.prepareCheckIn(payload);
         if (prepared.state === "committed") {
           let cleaned = false;
@@ -246,7 +272,6 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
         // prepare 可能已在云端确认成功；只在明确需要上传时兑现此前的离页取消。
         if (cancelled) throw cancelledError;
 
-        let cloudFileId = pending.cloudFileId;
         let repaired = false;
         while (true) {
           if (!cloudFileId) {

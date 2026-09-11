@@ -89,7 +89,16 @@ export const getCheckInRecordingInfo = (filePath: string): Promise<{
   wx.getFileInfo({
     filePath,
     digestAlgorithm: "sha1",
-    success: ({ size, digest }) => resolve({ fileSizeBytes: size, contentSha1: digest.toLowerCase() }),
+    success: (result) => {
+      // 原生异步回调里必须主动 reject，不能因摘要缺失而抛异常后让保存/提交永远等待。
+      const size = result?.size;
+      const digest = result?.digest;
+      if (!Number.isSafeInteger(size) || size <= 0 || typeof digest !== "string" || !/^[a-f0-9]{40}$/i.test(digest)) {
+        reject(Object.assign(new Error("无法读取有效的录音文件大小和内容摘要，请重试"), { code: "RECORDING_INFO_INVALID" }));
+        return;
+      }
+      resolve({ fileSizeBytes: size, contentSha1: digest.toLowerCase() });
+    },
     fail: reject,
   });
 });
