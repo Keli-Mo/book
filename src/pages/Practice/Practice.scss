@@ -177,6 +177,17 @@
   }
 }
 
+.recorder-status {
+  margin-top: 22rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.55;
+
+  &--neutral { background: #f1f6f4; color: #60736b; }
+  &--warning { background: #fff4ee; color: #a95438; }
+}
+
 .record-actions { display: flex; gap: 16rpx; }
 .record-actions__secondary {
   flex: 1;
@@ -187,6 +198,18 @@
 }
 
 .check-in-button { background: #2f896c; color: #ffffff; }
+
+.upload-cancel-button {
+  min-height: 44PX;
+  margin-top: 14rpx;
+  border: 0;
+  background: transparent;
+  color: #60736b;
+  font-size: 24rpx;
+  line-height: 44PX;
+
+  &::after { border: 0; }
+}
 
 button[disabled] { opacity: 0.5; }
 
@@ -359,6 +382,8 @@ button[disabled] { opacity: 0.5; }
   }
 
   .recording-indicator { margin-top: 11PX; font-size: 13PX; }
+  .recorder-status { margin-top: 11PX; padding: 10PX 11PX; font-size: 12PX; }
+  .upload-cancel-button { margin-top: 7PX; font-size: 12PX; }
   .practice-navigation {
     gap: 10PX;
     margin-top: 14PX;

@@ -38,6 +38,7 @@
     "test:practice-directory": "node scripts/test-practice-directory.cjs",
     "test:practice-directory-component": "node scripts/test-practice-directory-component.cjs",
     "test:recording-interaction": "node scripts/test-recording-interaction.cjs",
+    "test:practice-recording-wiring": "node scripts/test-practice-recording-wiring.cjs",
     "test:pending-check-in": "node scripts/test-pending-check-in.cjs",
     "test:pending-check-in-runtime": "node scripts/test-pending-check-in-runtime.cjs",
     "test:check-in-submission": "node scripts/test-check-in-submission.cjs",

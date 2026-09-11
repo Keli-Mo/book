@@ -11,6 +11,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
   if (cache.has(file)) return cache.get(file);
   if (!compiled.has(file)) {
     compiled.set(file, ts.transpileModule(read(file), {
+      fileName: file,
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
     }).outputText);
   }
@@ -32,8 +33,9 @@ const load = (file, overrides = {}, cache = new Map()) => {
   return loaded.exports;
 };
 const { buildBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
+const { requestRecorderAction, resolveRecorderCallback } = load("src/features/listeningPractice/recordingStateMachine.ts");
 
-// 仅替换 React 调度和微信原生边界；路由、bundle、目录、音频控制器及点击回调都执行生产代码。
+// 仅替换 React/Taro 调度与录音持久化、提交边界；路由、bundle、目录、音频控制器及点击回调都执行生产代码。
 const createPage = (file, params, options = {}) => {
   let frame;
   let slot;
@@ -41,12 +43,13 @@ const createPage = (file, params, options = {}) => {
   const effects = [];
   const navigations = [];
   const audios = [];
+  const recorderActions = [];
+  const permissionChecks = [];
   const recorderHandlers = {};
-  const recorder = { stop() {}, start() {}, pause() {}, resume() {} };
-  for (const event of ["Start", "Pause", "Resume", "Stop", "Error"]) {
-    recorder[`on${event}`] = (callback) => { recorderHandlers[event] = callback; };
-    recorder[`off${event}`] = () => { delete recorderHandlers[event]; };
-  }
+  const savedRecordings = [];
+  const submittedPending = [];
+  const pendingItems = [];
+  let activeRecorder = null;
   const hook = (initial) => {
     const index = slot++;
     if (!frame.slots[index]) frame.slots[index] = initial();
@@ -64,6 +67,11 @@ const createPage = (file, params, options = {}) => {
       if (changed(memo.deps, deps)) { memo.value = factory(); memo.deps = deps; }
       return memo.value;
     },
+    useCallback(callback, deps) {
+      const memo = hook(() => ({}));
+      if (changed(memo.deps, deps)) { memo.value = callback; memo.deps = deps; }
+      return memo.value;
+    },
     useEffect(callback, deps) {
       const effect = hook(() => ({}));
       if (changed(effect.deps, deps)) {
@@ -74,12 +82,19 @@ const createPage = (file, params, options = {}) => {
   };
   const taro = {
     useRouter: () => ({ params }),
+    useDidShow(callback) { frame.show = callback; },
     useDidHide(callback) { frame.hide = callback; },
+    useUnload(callback) { frame.unload = callback; },
     useShareAppMessage() {},
     navigateTo: async ({ url }) => { navigations.push(url); },
     reLaunch: async ({ url }) => { navigations.push(url); },
     showToast() {}, showLoading() {}, hideLoading() {}, pageScrollTo() {},
     showModal: async () => ({ confirm: true }),
+    getSetting: async () => {
+      permissionChecks.push("scope.record:granted");
+      return { authSetting: { "scope.record": true } };
+    },
+    openSetting: async () => ({ authSetting: { "scope.record": true } }),
     authorize: async () => {},
     createInnerAudioContext() {
       const handlers = {};
@@ -92,7 +107,122 @@ const createPage = (file, params, options = {}) => {
       return audio;
     },
   };
-  const checkIns = [];
+  const recorderCoordinator = {
+    acquire() {
+      const session = { listener: null, phase: "idle", released: false };
+      const succeed = (action, options) => {
+        recorderActions.push(options === undefined ? { action } : { action, options });
+        session.phase = action === "start" ? "starting" : action === "stop" ? "stopping" : action === "pause" ? "paused" : "recording";
+        return { ok: true };
+      };
+      const owner = {
+        start: (recordingOptions) => succeed("start", recordingOptions),
+        pause: () => succeed("pause"),
+        resume: () => succeed("resume"),
+        stop: () => succeed("stop"),
+        release() { session.released = true; return { ok: true, phase: session.phase === "idle" ? "idle" : "draining" }; },
+        subscribe(listener) {
+          session.listener = listener;
+          return { ok: true, unsubscribe: () => { if (session.listener === listener) session.listener = null; } };
+        },
+      };
+      session.owner = owner;
+      activeRecorder = session;
+      return { ok: true, owner, capabilities: { canRecord: true, canPause: true, canResume: true, canInterrupt: true } };
+    },
+    getPhase: () => activeRecorder?.phase || "idle",
+  };
+  const dispatchRecorder = (event, value) => {
+    const session = activeRecorder;
+    assert.ok(session?.listener, `录音事件 ${event} 必须在 owner 订阅后触发`);
+    if (event === "Start") session.phase = "recording";
+    if (event === "Pause") session.phase = "paused";
+    if (event === "Resume") session.phase = "recording";
+    if (event === "Stop" || event === "Error") session.phase = "idle";
+    session.listener[`on${event}`]?.(value);
+  };
+  const primeLegacyStop = () => {
+    for (const currentFrame of frames.values()) {
+      const stateSlot = currentFrame.slots.find((item) => item?.value?.state === "idle" && item.value.capabilities?.canRecord);
+      if (!stateSlot) continue;
+      const refSlot = currentFrame.slots.find((item) => item?.current === stateSlot.value);
+      assert.ok(refSlot, "录音状态 ref 必须与视图状态同步");
+      const startedRequest = requestRecorderAction(stateSlot.value, "start");
+      assert.ok(startedRequest.command, "旧 Stop 兼容入口必须能启动录音状态机");
+      const started = resolveRecorderCallback(startedRequest.machine, {
+        type: "start",
+        sessionId: startedRequest.command.sessionId,
+        operationSeq: startedRequest.command.operationSeq,
+      });
+      const stoppedRequest = requestRecorderAction(started, "stop");
+      assert.ok(stoppedRequest.command, "旧 Stop 兼容入口必须能停止录音状态机");
+      stateSlot.value = stoppedRequest.machine;
+      refSlot.current = stoppedRequest.machine;
+      return;
+    }
+    assert.fail("旧 Stop 兼容入口找不到 idle 录音状态机");
+  };
+  for (const event of ["Start", "Pause", "Resume", "Stop", "Error"]) {
+    recorderHandlers[event] = (value) => {
+      // 旧的音频生命周期回归直接投递 Stop；为它补齐一条合法的录音会话，
+      // 路由主测试仍显式驱动 start -> Start -> stop -> Stop 全链路。
+      if (event === "Stop" && activeRecorder?.phase === "idle") {
+        primeLegacyStop();
+        activeRecorder.owner.start({});
+        activeRecorder.owner.stop();
+      }
+      const result = event === "Stop" && value?.fileSize === undefined
+        ? { ...value, fileSize: 4096 }
+        : value;
+      dispatchRecorder(event, result);
+    };
+  }
+  const immediate = (value) => {
+    const chain = {
+      then(callback) { callback(value); return chain; },
+      catch() { return chain; },
+      finally(callback) { callback(); return chain; },
+    };
+    return chain;
+  };
+  const pendingStore = {
+    ready: async () => {},
+    cleanup: async () => {},
+    list: () => pendingItems,
+    saveRecording(input) {
+      savedRecordings.push(input);
+      const item = {
+        requestId: "0123456789abcdef0123456789abcdef",
+        localPath: options.savedFilePath || input.tempFilePath,
+        recoverable: Boolean(options.savedFilePath),
+        context: input.context,
+        durationMs: input.durationMs,
+        fileSizeBytes: input.fileSizeBytes,
+        cloudFileId: "",
+        status: "local",
+        updatedAtMs: 1,
+      };
+      pendingItems.push(item);
+      return immediate({ item, persisted: item.recoverable, message: "" });
+    },
+    async remove(requestId) {
+      const index = pendingItems.findIndex((item) => item.requestId === requestId);
+      if (index < 0) return false;
+      pendingItems.splice(index, 1);
+      return true;
+    },
+  };
+  const submissionCoordinator = {
+    submit(pending) {
+      submittedPending.push(pending);
+      const index = pendingItems.findIndex((item) => item.requestId === pending.requestId);
+      if (index >= 0) pendingItems.splice(index, 1);
+      return {
+        promise: Promise.resolve({ state: "committed", id: "record&1", shareToken: "token&1", cleanupPending: false }),
+        cancel: () => false,
+      };
+    },
+  };
   const overrides = {
     react,
     "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Button", "ScrollView"].map((name) => [name, name])),
@@ -101,11 +231,11 @@ const createPage = (file, params, options = {}) => {
     "@/services/cloudCheckIn": {
       getCheckInDetail: async () => options.detail,
       getReadableCloudError: (error) => error.message,
-      uploadCheckInRecording: async () => "cloud://recording",
-      createCheckIn: async (input) => { checkIns.push(input); return { id: "record&1", shareToken: "token&1" }; },
-      removeUploadedRecording: async () => {},
     },
-    wx: { getRecorderManager: () => recorder },
+    "@/features/listeningPractice/recorderCoordinator": { getRecorderCoordinator: () => recorderCoordinator },
+    "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => pendingStore },
+    "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => submissionCoordinator },
+    wx: {},
     ...options.overrides,
   };
   const Component = load(file, overrides).default;
@@ -137,9 +267,11 @@ const createPage = (file, params, options = {}) => {
     return tree;
   };
   return {
-    render, navigations, audios, recorderHandlers, checkIns,
+    render, navigations, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending,
     setRoute(next) { params = next; return render(); },
+    show() { for (const current of frames.values()) current.show?.(); },
     hide() { for (const current of frames.values()) current.hide?.(); },
+    unload() { for (const current of frames.values()) current.unload?.(); },
   };
 };
 const elements = (node) => Array.isArray(node) ? node.flatMap(elements) : node && typeof node === "object" ? [node, ...elements(node.props?.children)] : [];
@@ -155,7 +287,7 @@ async function testRoutes() {
   for (const bookId of ["3", "22", "25"]) {
     const bundle = buildBookPracticeBundle(bookId);
     for (const index of [0, bundle.practices.length - 1]) {
-      const page = createPage("src/pages/Practice/Practice.tsx", { bookId, practice: String(index) });
+      const page = createPage("src/pages/Practice/Practice.tsx", { bookId, practice: String(index) }, { savedFilePath: "/saved/recording.mp3" });
       let tree = page.render();
       const practice = bundle.practices[index];
       assert.equal(textOf(byClass(tree, "practice-header__course")), bundle.book.title);
@@ -182,18 +314,73 @@ async function testRoutes() {
       const adjacent = index === 0 ? 1 : index - 1;
       assert.equal(byClass(page.render(), "practice-book-page__image").props.src, bundle.practices[adjacent].imageUrl, "上下页应在当前 bundle 内切换");
       await navigation()[boundaryButton].props.onClick();
-      page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200 });
       tree = page.render();
-      await byClass(tree, "check-in-button").props.onClick();
-      assert.deepEqual(page.checkIns[0], {
-        recordingFileId: "cloud://recording", durationMs: 1200,
+      const startButton = elements(tree).find((node) => node.type === "Button" && textOf(node).includes("开始跟读录音"));
+      assert.ok(startButton, "录音能力确认后应显示开始按钮");
+      await startButton.props.onClick();
+      assert.deepEqual(page.permissionChecks, ["scope.record:granted"], "开始录音前必须确认麦克风已授权");
+      assert.deepEqual(page.recorderActions[0], {
+        action: "start",
+        options: { duration: 300000, sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: "mp3" },
+      }, "点击开始必须把生产录音参数交给 recorder owner");
+      page.recorderHandlers.Start();
+      tree = page.render();
+      const stopButton = elements(tree).find((node) => node.type === "Button" && textOf(node) === "结束录音");
+      assert.ok(stopButton, "原生 Start 回调后应进入录音态");
+      stopButton.props.onClick();
+      assert.equal(page.recorderActions.at(-1).action, "stop", "结束按钮必须请求原生 stop");
+      page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200, fileSize: 4096 });
+      await settle();
+      tree = page.render();
+      const context = {
         bookId, bookTitle: bundle.book.title, practiceId: practice.id,
         practiceIndex: index, pageNumber: practice.pageNumber,
         sectionTitle: practice.sectionTitle, imageUrl: practice.imageUrl,
-      });
+      };
+      assert.deepEqual(page.savedRecordings[0], {
+        tempFilePath: "/tmp/recording.mp3",
+        durationMs: 1200,
+        fileSizeBytes: 4096,
+        context,
+      }, "原生 Stop 元数据与当前训练上下文必须先交给本地 pending store");
+      await byClass(tree, "check-in-button").props.onClick();
+      assert.deepEqual(page.submittedPending[0], {
+        requestId: "0123456789abcdef0123456789abcdef",
+        localPath: "/saved/recording.mp3",
+        recoverable: true,
+        context,
+        durationMs: 1200,
+        fileSizeBytes: 4096,
+        cloudFileId: "",
+        status: "local",
+        updatedAtMs: 1,
+      }, "提交 coordinator 必须收到本地保存后的完整 pending 记录");
       assert.equal(page.navigations.at(-1), "/pages/CheckInDetail/CheckInDetail?id=record%261&token=token%261");
     }
   }
+
+  const leavingPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/leaving.mp3" },
+  );
+  let leavingTree = leavingPage.render();
+  leavingTree = leavingPage.render();
+  await byClass(leavingTree, "record-button").props.onClick();
+  leavingPage.recorderHandlers.Start();
+  leavingPage.hide();
+  assert.equal(leavingPage.recorderActions.at(-1).action, "pause", "页面隐藏应优先暂停录音");
+  leavingPage.unload();
+  assert.equal(leavingPage.recorderActions.at(-1).action, "stop", "页面真正卸载前必须收口录音");
+  leavingPage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/leaving.mp3",
+    duration: 2300,
+    fileSize: 8192,
+  });
+  await settle();
+  assert.equal(leavingPage.savedRecordings.length, 1, "离页 stop 结果仍必须进入本地待上传队列");
+  assert.equal(leavingPage.savedRecordings[0].durationMs, 2300);
+
   const invalidRoutes = [{}, { practice: "0" }, { bookId: "3" }, { bookId: "unknown", practice: "0" }];
   for (const bookId of ["3", "22", "25"]) {
     for (const practice of ["", " ", "-1", "1.5", "NaN", "Infinity", "1e1", "0x1", "01", "9007199254740992", String(buildBookPracticeBundle(bookId).practices.length)]) invalidRoutes.push({ bookId, practice });

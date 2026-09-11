@@ -1,6 +1,11 @@
 import { Button, Image, Text, View } from "@tarojs/components";
-import Taro, { useDidHide, useRouter } from "@tarojs/taro";
-import { useEffect, useMemo, useRef, useState } from "react";
+import Taro, {
+  useDidHide,
+  useDidShow,
+  useRouter,
+  useUnload,
+} from "@tarojs/taro";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import {
   createTrackAudioController,
@@ -15,20 +20,46 @@ import {
 import { clampHotspotCenter } from "@/features/listeningPractice/hotspotLayout";
 import { buildPracticeDirectoryGroups } from "@/features/listeningPractice/practiceDirectory";
 import {
+  getRecordingErrorMessage,
+  getRecordingPermissionStep,
   getPracticeSwitchPolicy,
   getRecordingElapsedMs,
+  parseNativeRecordingResult,
   pauseRecordingTimeline,
   resumeRecordingTimeline,
   startRecordingTimeline,
-  type RecordingState,
   type RecordingTimeline,
 } from "@/features/listeningPractice/recordingInteraction";
 import {
-  createCheckIn,
-  getReadableCloudError,
-  removeUploadedRecording,
-  uploadCheckInRecording,
-} from "@/services/cloudCheckIn";
+  beginRecordingUpload,
+  createRecordingMachine,
+  disposeRecordingMachine,
+  finishRecordingUpload,
+  handleInterruptionBegin,
+  handleInterruptionEnd,
+  requestRecorderAction,
+  requestRecorderTeardown,
+  resetRecordingMachine,
+  resolveRecorderCallback,
+  resolveRecordingCapabilities,
+  restoreRecordedMachine,
+  type PauseReason,
+  type RecorderAction,
+  type RecordingMachine,
+} from "@/features/listeningPractice/recordingStateMachine";
+import {
+  getRecorderCoordinator,
+  type RecorderNativeStopResult,
+  type RecorderOwner,
+} from "@/features/listeningPractice/recorderCoordinator";
+import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
+import { getPendingCheckInStore } from "@/features/listeningPractice/pendingCheckInRuntime";
+import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
+import type {
+  CheckInSubmissionHandle,
+  SubmissionProgress,
+} from "@/features/listeningPractice/checkInSubmissionCoordinator";
+import { getReadableCloudError } from "@/services/cloudCheckIn";
 import {
   useDeviceLayout,
   type DeviceLayoutState,
@@ -43,6 +74,18 @@ const formatDuration = (durationMs: number) => {
   const seconds = String(totalSeconds % 60).padStart(2, "0");
   return `${minutes}:${seconds}`;
 };
+
+const RECORDER_OPTIONS = {
+  duration: 300000,
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  encodeBitRate: 48000,
+  format: "mp3" as const,
+};
+const RECORDER_TEARDOWN_TIMEOUT_MS = 8000;
+
+const recorderOperationError = (reason: string, error?: unknown) =>
+  error || new Error(reason === "busy" ? "录音设备正在收尾，请稍后再试" : "当前录音操作暂不可用");
 
 export default function Practice() {
   const layout = useDeviceLayout();
@@ -125,24 +168,60 @@ function PracticeSession({
   });
   const [isDirectoryOpen, setIsDirectoryOpen] = useState(false);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
-  const [recordingState, setRecordingState] = useState<RecordingState>("idle");
+  const [recordingMachine, setRecordingMachine] = useState<RecordingMachine>(
+    () => createRecordingMachine(),
+  );
+  const recordingMachineRef = useRef(recordingMachine);
+  const recordingState = recordingMachine.state;
   const [tempRecordingPath, setTempRecordingPath] = useState("");
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [isPlayingRecording, setIsPlayingRecording] = useState(false);
+  const [pendingCheckIn, setPendingCheckIn] = useState<PendingCheckIn | null>(null);
+  const [isSavingRecording, setIsSavingRecording] = useState(false);
+  const [submissionProgress, setSubmissionProgress] = useState<SubmissionProgress | null>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const modelAudioControllerRef = useRef<ReturnType<
     typeof createTrackAudioController
   > | null>(null);
   const recordingAudioRef = useRef<Taro.InnerAudioContext | null>(null);
-  const recorderRef = useRef<WechatMiniprogram.RecorderManager | null>(null);
+  const recorderOwnerRef = useRef<RecorderOwner | null>(null);
   const recordingTimelineRef = useRef<RecordingTimeline>({
     accumulatedMs: 0,
     activeSinceMs: null,
   });
-  const pendingRecorderActionRef = useRef<"pause" | "resume" | null>(null);
   const discardNextRecordingRef = useRef(false);
-  const submittingRef = useRef(false);
+  const pendingCheckInRef = useRef<PendingCheckIn | null>(null);
+  const submissionHandleRef = useRef<CheckInSubmissionHandle | null>(null);
+  const recorderUnsubscribeRef = useRef<(() => void) | null>(null);
+  const mountedRef = useRef(true);
+  const pageHiddenRef = useRef(false);
+  const savingRecordingRef = useRef(false);
+  const saveGenerationRef = useRef(0);
+  const replacementPendingIdsRef = useRef(new Set<string>());
+  const teardownAwaitingStopRef = useRef(false);
+  const teardownReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const practiceContextRef = useRef({ practice, practiceIndex });
+  practiceContextRef.current = { practice, practiceIndex };
+
+  const applyRecordingMachine = useCallback((next: RecordingMachine) => {
+    recordingMachineRef.current = next;
+    if (mountedRef.current) setRecordingMachine(next);
+  }, []);
+
+  const applyPendingCheckIn = useCallback((next: PendingCheckIn | null) => {
+    pendingCheckInRef.current = next;
+    if (mountedRef.current) setPendingCheckIn(next);
+  }, []);
+
+  const removeReplacementBackups = useCallback(async () => {
+    const store = getPendingCheckInStore();
+    for (const requestId of [...replacementPendingIdsRef.current]) {
+      if (await store.remove(requestId)) {
+        replacementPendingIdsRef.current.delete(requestId);
+      }
+    }
+  }, []);
 
   const measureBookImage = useMemo(
     () => () => {
@@ -193,6 +272,82 @@ function PracticeSession({
     [imageSize.height, imageSize.width, practice.tracks],
   );
 
+  const runRecorderAction = useCallback((
+    action: RecorderAction,
+    pauseReason: Exclude<PauseReason, null> = "user",
+  ) => {
+    const owner = recorderOwnerRef.current;
+    if (!owner) return false;
+    const before = recordingMachineRef.current;
+    const requested = requestRecorderAction(
+      before,
+      action,
+      pauseReason,
+    );
+    if (!requested.command) return false;
+    applyRecordingMachine(requested.machine);
+
+    const nativeResult =
+      action === "start"
+        ? owner.start(RECORDER_OPTIONS)
+        : action === "pause"
+          ? owner.pause()
+          : action === "resume"
+            ? owner.resume()
+            : owner.stop();
+    if (nativeResult.ok) return true;
+
+    const error = recorderOperationError(
+      nativeResult.reason,
+      "error" in nativeResult ? nativeResult.error : undefined,
+    );
+    if (action !== "start") {
+      // 同步暂停、继续或结束失败时原生会话仍可能存活，保留原状态以便用户再次操作或结束。
+      applyRecordingMachine(before);
+    } else {
+      applyRecordingMachine(
+        resolveRecorderCallback(requested.machine, {
+          type: "error",
+          sessionId: requested.command.sessionId,
+          operationSeq: requested.command.operationSeq,
+          error,
+        }),
+      );
+    }
+    void Taro.showModal({
+      title: "录音操作失败",
+      content: getRecordingErrorMessage(error),
+      showCancel: false,
+    });
+    return false;
+  }, [applyRecordingMachine]);
+
+  const clearRecordingView = useCallback(() => {
+    stopAudioIfLoaded(recordingAudioRef.current);
+    if (mountedRef.current) {
+      setIsPlayingRecording(false);
+      setTempRecordingPath("");
+      setRecordingDurationMs(0);
+      setRecordingElapsedMs(0);
+      setSubmissionProgress(null);
+    }
+    recordingTimelineRef.current = { accumulatedMs: 0, activeSinceMs: null };
+  }, []);
+
+  const releaseRecorderOwner = useCallback(() => {
+    if (teardownReleaseTimerRef.current !== null) {
+      clearTimeout(teardownReleaseTimerRef.current);
+      teardownReleaseTimerRef.current = null;
+    }
+    teardownAwaitingStopRef.current = false;
+    recorderUnsubscribeRef.current?.();
+    recorderUnsubscribeRef.current = null;
+    const owner = recorderOwnerRef.current;
+    recorderOwnerRef.current = null;
+    owner?.release();
+    recordingMachineRef.current = disposeRecordingMachine(recordingMachineRef.current);
+  }, []);
+
   useEffect(() => {
     const modelAudioController = createTrackAudioController(
       () => Taro.createInnerAudioContext(),
@@ -215,97 +370,304 @@ function PracticeSession({
     });
     recordingAudioRef.current = recordingAudio;
 
-    const recorder = wx.getRecorderManager();
-    const handleRecorderStart = () => {
-      recordingTimelineRef.current = startRecordingTimeline(Date.now());
-      setRecordingElapsedMs(0);
-      setRecordingState("recording");
-    };
-    const handleRecorderPause = () => {
-      pendingRecorderActionRef.current = null;
-      recordingTimelineRef.current = pauseRecordingTimeline(
-        recordingTimelineRef.current,
-        Date.now()
-      );
-      setRecordingElapsedMs(recordingTimelineRef.current.accumulatedMs);
-      setRecordingState("paused");
-    };
-    const handleRecorderResume = () => {
-      pendingRecorderActionRef.current = null;
-      recordingTimelineRef.current = resumeRecordingTimeline(
-        recordingTimelineRef.current,
-        Date.now()
-      );
-      setRecordingState("recording");
-    };
-    const handleRecorderStop = (result: WechatMiniprogram.OnStopCallbackResult) => {
-      pendingRecorderActionRef.current = null;
-      if (discardNextRecordingRef.current) {
-        discardNextRecordingRef.current = false;
-        return;
-      }
-
-      const duration =
-        result.duration ||
-        getRecordingElapsedMs(recordingTimelineRef.current, Date.now());
-      if (!result.tempFilePath || duration < 500) {
-        setRecordingState("idle");
-        Taro.showToast({ title: "录音时间太短，请重新录制", icon: "none" });
-        return;
-      }
-
-      setTempRecordingPath(result.tempFilePath);
-      setRecordingDurationMs(duration);
-      setRecordingElapsedMs(duration);
-      setRecordingState("recorded");
-    };
-    const handleRecorderError = () => {
-      const pendingAction = pendingRecorderActionRef.current;
-      pendingRecorderActionRef.current = null;
-      if (pendingAction === "pause") {
-        Taro.showToast({ title: "暂停录音失败，请重试", icon: "none" });
-        return;
-      }
-      if (pendingAction === "resume") {
-        Taro.showToast({ title: "继续录音失败，请重试", icon: "none" });
-        return;
-      }
-      setRecordingState("idle");
-      Taro.showToast({ title: "录音失败，请检查麦克风权限", icon: "none" });
-    };
-
-    recorder.onStart(handleRecorderStart);
-    recorder.onPause(handleRecorderPause);
-    recorder.onResume(handleRecorderResume);
-    recorder.onStop(handleRecorderStop);
-    recorder.onError(handleRecorderError);
-    recorderRef.current = recorder;
-
     return () => {
-      discardNextRecordingRef.current = true;
-      recorder.stop();
-      // 部分基础库提供移除监听接口，旧基础库没有时使用可选调用兼容。
-      const recorderWithCleanup = recorder as typeof recorder & {
-        offStart?: (callback: typeof handleRecorderStart) => void;
-        offPause?: (callback: typeof handleRecorderPause) => void;
-        offResume?: (callback: typeof handleRecorderResume) => void;
-        offStop?: (callback: typeof handleRecorderStop) => void;
-        offError?: (callback: typeof handleRecorderError) => void;
-      };
-      recorderWithCleanup.offStart?.(handleRecorderStart);
-      recorderWithCleanup.offPause?.(handleRecorderPause);
-      recorderWithCleanup.offResume?.(handleRecorderResume);
-      recorderWithCleanup.offStop?.(handleRecorderStop);
-      recorderWithCleanup.offError?.(handleRecorderError);
       // 路由换书/换训练会卸载会话，两路音频都需先停止再释放。
       stopPracticePlayback(modelAudioController, recordingAudio);
       modelAudioController.dispose();
       recordingAudio.destroy();
       modelAudioControllerRef.current = null;
       recordingAudioRef.current = null;
-      recorderRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const acquired = getRecorderCoordinator().acquire();
+    if (!acquired.ok) {
+      applyRecordingMachine(
+        resolveRecordingCapabilities(recordingMachineRef.current, {
+          canRecord: false,
+          canPause: false,
+          canResume: false,
+          canInterrupt: false,
+        }),
+      );
+      return () => {
+        mountedRef.current = false;
+        recordingMachineRef.current = disposeRecordingMachine(recordingMachineRef.current);
+      };
+    }
+
+    const { owner, capabilities } = acquired;
+    recorderOwnerRef.current = owner;
+    applyRecordingMachine(
+      resolveRecordingCapabilities(recordingMachineRef.current, capabilities),
+    );
+
+    const handleStart = () => {
+      const current = recordingMachineRef.current;
+      const next = resolveRecorderCallback(current, {
+        type: "start",
+        sessionId: current.sessionId,
+        operationSeq: current.operationSeq,
+      });
+      if (next === current) return;
+      recordingTimelineRef.current = startRecordingTimeline(Date.now());
+      setRecordingElapsedMs(0);
+      applyRecordingMachine(next);
+
+      // 页面在原生 start 确认前已进入后台时，不允许录音继续悄悄运行。
+      if (pageHiddenRef.current) {
+        const requested = requestRecorderAction(next, "stop", "background");
+        if (requested.command) {
+          applyRecordingMachine(requested.machine);
+          const stopped = owner.stop();
+          if (!stopped.ok) {
+            const error = recorderOperationError(
+              stopped.reason,
+              "error" in stopped ? stopped.error : undefined,
+            );
+            applyRecordingMachine(
+              resolveRecorderCallback(requested.machine, {
+                type: "error",
+                sessionId: requested.command.sessionId,
+                operationSeq: requested.command.operationSeq,
+                error,
+              }),
+            );
+          }
+        }
+      }
+    };
+
+    const handlePause = () => {
+      const current = recordingMachineRef.current;
+      const next = resolveRecorderCallback(current, {
+        type: "pause",
+        sessionId: current.sessionId,
+        operationSeq: current.operationSeq,
+      });
+      if (next === current) return;
+      recordingTimelineRef.current = pauseRecordingTimeline(
+        recordingTimelineRef.current,
+        Date.now(),
+      );
+      setRecordingElapsedMs(recordingTimelineRef.current.accumulatedMs);
+      applyRecordingMachine(next);
+    };
+
+    const handleResume = () => {
+      const current = recordingMachineRef.current;
+      const next = resolveRecorderCallback(current, {
+        type: "resume",
+        sessionId: current.sessionId,
+        operationSeq: current.operationSeq,
+      });
+      if (next === current) return;
+      recordingTimelineRef.current = resumeRecordingTimeline(
+        recordingTimelineRef.current,
+        Date.now(),
+      );
+      applyRecordingMachine(next);
+    };
+
+    const handleStop = (result: RecorderNativeStopResult) => {
+      const releaseAfterStop = teardownAwaitingStopRef.current;
+      const current = recordingMachineRef.current;
+      const next = resolveRecorderCallback(current, {
+        type: "stop",
+        sessionId: current.sessionId,
+        operationSeq: current.operationSeq,
+      });
+      if (next === current) {
+        if (releaseAfterStop) releaseRecorderOwner();
+        return;
+      }
+      applyRecordingMachine(next);
+
+      if (discardNextRecordingRef.current) {
+        discardNextRecordingRef.current = false;
+        clearRecordingView();
+        applyRecordingMachine(resetRecordingMachine(next));
+        if (releaseAfterStop) releaseRecorderOwner();
+        return;
+      }
+
+      const parsed = parseNativeRecordingResult(result);
+      if (!parsed.ok) {
+        clearRecordingView();
+        applyRecordingMachine(resetRecordingMachine(next));
+        if (mountedRef.current) {
+          Taro.showToast({ title: parsed.message, icon: "none" });
+        }
+        if (releaseAfterStop) releaseRecorderOwner();
+        return;
+      }
+
+      const generation = ++saveGenerationRef.current;
+      savingRecordingRef.current = true;
+      if (mountedRef.current) setIsSavingRecording(true);
+      const { practice: stoppedPractice, practiceIndex: stoppedIndex } =
+        practiceContextRef.current;
+
+      // 录音一停止就先移入小程序持久文件，再允许用户上传、切页或重录。
+      void getPendingCheckInStore()
+        .saveRecording({
+          tempFilePath: parsed.tempFilePath,
+          durationMs: parsed.durationMs,
+          fileSizeBytes: parsed.fileSizeBytes,
+          context: {
+            bookId: bundle.book.id,
+            bookTitle: bundle.book.title,
+            practiceId: stoppedPractice.id,
+            practiceIndex: stoppedIndex,
+            pageNumber: stoppedPractice.pageNumber,
+            sectionTitle: stoppedPractice.sectionTitle,
+            imageUrl: stoppedPractice.imageUrl,
+          },
+        })
+        .then(async (saved) => {
+          if (generation !== saveGenerationRef.current) return;
+          // 新录音可恢复后再删除被替换版本；保存失败时旧录音仍是安全备份。
+          if (saved.persisted) await removeReplacementBackups();
+          applyPendingCheckIn(saved.item);
+          if (mountedRef.current) {
+            setTempRecordingPath(saved.item.localPath);
+            setRecordingDurationMs(saved.item.durationMs);
+            setRecordingElapsedMs(saved.item.durationMs);
+          }
+          if (saved.message && mountedRef.current) {
+            void Taro.showModal({
+              title: saved.persisted ? "录音已保存" : "录音仅临时保存",
+              content: saved.message,
+              showCancel: false,
+            });
+          }
+        })
+        .catch((error) => {
+          if (generation !== saveGenerationRef.current || !mountedRef.current) return;
+          clearRecordingView();
+          applyRecordingMachine(resetRecordingMachine(recordingMachineRef.current));
+          void Taro.showModal({
+            title: "录音保存失败",
+            content: getRecordingErrorMessage(error),
+            showCancel: false,
+          });
+        })
+        .finally(() => {
+          if (generation !== saveGenerationRef.current) return;
+          savingRecordingRef.current = false;
+          if (mountedRef.current) setIsSavingRecording(false);
+        });
+      // stop 结果已被接管并开始持久化，页面可以安全释放原生 owner。
+      if (releaseAfterStop) releaseRecorderOwner();
+    };
+
+    const handleError = (error: unknown) => {
+      const current = recordingMachineRef.current;
+      const next = resolveRecorderCallback(current, {
+        type: "error",
+        sessionId: current.sessionId,
+        operationSeq: current.operationSeq,
+        error,
+      });
+      if (next === current) return;
+      recordingTimelineRef.current = pauseRecordingTimeline(
+        recordingTimelineRef.current,
+        Date.now(),
+      );
+      applyRecordingMachine(next);
+      if (teardownAwaitingStopRef.current) {
+        releaseRecorderOwner();
+      } else {
+        void Taro.showModal({
+          title: "录音未完成",
+          content: getRecordingErrorMessage(error),
+          showCancel: false,
+        });
+      }
+    };
+
+    const subscription = owner.subscribe({
+      onStart: handleStart,
+      onPause: handlePause,
+      onResume: handleResume,
+      onStop: handleStop,
+      onError: handleError,
+      onInterruptionBegin: () => {
+        const current = recordingMachineRef.current;
+        const handled = handleInterruptionBegin(current);
+        if (handled.machine === current) return;
+        recordingTimelineRef.current = pauseRecordingTimeline(
+          recordingTimelineRef.current,
+          Date.now(),
+        );
+        setRecordingElapsedMs(recordingTimelineRef.current.accumulatedMs);
+        applyRecordingMachine(handled.machine);
+      },
+      onInterruptionEnd: () => {
+        const current = recordingMachineRef.current;
+        applyRecordingMachine(handleInterruptionEnd(current).machine);
+      },
+    });
+    if (subscription.ok) recorderUnsubscribeRef.current = subscription.unsubscribe;
+
+    return () => {
+      mountedRef.current = false;
+      if (!teardownAwaitingStopRef.current) releaseRecorderOwner();
+    };
+  }, [
+    applyPendingCheckIn,
+    applyRecordingMachine,
+    bundle.book.id,
+    bundle.book.title,
+    clearRecordingView,
+    releaseRecorderOwner,
+    removeReplacementBackups,
+  ]);
+
+  useEffect(() => {
+    if (
+      recordingState !== "idle" &&
+      recordingState !== "unsupported" &&
+      recordingState !== "error"
+    ) return undefined;
+    let active = true;
+    const store = getPendingCheckInStore();
+
+    void store.ready().then(async () => {
+      await store.cleanup();
+      if (!active || pendingCheckInRef.current || savingRecordingRef.current) return;
+      const restored = [...store.list()]
+        .filter((item) =>
+          item.context.bookId === bundle.book.id &&
+          item.context.practiceId === practice.id &&
+          item.context.practiceIndex === practiceIndex,
+        )
+        .sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0];
+      if (!restored || !active) return;
+
+      replacementPendingIdsRef.current.delete(restored.requestId);
+      applyPendingCheckIn(restored);
+      setTempRecordingPath(restored.localPath);
+      setRecordingDurationMs(restored.durationMs);
+      setRecordingElapsedMs(restored.durationMs);
+      applyRecordingMachine(restoreRecordedMachine(recordingMachineRef.current));
+    }).catch(() => {
+      // 本地缓存读取失败不阻断教材与示范音频，用户仍可重新录制。
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    applyPendingCheckIn,
+    applyRecordingMachine,
+    bundle.book.id,
+    practice.id,
+    practiceIndex,
+    recordingState,
+  ]);
 
   useEffect(() => {
     if (recordingState !== "recording") return undefined;
@@ -318,14 +680,60 @@ function PracticeSession({
     return () => clearInterval(timer);
   }, [recordingState]);
 
+  useDidShow(() => {
+    pageHiddenRef.current = false;
+  });
+
   useDidHide(() => {
-    // navigateTo 只会隐藏当前页；在这里停止，避免音频跨页面继续播放。
+    pageHiddenRef.current = true;
+    // 页面隐藏后停止两路播放；录音优先暂停，旧机型不支持暂停时安全停止。
     stopPracticePlayback(
       modelAudioControllerRef.current,
       recordingAudioRef.current,
     );
     setPlayingTrackId(null);
     setIsPlayingRecording(false);
+    submissionHandleRef.current?.cancel();
+
+    const current = recordingMachineRef.current;
+    if (current.state === "recording") {
+      if (current.capabilities?.canPause && current.capabilities.canResume) {
+        runRecorderAction("pause", "background");
+      } else {
+        runRecorderAction("stop", "background");
+      }
+    }
+  });
+
+  useUnload(() => {
+    pageHiddenRef.current = true;
+    mountedRef.current = false;
+    submissionHandleRef.current?.cancel();
+    const owner = recorderOwnerRef.current;
+    const current = recordingMachineRef.current;
+    const teardown = requestRecorderTeardown(current);
+
+    if (!owner || (!teardown.command && current.state !== "stopping")) {
+      releaseRecorderOwner();
+      return;
+    }
+
+    // 返回或重定向离页也要等待一次原生 stop，把已录内容交给本地待上传队列。
+    teardownAwaitingStopRef.current = true;
+    if (teardown.command) {
+      applyRecordingMachine(teardown.machine);
+      const stopped = owner.stop();
+      if (!stopped.ok) {
+        releaseRecorderOwner();
+        return;
+      }
+    }
+    if (teardownAwaitingStopRef.current) {
+      teardownReleaseTimerRef.current = setTimeout(
+        releaseRecorderOwner,
+        RECORDER_TEARDOWN_TIMEOUT_MS,
+      );
+    }
   });
 
   const playModelAudio = (trackId: string, url: string) => {
@@ -337,27 +745,38 @@ function PracticeSession({
     controller.toggle(trackId, url);
   };
 
-  const resetRecording = () => {
-    if (recordingState === "recording" || recordingState === "paused") {
-      discardNextRecordingRef.current = true;
-      recorderRef.current?.stop();
+  const removeCurrentPending = async () => {
+    const pending = pendingCheckInRef.current;
+    if (!pending) return true;
+    const removed = await getPendingCheckInStore().remove(pending.requestId);
+    if (!removed) {
+      void Taro.showModal({
+        title: "本地录音未删除",
+        content: "请先到“我的打卡”清理这条录音后再试。",
+        showCancel: false,
+      });
+      return false;
     }
-    pendingRecorderActionRef.current = null;
-    recordingTimelineRef.current = {
-      accumulatedMs: 0,
-      activeSinceMs: null,
-    };
-    stopAudioIfLoaded(recordingAudioRef.current);
-    setTempRecordingPath("");
-    setRecordingDurationMs(0);
-    setRecordingElapsedMs(0);
-    setRecordingState("idle");
+    applyPendingCheckIn(null);
+    return true;
   };
 
-  const performPracticeSwitch = (nextIndex: number) => {
+  const performPracticeSwitch = async (nextIndex: number) => {
+    if (!(await removeCurrentPending())) return;
+    if (recordingState === "recording" || recordingState === "paused") {
+      discardNextRecordingRef.current = true;
+      if (!runRecorderAction("stop")) {
+        discardNextRecordingRef.current = false;
+        return;
+      }
+    } else {
+      applyRecordingMachine(resetRecordingMachine(recordingMachineRef.current));
+      clearRecordingView();
+    }
     modelAudioControllerRef.current?.stop();
     setPlayingTrackId(null);
-    resetRecording();
+    // 放弃新录音并切换训练时，之前保留的旧录音继续留在“我的打卡”。
+    replacementPendingIdsRef.current.clear();
     setCurrentPractice({ practiceIndex: nextIndex, practice: bundle.practices[nextIndex] });
     Taro.pageScrollTo({ scrollTop: 0, duration: 200 });
   };
@@ -369,6 +788,10 @@ function PracticeSession({
       return;
     }
 
+    if (isSavingRecording || recordingState === "starting" || recordingState === "stopping") {
+      Taro.showToast({ title: "录音正在处理，请稍候", icon: "none" });
+      return;
+    }
     const policy = getPracticeSwitchPolicy(recordingState);
     if (policy === "block-uploading") {
       Taro.showToast({ title: "打卡上传中，请稍候", icon: "none" });
@@ -385,7 +808,7 @@ function PracticeSession({
     }
 
     setIsDirectoryOpen(false);
-    performPracticeSwitch(nextIndex);
+    await performPracticeSwitch(nextIndex);
   };
 
   const openPracticeDirectory = () => {
@@ -397,63 +820,85 @@ function PracticeSession({
   };
 
   const startRecording = async () => {
-    if (!recorderRef.current || recordingState === "uploading") return;
+    if (
+      !recorderOwnerRef.current ||
+      isSavingRecording ||
+      recordingState === "checking" ||
+      recordingState === "unsupported" ||
+      recordingState === "starting" ||
+      recordingState === "stopping" ||
+      recordingState === "uploading"
+    ) return;
 
     stopAudioIfLoaded(recordingAudioRef.current);
-    setTempRecordingPath("");
-    setRecordingDurationMs(0);
-
+    let permission: "granted" | "request" | "open-settings";
     try {
-      await Taro.authorize({ scope: "scope.record" });
-    } catch (_error) {
-      const result = await Taro.showModal({
+      const settings = await Taro.getSetting();
+      permission = getRecordingPermissionStep(
+        settings.authSetting["scope.record"],
+      );
+    } catch (error) {
+      void Taro.showModal({
+        title: "无法检查麦克风权限",
+        content: getRecordingErrorMessage(error),
+        showCancel: false,
+      });
+      return;
+    }
+
+    if (permission === "open-settings") {
+      const choice = await Taro.showModal({
         title: "需要麦克风权限",
         content: "跟读录音只会在你确认打卡后上传。请在设置中允许使用麦克风。",
         confirmText: "去设置",
       });
-      if (result.confirm) await Taro.openSetting();
+      if (choice.confirm) {
+        await Taro.openSetting();
+        Taro.showToast({ title: "授权后请再次点击录音", icon: "none" });
+      }
       return;
     }
 
-    recorderRef.current.start({
-      duration: 300000,
-      sampleRate: 44100,
-      numberOfChannels: 1,
-      encodeBitRate: 128000,
-      format: "mp3",
-      frameSize: 50,
-    });
+    if (permission === "request") {
+      try {
+        await Taro.authorize({ scope: "scope.record" });
+      } catch (_error) {
+        const choice = await Taro.showModal({
+          title: "需要麦克风权限",
+          content: "请允许麦克风权限后再开始跟读录音。",
+          confirmText: "去设置",
+        });
+        if (choice.confirm) await Taro.openSetting();
+        return;
+      }
+    }
+
+    const previousPending = pendingCheckInRef.current;
+    if (previousPending) {
+      replacementPendingIdsRef.current.add(previousPending.requestId);
+      applyPendingCheckIn(null);
+    }
+    clearRecordingView();
+    if (!runRecorderAction("start") && previousPending) {
+      replacementPendingIdsRef.current.delete(previousPending.requestId);
+      applyPendingCheckIn(previousPending);
+      setTempRecordingPath(previousPending.localPath);
+      setRecordingDurationMs(previousPending.durationMs);
+      setRecordingElapsedMs(previousPending.durationMs);
+      applyRecordingMachine(restoreRecordedMachine(recordingMachineRef.current));
+    }
   };
 
   const pauseRecording = () => {
-    if (recordingState !== "recording" || !recorderRef.current) return;
-
-    pendingRecorderActionRef.current = "pause";
-    try {
-      recorderRef.current.pause();
-    } catch (_error) {
-      pendingRecorderActionRef.current = null;
-      Taro.showToast({ title: "暂停录音失败，请重试", icon: "none" });
-    }
+    runRecorderAction("pause");
   };
 
   const resumeRecording = () => {
-    if (recordingState !== "paused" || !recorderRef.current) return;
-
-    pendingRecorderActionRef.current = "resume";
-    try {
-      recorderRef.current.resume();
-    } catch (_error) {
-      pendingRecorderActionRef.current = null;
-      Taro.showToast({ title: "继续录音失败，请重试", icon: "none" });
-    }
+    runRecorderAction("resume");
   };
 
   const stopRecording = () => {
-    if (recordingState === "recording" || recordingState === "paused") {
-      pendingRecorderActionRef.current = null;
-      recorderRef.current?.stop();
-    }
+    runRecorderAction("stop");
   };
 
   const playRecording = () => {
@@ -471,51 +916,76 @@ function PracticeSession({
   };
 
   const submitCheckIn = async () => {
-    if (!practice || !tempRecordingPath || submittingRef.current) return;
+    const pending = pendingCheckInRef.current;
+    if (!pending || submissionHandleRef.current || recordingState !== "recorded") return;
 
-    submittingRef.current = true;
-    setRecordingState("uploading");
-    Taro.showLoading({ title: "正在完成打卡", mask: true });
-    let uploadedFileId = "";
+    const uploading = beginRecordingUpload(recordingMachineRef.current);
+    if (uploading === recordingMachineRef.current) return;
+    applyRecordingMachine(uploading);
+    setSubmissionProgress({
+      requestId: pending.requestId,
+      percent: null,
+      uncertain: true,
+    });
+    const handle = getCheckInSubmissionCoordinator().submit(pending, {
+      onProgress: (progress) => {
+        if (
+          mountedRef.current &&
+          pendingCheckInRef.current?.requestId === progress.requestId
+        ) {
+          setSubmissionProgress(progress);
+        }
+      },
+    });
+    submissionHandleRef.current = handle;
+    const result = await handle.promise;
+    if (submissionHandleRef.current === handle) submissionHandleRef.current = null;
+    if (!mountedRef.current) return;
+    setSubmissionProgress(null);
 
-    try {
-      uploadedFileId = await uploadCheckInRecording(tempRecordingPath, practice.id);
-      const created = await createCheckIn({
-        recordingFileId: uploadedFileId,
-        durationMs: recordingDurationMs,
-        bookId: bundle.book.id,
-        bookTitle: bundle.book.title,
-        practiceId: practice.id,
-        practiceIndex,
-        pageNumber: practice.pageNumber,
-        sectionTitle: practice.sectionTitle,
-        imageUrl: practice.imageUrl,
-      });
-      // 数据库记录创建成功后，录音文件改由该记录管理，后续页面跳转失败也不能误删。
-      uploadedFileId = "";
-      Taro.hideLoading();
+    if (result.state === "committed") {
+      await removeReplacementBackups();
+      applyPendingCheckIn(null);
+      clearRecordingView();
+      const finished = finishRecordingUpload(recordingMachineRef.current, { ok: true });
+      applyRecordingMachine(resetRecordingMachine(finished));
       Taro.showToast({ title: "打卡成功", icon: "success" });
-      submittingRef.current = false;
-      setRecordingState("recorded");
       try {
         await Taro.navigateTo({
           url: `/pages/CheckInDetail/CheckInDetail?id=${encodeURIComponent(
-            created.id,
-          )}&token=${encodeURIComponent(created.shareToken)}`,
+            result.id,
+          )}&token=${encodeURIComponent(result.shareToken)}`,
         });
       } catch (_navigationError) {
         Taro.showToast({ title: "请到我的打卡中查看", icon: "none" });
       }
-    } catch (error) {
-      Taro.hideLoading();
-      if (uploadedFileId) await removeUploadedRecording(uploadedFileId);
-      submittingRef.current = false;
-      setRecordingState("recorded");
-      Taro.showModal({
+      return;
+    }
+
+    const refreshed = getPendingCheckInStore()
+      .list()
+      .find((item) => item.requestId === pending.requestId);
+    if (refreshed) applyPendingCheckIn(refreshed);
+    applyRecordingMachine(
+      finishRecordingUpload(recordingMachineRef.current, {
+        ok: false,
+        error: result.error,
+      }),
+    );
+    if (result.state === "cancelled") {
+      Taro.showToast({ title: "已取消上传，录音仍保存在本机", icon: "none" });
+    } else {
+      void Taro.showModal({
         title: "打卡未完成",
-        content: getReadableCloudError(error),
+        content: getReadableCloudError(result.error),
         showCancel: false,
       });
+    }
+  };
+
+  const cancelSubmission = () => {
+    if (!submissionHandleRef.current?.cancel()) {
+      Taro.showToast({ title: "正在确认打卡，暂时不能取消", icon: "none" });
     }
   };
 
@@ -523,6 +993,13 @@ function PracticeSession({
     recordingState === "recording" || recordingState === "paused"
       ? recordingElapsedMs
       : recordingDurationMs;
+  const uploadLabel = submissionProgress?.uncertain
+    ? "正在上传…"
+    : submissionProgress?.percent === 100
+      ? "上传完成，正在确认"
+      : submissionProgress?.percent !== null && submissionProgress !== null
+        ? `正在上传 ${submissionProgress.percent}%`
+        : "正在上传";
 
   return (
     <View className={`practice-page ${layoutClassName}`}>
@@ -585,6 +1062,24 @@ function PracticeSession({
                 </Text>
               </View>
 
+              {recordingState === "checking" && (
+                <View className='recorder-status recorder-status--neutral'>
+                  <Text>正在检查当前设备的录音能力…</Text>
+                </View>
+              )}
+
+              {recordingState === "unsupported" && (
+                <View className='recorder-status recorder-status--warning'>
+                  <Text>当前微信或设备暂不支持跟读录音，请升级微信后在真机重试。</Text>
+                </View>
+              )}
+
+              {recordingState === "starting" && (
+                <View className='recorder-status recorder-status--neutral'>
+                  <Text>正在启动麦克风，请稍候…</Text>
+                </View>
+              )}
+
               {recordingState === "idle" && (
                 <Button
                   className='record-button device-touch-target'
@@ -602,12 +1097,15 @@ function PracticeSession({
                     <Text>正在录音，请完成本页跟读</Text>
                   </View>
                   <View className='recording-controls device-actions'>
-                    <Button
-                      className='record-button device-touch-target record-button--pause'
-                      onClick={pauseRecording}
-                    >
-                      暂停录音
-                    </Button>
+                    {recordingMachine.capabilities?.canPause &&
+                      recordingMachine.capabilities.canResume && (
+                        <Button
+                          className='record-button device-touch-target record-button--pause'
+                          onClick={pauseRecording}
+                        >
+                          暂停录音
+                        </Button>
+                      )}
                     <Button
                       className='record-button device-touch-target record-button--stop'
                       onClick={stopRecording}
@@ -622,15 +1120,23 @@ function PracticeSession({
                 <>
                   <View className='recording-indicator recording-indicator--paused'>
                     <Text className='recording-indicator__pulse' />
-                    <Text>录音已暂停，可播放示范音频后继续</Text>
+                    <Text>
+                      {recordingMachine.needsManualResume
+                        ? recordingMachine.pauseReason === "interruption"
+                          ? "录音被系统打断，请确认环境恢复后手动继续"
+                          : "页面切换时已暂停，请确认后手动继续"
+                        : "录音已暂停，可播放示范音频后继续"}
+                    </Text>
                   </View>
                   <View className='recording-controls device-actions'>
-                    <Button
-                      className='record-button device-touch-target record-button--resume'
-                      onClick={resumeRecording}
-                    >
-                      继续录音
-                    </Button>
+                    {recordingMachine.capabilities?.canResume && (
+                      <Button
+                        className='record-button device-touch-target record-button--resume'
+                        onClick={resumeRecording}
+                      >
+                        继续录音
+                      </Button>
+                    )}
                     <Button
                       className='record-button device-touch-target record-button--stop'
                       onClick={stopRecording}
@@ -641,35 +1147,74 @@ function PracticeSession({
                 </>
               )}
 
+              {recordingState === "stopping" && (
+                <View className='recorder-status recorder-status--neutral'>
+                  <Text>正在保存本次录音，请勿离开…</Text>
+                </View>
+              )}
+
+              {recordingState === "error" && (
+                <>
+                  <View className='recorder-status recorder-status--warning'>
+                    <Text>
+                      {getRecordingErrorMessage(recordingMachine.lastError) ||
+                        "录音未完成，请重新尝试。"}
+                    </Text>
+                  </View>
+                  <Button
+                    className='record-button device-touch-target'
+                    onClick={startRecording}
+                  >
+                    重新尝试录音
+                  </Button>
+                </>
+              )}
+
               {(recordingState === "recorded" || recordingState === "uploading") && (
                 <>
                   <Text className='practice-recorder__tip'>
-                    已录制 {formatDuration(recordingDurationMs)}，请先回听确认。
+                    {isSavingRecording
+                      ? "正在安全保存录音，请稍候…"
+                      : pendingCheckIn?.recoverable
+                        ? `已安全保存在本机（${formatDuration(recordingDurationMs)}），请回听确认。`
+                        : `已临时保存在本机（${formatDuration(recordingDurationMs)}），请尽快完成打卡。`}
                   </Text>
-                  <View className='record-actions device-actions'>
-                    <Button
-                      className='record-actions__secondary device-touch-target'
-                      disabled={recordingState === "uploading"}
-                      onClick={playRecording}
-                    >
-                      {isPlayingRecording ? "停止回听" : "回听录音"}
-                    </Button>
-                    <Button
-                      className='record-actions__secondary device-touch-target'
-                      disabled={recordingState === "uploading"}
-                      onClick={startRecording}
-                    >
-                      重新录制
-                    </Button>
-                  </View>
-                  <Button
-                    className='check-in-button device-touch-target'
-                    loading={recordingState === "uploading"}
-                    disabled={recordingState === "uploading"}
-                    onClick={submitCheckIn}
-                  >
-                    {recordingState === "uploading" ? "正在上传" : "完成本次打卡"}
-                  </Button>
+                  {!isSavingRecording && pendingCheckIn && (
+                    <>
+                      <View className='record-actions device-actions'>
+                        <Button
+                          className='record-actions__secondary device-touch-target'
+                          disabled={recordingState === "uploading"}
+                          onClick={playRecording}
+                        >
+                          {isPlayingRecording ? "停止回听" : "回听录音"}
+                        </Button>
+                        <Button
+                          className='record-actions__secondary device-touch-target'
+                          disabled={recordingState === "uploading"}
+                          onClick={startRecording}
+                        >
+                          重新录制
+                        </Button>
+                      </View>
+                      <Button
+                        className='check-in-button device-touch-target'
+                        loading={recordingState === "uploading"}
+                        disabled={recordingState === "uploading"}
+                        onClick={submitCheckIn}
+                      >
+                        {recordingState === "uploading" ? uploadLabel : "完成本次打卡"}
+                      </Button>
+                      {recordingState === "uploading" && (
+                        <Button
+                          className='upload-cancel-button device-touch-target'
+                          onClick={cancelSubmission}
+                        >
+                          取消上传并保留录音
+                        </Button>
+                      )}
+                    </>
+                  )}
                 </>
               )}
             </View>
