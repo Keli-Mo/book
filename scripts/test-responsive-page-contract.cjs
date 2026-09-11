@@ -8,18 +8,8 @@ const ts = require("typescript");
 const vm = require("vm");
 
 const projectRoot = path.resolve(__dirname, "..");
-const sourceCache = new Map();
-const astCache = new Map();
-const styleCache = new Map();
-const readSource = (relativePath) => {
-  if (!sourceCache.has(relativePath)) {
-    sourceCache.set(
-      relativePath,
-      fs.readFileSync(path.join(projectRoot, relativePath), "utf8"),
-    );
-  }
-  return sourceCache.get(relativePath);
-};
+const readSource = (relativePath) =>
+  fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 
 const pages = [
   {
@@ -112,35 +102,21 @@ const contract = (name, check) => {
   }
 };
 
-const parseTypeScript = (relativePath, scriptKind = ts.ScriptKind.TS) => {
-  const cacheKey = `${relativePath}:${scriptKind}`;
-  if (!astCache.has(cacheKey)) {
-    astCache.set(
-      cacheKey,
-      ts.createSourceFile(
-        path.join(projectRoot, relativePath),
-        readSource(relativePath),
-        ts.ScriptTarget.Latest,
-        true,
-        scriptKind,
-      ),
-    );
-  }
-  return astCache.get(cacheKey);
-};
+const parseTypeScript = (relativePath, scriptKind = ts.ScriptKind.TS) =>
+  ts.createSourceFile(
+    path.join(projectRoot, relativePath),
+    readSource(relativePath),
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind,
+  );
 
 const compileStyles = (relativePath) => {
-  if (!styleCache.has(relativePath)) {
-    const result = sass.compile(path.join(projectRoot, relativePath), {
-      loadPaths: [path.join(projectRoot, "src")],
-      style: "expanded",
-    });
-    styleCache.set(
-      relativePath,
-      postcss.parse(result.css, { from: relativePath }),
-    );
-  }
-  return styleCache.get(relativePath);
+  const result = sass.compile(path.join(projectRoot, relativePath), {
+    loadPaths: [path.join(projectRoot, "src")],
+    style: "expanded",
+  });
+  return postcss.parse(result.css, { from: relativePath });
 };
 
 const findNodes = (node, predicate, results = []) => {
@@ -298,6 +274,49 @@ const literalAttributeValue = (opening, name) => {
     : "";
 };
 
+const jsxElementNode = (opening) =>
+  ts.isJsxOpeningElement(opening) ? opening.parent : opening;
+const descendantByClass = (opening, className) =>
+  jsxOpenings(jsxElementNode(opening)).find(
+    (candidate) => candidate !== opening && classTokens(candidate).has(className),
+  );
+const jsxBooleanTrue = (opening, attributeName) => {
+  const attribute = getJsxAttribute(opening, attributeName);
+  if (!attribute) return false;
+  if (!attribute.initializer) return true;
+  return Boolean(
+    ts.isJsxExpression(attribute.initializer) &&
+      attribute.initializer.expression?.kind === ts.SyntaxKind.TrueKeyword,
+  );
+};
+const assertPracticeWorkspaceStructure = (sourceFile) => {
+  const workspace = jsxOpenings(sourceFile).find((opening) =>
+    classTokens(opening).has("practice-workspace"),
+  );
+  assert.ok(workspace, "训练页应提供 practice-workspace");
+  assert.ok(
+    descendantByClass(workspace, "practice-book-page"),
+    "practice-workspace 必须实际包住教材区",
+  );
+  assert.ok(
+    descendantByClass(workspace, "practice-recorder"),
+    "practice-workspace 必须实际包住录音控制区",
+  );
+};
+const assertDirectoryStructure = (sourceFile) => {
+  const mask = jsxOpenings(sourceFile).find((opening) =>
+    classTokens(opening).has("practice-directory-mask"),
+  );
+  assert.ok(mask, "目录组件应渲染 mask");
+  const sheet = descendantByClass(mask, "practice-directory-sheet");
+  assert.ok(sheet, "目录 sheet 必须嵌套在 mask 内");
+  const scroll = descendantByClass(sheet, "practice-directory-scroll");
+  assert.ok(
+    scroll && jsxTagName(scroll) === "ScrollView" && jsxBooleanTrue(scroll, "scrollY"),
+    "目录 ScrollView 必须嵌套在 sheet 内并以布尔真启用 scrollY",
+  );
+};
+
 const findDefaultComponent = (sourceFile) => {
   const direct = sourceFile.statements.find(
     (statement) =>
@@ -430,6 +449,27 @@ const findResponsiveBuilderCalls = (component, sourceFile, binding) => {
   return calls;
 };
 
+const classExpressionTokens = (component, expression, seen = new Set()) => {
+  const tokens = collectStringFragments(expression)
+    .flatMap((fragment) => fragment.split(/\s+/))
+    .filter(Boolean);
+  findNodes(expression, (node) => ts.isIdentifier(node)).forEach((identifier) => {
+    if (seen.has(identifier.text)) return;
+    const declaration = findNodesInComponent(
+      component,
+      (node) =>
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === identifier.text &&
+        node.initializer,
+    )[0];
+    if (!declaration) return;
+    seen.add(identifier.text);
+    tokens.push(...classExpressionTokens(component, declaration.initializer, seen));
+  });
+  return new Set(tokens);
+};
+
 const assertEveryReturnUsesResponsiveShell = (sourceFile) => {
   const component = findDefaultComponent(sourceFile);
   assert.ok(component?.body, "应能定位默认导出的页面组件");
@@ -464,6 +504,22 @@ const assertEveryReturnUsesResponsiveShell = (sourceFile) => {
       usesDirectCall || usesResult,
       `第 ${index + 1} 个顶层 return 必须使用 buildDeviceLayoutClassName 的结果`,
     );
+    const reservedModifiers = new Set([
+      "device-layout--phone",
+      "device-layout--pad",
+      "device-layout--single",
+      "device-layout--split",
+      "device-layout--portrait",
+      "device-layout--landscape",
+    ]);
+    const appendedModifiers = [
+      ...classExpressionTokens(component, classAttribute.initializer),
+    ].filter((token) => reservedModifiers.has(token));
+    assert.deepEqual(
+      appendedModifiers,
+      [],
+      `第 ${index + 1} 个根节点不得在 builder 结果之外追加设备 modifier`,
+    );
     const rootNode = ts.isJsxOpeningElement(root) ? root.parent : root;
     assert.ok(
       jsxOpenings(rootNode).some((opening) =>
@@ -484,7 +540,29 @@ const assertEveryReturnUsesResponsiveShell = (sourceFile) => {
   );
 };
 
-const selectorParts = (rule) => rule.selector.split(",").map((item) => item.trim());
+const splitSelectorList = (selectorList) => {
+  const parts = [];
+  let part = "";
+  let depth = 0;
+  let quote = "";
+  for (const character of selectorList) {
+    if (quote) {
+      part += character;
+      if (character === quote) quote = "";
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    else if (character === "(" || character === "[") depth += 1;
+    else if (character === ")" || character === "]") depth -= 1;
+    if (character === "," && depth === 0) {
+      if (part.trim()) parts.push(part.trim());
+      part = "";
+    } else part += character;
+  }
+  if (part.trim()) parts.push(part.trim());
+  return parts;
+};
+const selectorParts = (rule) => splitSelectorList(rule.selector);
 const selectorHasClass = (selector, className) =>
   new RegExp(
     `(^|[^\\w-])\\.${className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\w-]|$)`,
@@ -496,13 +574,23 @@ const exactSelectorRules = (root, selector) => {
   });
   return rules;
 };
-const matchingRules = (root, fragments) => {
-  const rules = [];
+const matchingRuleParts = (root, fragments) => {
+  const matches = [];
+  const classNames = fragments.map((fragment) => fragment.replace(/^\./, ""));
   root.walkRules((rule) => {
-    if (fragments.every((fragment) => rule.selector.includes(fragment))) rules.push(rule);
+    selectorParts(rule).forEach((selector) => {
+      if (classNames.every((className) => selectorHasClass(selector, className))) {
+        matches.push({ rule, selector });
+      }
+    });
   });
-  return rules;
+  return matches;
 };
+const matchingRules = (root, fragments) => [
+  ...new Set(matchingRuleParts(root, fragments).map(({ rule }) => rule)),
+];
+const rulePartHasClass = (selector, className) =>
+  selectorHasClass(selector, className.replace(/^\./, ""));
 const rulesForClass = (roots, className) =>
   roots.flatMap((root) => {
     const rules = [];
@@ -513,6 +601,56 @@ const rulesForClass = (roots, className) =>
     });
     return rules;
   });
+const targetCompound = (selector, className) =>
+  selector
+    .split(/\s+|[>+~]/)
+    .filter(Boolean)
+    .find((part) => selectorHasClass(part, className));
+const selectorCanMatchElement = (selector, className, elementClasses) => {
+  const compound = targetCompound(selector, className);
+  if (!compound || /[:[]/.test(compound)) return false;
+  const requiredClasses = [...compound.matchAll(/\.([\w-]+)/g)].map(
+    (match) => match[1],
+  );
+  return requiredClasses.every((required) => elementClasses.has(required));
+};
+const rulesMatchingElement = (roots, opening, className) => {
+  const elementClasses = classTokens(opening);
+  return roots.flatMap((root) => {
+    const rules = [];
+    root.walkRules((rule) => {
+      if (
+        selectorParts(rule).some((selector) =>
+          selectorCanMatchElement(selector, className, elementClasses),
+        )
+      ) {
+        rules.push(rule);
+      }
+    });
+    return rules;
+  });
+};
+const baseRulesMatchingElement = (roots, opening, className) => {
+  const elementClasses = classTokens(opening);
+  return roots.flatMap((root) => {
+    const rules = [];
+    root.walkRules((rule) => {
+      if (rule.parent?.type !== "root") return;
+      if (
+        selectorParts(rule).some((selector) => {
+          const compound = targetCompound(selector, className);
+          return (
+            compound === selector.trim() &&
+            selectorCanMatchElement(selector, className, elementClasses)
+          );
+        })
+      ) {
+        rules.push(rule);
+      }
+    });
+    return rules;
+  });
+};
 const declarationValues = (rule, property) =>
   rule.nodes
     .filter((node) => node.type === "decl" && node.prop === property)
@@ -529,22 +667,89 @@ const findRuleWith = (root, fragments, declarations) =>
   );
 
 const normalizeCssValue = (value) => value.replace(/\s+/g, "");
+const selectorSubject = (selector) =>
+  selector.trim().split(/\s+|[>+~]/).filter(Boolean).at(-1) || "";
+const selectorSpecificity = (selector) => {
+  const value = selector.replace(/:where\([^)]*\)/g, "");
+  const ids = (value.match(/#[\w-]+/g) || []).length;
+  const classes = (value.match(/\.[\w-]+/g) || []).length;
+  const attributes = (value.match(/\[[^\]]+\]/g) || []).length;
+  const pseudoClasses = (value.match(/:(?!:)[\w-]+(?:\([^)]*\))?/g) || []).length;
+  const elements = value
+    .replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|::?[\w-]+(?:\([^)]*\))?/g, " ")
+    .split(/[\s>+~*]+/)
+    .filter(Boolean).length;
+  return [ids, classes + attributes + pseudoClasses, elements];
+};
+const compareSpecificity = (left, right) => {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index] - right[index];
+  }
+  return 0;
+};
+const collectBottomPaddingDeclarations = (root, selector) => {
+  const className = selector.replace(/^\./, "");
+  const declarations = [];
+  let order = 0;
+  root.walkDecls((declaration) => {
+    order += 1;
+    if (!["padding", "padding-bottom"].includes(declaration.prop)) return;
+    selectorParts(declaration.parent).forEach((part) => {
+      if (selectorHasClass(selectorSubject(part), className)) {
+        declarations.push({
+          declaration,
+          selector: part,
+          specificity: selectorSpecificity(part),
+          order,
+        });
+      }
+    });
+  });
+  return declarations;
+};
 const assertSafeAreaFallback = (root, selector, basePx) => {
-  const declarations = exactSelectorRules(root, selector).flatMap((rule) =>
-    rule.nodes.filter(
-      (node) => node.type === "decl" && node.prop === "padding-bottom",
-    ),
+  const allDeclarations = collectBottomPaddingDeclarations(root, selector);
+  const exactDeclarations = allDeclarations.filter(
+    ({ selector: candidate }) => candidate === selector,
   );
-  const [constantDeclaration, envDeclaration] = declarations.slice(-2);
+  const [constantEntry, envEntry] = exactDeclarations.slice(-2);
+  const constantDeclaration = constantEntry?.declaration;
+  const envDeclaration = envEntry?.declaration;
+  const expectedConstant = `calc(${basePx}PX+constant(safe-area-inset-bottom))`;
+  const expectedEnv = `calc(${basePx}PX+env(safe-area-inset-bottom))`;
   assert.equal(
     normalizeCssValue(constantDeclaration?.value || ""),
-    `calc(${basePx}PX+constant(safe-area-inset-bottom))`,
+    expectedConstant,
     `${selector} 最终倒数第二条 padding-bottom 应保留 ${basePx}PX + constant()`,
   );
+  assert.equal(constantDeclaration?.prop, "padding-bottom", `${selector} constant 前不得被 padding 简写打断`);
   assert.equal(
     normalizeCssValue(envDeclaration?.value || ""),
-    `calc(${basePx}PX+env(safe-area-inset-bottom))`,
+    expectedEnv,
     `${selector} 最后一条 padding-bottom 应以 ${basePx}PX + env() 覆盖`,
+  );
+  assert.equal(envDeclaration?.prop, "padding-bottom", `${selector} env 后不得出现 padding 简写覆盖`);
+
+  const approved = new Set([constantDeclaration, envDeclaration]);
+  const referenceSpecificity = selectorSpecificity(selector);
+  const canOverrideEnv = (entry) => {
+    if (approved.has(entry.declaration)) return false;
+    const candidateImportant = Boolean(entry.declaration.important);
+    const envImportant = Boolean(envDeclaration?.important);
+    if (candidateImportant !== envImportant) return candidateImportant;
+    const specificity = compareSpecificity(entry.specificity, referenceSpecificity);
+    return specificity > 0 || (specificity === 0 && entry.order > envEntry.order);
+  };
+  const unsafeOverride = allDeclarations.find((entry) => {
+    if (!canOverrideEnv(entry)) return false;
+    if (entry.declaration.prop !== "padding-bottom") return true;
+    const normalized = normalizeCssValue(entry.declaration.value);
+    return normalized !== expectedConstant && normalized !== expectedEnv;
+  });
+  assert.equal(
+    unsafeOverride,
+    undefined,
+    `${selector} 的安全区不得被 ${unsafeOverride?.selector || "后续规则"} 覆盖`,
   );
 };
 
@@ -570,19 +775,26 @@ const guarantees44Px = (value) => {
   const pixels = numericPx(value);
   return pixels !== null && pixels >= 44;
 };
-const unsafeTargetDimension = (value) => {
-  // calc() 无法仅靠静态 token 证明最终尺寸不小于 44px，触控固定尺寸不接受它。
-  if (/\bcalc\s*\(/i.test(value)) return true;
+const unsafeTargetDimension = (value, property = "min-height") => {
+  const normalized = value.trim();
+  const isMinimum = property.startsWith("min-");
+  // 自定义值和计算式无法静态证明下限；CSS-wide keyword 会直接移除本层保证。
+  if (/\b(?:var|env|calc)\s*\(/i.test(normalized)) return true;
+  if (/^(?:initial|inherit|unset|revert|revert-layer)$/i.test(normalized)) return true;
   const unitTokens = value.match(/-?\d*\.?\d+(?:[a-zA-Z]+|%)/g) || [];
   for (const token of unitTokens) {
     const match = token.match(/^(-?\d*\.?\d+)([a-zA-Z]+|%)$/);
     if (!match) continue;
     const number = Number(match[1]);
     const unit = match[2];
-    if (unit === "%") continue;
+    if (unit === "%") {
+      if (isMinimum) return true;
+      continue;
+    }
     if (unit !== "PX" || number < 44) return true;
   }
-  return /^0(?:\.0+)?$/.test(value.trim());
+  if (/^0(?:\.0+)?$/.test(normalized)) return true;
+  return isMinimum && unitTokens.length === 0;
 };
 
 const hasFixedBoxHeight = (value) => {
@@ -611,30 +823,37 @@ const assertCompactTarget = (sourceFile, roots, selector) => {
     ),
     `${selector} 必须是真正可触发的交互元素`,
   );
-  const ownsMinimum = ["min-width", "min-height"].every((property) =>
-    rulesForClass(roots, className).some((rule) =>
-      declarationValues(rule, property).some(guarantees44Px),
-    ),
-  );
-  const usesSharedTarget = elements.every((element) =>
-    classTokens(element).has("device-touch-target"),
-  );
+  const ownsMinimum = (element, targetClass) =>
+    ["min-width", "min-height"].every((property) =>
+      baseRulesMatchingElement(roots, element, targetClass).some((rule) =>
+        declarationValues(rule, property).some(guarantees44Px),
+      ),
+    );
   assert.ok(
-    ownsMinimum || usesSharedTarget,
+    elements.every(
+      (element) =>
+        ownsMinimum(element, className) ||
+        (classTokens(element).has("device-touch-target") &&
+          ownsMinimum(element, "device-touch-target")),
+    ),
     `${selector} 应直接声明 >=44PX 最小宽高或使用 device-touch-target`,
   );
 
-  const relevantClasses = new Set([className]);
-  if (usesSharedTarget) relevantClasses.add("device-touch-target");
-  const unsafe = [...relevantClasses].flatMap((name) =>
-    rulesForClass(roots, name).flatMap((rule) =>
-      ["width", "height", "min-width", "min-height"].flatMap((property) =>
-        declarationValues(rule, property)
-          .filter(unsafeTargetDimension)
-          .map((value) => `${rule.selector} { ${property}: ${value} }`),
+  const unsafe = elements.flatMap((element) => {
+    const relevantClasses = [className];
+    if (classTokens(element).has("device-touch-target")) {
+      relevantClasses.push("device-touch-target");
+    }
+    return relevantClasses.flatMap((name) =>
+      rulesMatchingElement(roots, element, name).flatMap((rule) =>
+        ["width", "height", "min-width", "min-height"].flatMap((property) =>
+          declarationValues(rule, property)
+            .filter((value) => unsafeTargetDimension(value, property))
+            .map((value) => `${rule.selector} { ${property}: ${value} }`),
+        ),
       ),
-    ),
-  );
+    );
+  });
   assert.equal(
     unsafe.length,
     0,
@@ -717,15 +936,8 @@ const directoryAst = parseTypeScript(
   ts.ScriptKind.TSX,
 );
 
-contract("设备 class builder 输出互斥且可预测", () => {
-  const { buildDeviceLayoutClassName } = loadSimpleTypeScriptModule(
-    "src/features/layout/deviceLayout.ts",
-  );
-  assert.equal(
-    typeof buildDeviceLayoutClassName,
-    "function",
-    "deviceLayout.ts 应导出 buildDeviceLayoutClassName(profile)",
-  );
+const assertDeviceLayoutClassBuilder = (buildDeviceLayoutClassName) => {
+  assert.equal(typeof buildDeviceLayoutClassName, "function", "应提供设备 class builder");
   const base = { statusBarHeight: 20, safeAreaBottom: 0 };
   const cases = [
     [
@@ -748,6 +960,41 @@ contract("设备 class builder 输出互斥且可预测", () => {
     const actual = String(buildDeviceLayoutClassName(profile)).trim().split(/\s+/).sort();
     assert.deepEqual(actual, [...expected].sort(), `${scenario}的 class 不符合契约`);
   }
+};
+
+contract("设备 class builder 输出互斥且可预测", () => {
+  const { buildDeviceLayoutClassName } = loadSimpleTypeScriptModule(
+    "src/features/layout/deviceLayout.ts",
+  );
+  assertDeviceLayoutClassBuilder(buildDeviceLayoutClassName);
+});
+
+contract("设备 class builder 变异夹具能拦截永久和反向 modifier", () => {
+  const correct = ({ isPad, isSplit, orientation }) =>
+    [
+      "device-layout",
+      isPad ? "device-layout--pad" : "device-layout--phone",
+      isSplit ? "device-layout--split" : "device-layout--single",
+      `device-layout--${orientation}`,
+    ].join(" ");
+  assertDeviceLayoutClassBuilder(correct);
+  assert.throws(() =>
+    assertDeviceLayoutClassBuilder((profile) =>
+      `${correct(profile)} device-layout--pad device-layout--split`,
+    ),
+  );
+  assert.throws(() =>
+    assertDeviceLayoutClassBuilder(({ isPad, isSplit, orientation }) =>
+      [
+        "device-layout",
+        isPad ? "device-layout--phone" : "device-layout--pad",
+        isSplit ? "device-layout--single" : "device-layout--split",
+        orientation === "landscape"
+          ? "device-layout--portrait"
+          : "device-layout--landscape",
+      ].join(" "),
+    ),
+  );
 });
 
 contract("配置扫描器只接受真实默认导出", () => {
@@ -791,7 +1038,23 @@ contract("页面布局扫描器支持对象/解构并覆盖提前返回", () => 
   const permanentClasses = fixture(`${imports}
     export default function Page() {
       const layout = useDeviceLayout();
-      return <View className={\`device-layout device-layout--pad device-layout--phone device-layout--split device-layout--single \${layout.isPad} \${layout.isSplit}\`}><View className='device-layout__content' /></View>;
+      const layoutClassName = buildDeviceLayoutClassName(layout);
+      return <View className={\`\${layoutClassName} device-layout--pad device-layout--split\`}><View className='device-layout__content' /></View>;
+    }
+  `);
+  const reversedModifier = fixture(`${imports}
+    export default function Page() {
+      const layout = useDeviceLayout();
+      const layoutClassName = buildDeviceLayoutClassName(layout);
+      return <View className={\`\${layoutClassName} \${layout.isSplit ? "device-layout--single" : "device-layout--split"}\`}><View className='device-layout__content' /></View>;
+    }
+  `);
+  const indirectModifier = fixture(`${imports}
+    export default function Page() {
+      const layout = useDeviceLayout();
+      const layoutClassName = buildDeviceLayoutClassName(layout);
+      const alwaysSplit = "device-layout--split";
+      return <View className={\`\${layoutClassName} \${alwaysSplit}\`}><View className='device-layout__content' /></View>;
     }
   `);
   const uncoveredEarlyReturn = fixture(`${imports}
@@ -803,7 +1066,51 @@ contract("页面布局扫描器支持对象/解构并覆盖提前返回", () => 
     }
   `);
   assert.throws(() => assertEveryReturnUsesResponsiveShell(permanentClasses));
+  assert.throws(() => assertEveryReturnUsesResponsiveShell(reversedModifier));
+  assert.throws(() => assertEveryReturnUsesResponsiveShell(indirectModifier));
   assert.throws(() => assertEveryReturnUsesResponsiveShell(uncoveredEarlyReturn));
+});
+
+contract("训练工作区与目录夹具验证真实 JSX 嵌套和布尔滚动", () => {
+  const fixture = (source) =>
+    ts.createSourceFile(
+      "structure-fixture.tsx",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+  assertPracticeWorkspaceStructure(
+    fixture(`<View className='practice-workspace'>
+      <View className='practice-book-page' />
+      <View className='practice-recorder' />
+    </View>`),
+  );
+  assert.throws(() =>
+    assertPracticeWorkspaceStructure(
+      fixture(`<View><View className='practice-workspace' />
+        <View className='practice-book-page' /><View className='practice-recorder' />
+      </View>`),
+    ),
+  );
+
+  const directory = (scrollY) => fixture(`<View className='practice-directory-mask'>
+    <View className='practice-directory-sheet'>
+      <ScrollView className='practice-directory-scroll' ${scrollY} />
+    </View>
+  </View>`);
+  assertDirectoryStructure(directory("scrollY"));
+  assert.throws(() => assertDirectoryStructure(directory("scrollY={false}")));
+  assert.throws(() => assertDirectoryStructure(directory('scrollY="true"')));
+  assert.throws(() =>
+    assertDirectoryStructure(
+      fixture(`<View><View className='practice-directory-mask' />
+        <View className='practice-directory-sheet'>
+          <ScrollView className='practice-directory-scroll' scrollY />
+        </View>
+      </View>`),
+    ),
+  );
 });
 
 contract("安全区扫描器校验基础间距和最终级联", () => {
@@ -825,6 +1132,27 @@ contract("安全区扫描器校验基础间距和最终级联", () => {
   assert.throws(() =>
     assertSafeAreaFallback(
       postcss.parse(`${good.toString()} .page { padding-bottom: 0; }`),
+      ".page",
+      24,
+    ),
+  );
+  assert.throws(() =>
+    assertSafeAreaFallback(
+      postcss.parse(`${good.toString()} .page { padding: 0; }`),
+      ".page",
+      24,
+    ),
+  );
+  assert.throws(() =>
+    assertSafeAreaFallback(
+      postcss.parse(`${good.toString()} .modifier .page { padding-bottom: 0; }`),
+      ".page",
+      24,
+    ),
+  );
+  assert.throws(() =>
+    assertSafeAreaFallback(
+      postcss.parse(`.modifier .page { padding-bottom: 0; } ${good.toString()}`),
       ".page",
       24,
     ),
@@ -948,8 +1276,36 @@ contract("共享触控规则接受 >=44PX 并拒绝转换或缩小", () => {
     ["96rpx", true],
     ["calc(100% - 40PX)", true],
     ["calc(100% - 48PX)", true],
+    ["unset", true],
+    ["initial", true],
+    ["revert", true],
+    ["var(--target-size)", true],
   ].forEach(([value, unsafe]) =>
     assert.equal(unsafeTargetDimension(value), unsafe, `单位 fixture ${value}`),
+  );
+});
+
+contract("紧凑触控完整夹具拒绝无效 selector 与下限重置", () => {
+  const fixtureAst = ts.createSourceFile(
+    "touch-fixture.tsx",
+    "export default () => <View className='fixture-target' onClick={handleClick} />;",
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const good = `.fixture-target { min-width: 44PX; min-height: 48PX; }`;
+  assertCompactTarget(fixtureAst, [postcss.parse(good)], ".fixture-target");
+  [
+    `${good} .fixture-target { min-height: unset; }`,
+    `${good} .fixture-target { min-height: var(--tiny); }`,
+    `${good} .fixture-target { min-height: calc(100% - 48PX); }`,
+    `.fixture-target.never { min-width: 44PX; min-height: 44PX; }`,
+    `.never .fixture-target { min-width: 44PX; min-height: 44PX; }`,
+    `@media (min-width: 900PX) { .fixture-target { min-width: 44PX; min-height: 44PX; } }`,
+  ].forEach((css) =>
+    assert.throws(() =>
+      assertCompactTarget(fixtureAst, [postcss.parse(css)], ".fixture-target"),
+    ),
   );
 });
 
@@ -968,6 +1324,28 @@ contract("自然教材高度与单栏轨道解析器边界明确", () => {
   ["1fr 1fr", "repeat(2, minmax(0, 1fr))", "repeat(auto-fit, 320PX)"].forEach(
     (value) =>
       assert.equal(hasMultipleGridTracks(value), true, `多栏 ${value} 应识别`),
+  );
+
+  const realSplit = postcss.parse(
+    ".device-layout--split .fixture-grid { grid-template-columns: 1fr 1fr; }",
+  );
+  const splitish = postcss.parse(
+    ".device-layout--splitish .fixture-grid { grid-template-columns: 1fr 1fr; }",
+  );
+  const commaSplit = postcss.parse(
+    ".device-layout--split, .fixture-grid { grid-template-columns: 1fr 1fr; }",
+  );
+  assert.equal(
+    matchingRules(realSplit, [".device-layout--split", ".fixture-grid"]).length,
+    1,
+  );
+  assert.equal(
+    matchingRules(splitish, [".device-layout--split", ".fixture-grid"]).length,
+    0,
+  );
+  assert.equal(
+    matchingRules(commaSplit, [".device-layout--split", ".fixture-grid"]).length,
+    0,
   );
 });
 
@@ -1015,9 +1393,9 @@ contract("书库与打卡列表只在 split 下开启两列", () => {
       ),
       `${label}应在 device-layout--split 下显示两列`,
     );
-    const unsafe = matchingRules(root, [selector]).some(
-      (rule) =>
-        !rule.selector.includes(".device-layout--split") &&
+    const unsafe = matchingRuleParts(root, [selector]).some(
+      ({ rule, selector: selectorPart }) =>
+        !rulePartHasClass(selectorPart, "device-layout--split") &&
         declarationValues(rule, "grid-template-columns").some(hasMultipleGridTracks),
     );
     assert.equal(unsafe, false, `${label}在 split 外只能使用合法单栏轨道`);
@@ -1033,17 +1411,35 @@ contract("首页在任何设备布局下都保持单栏", () => {
   assert.deepEqual(multiTrack, [], "首页不得因 Pad 或手机横屏变成多栏");
 });
 
-const functionFromIdentifier = (sourceFile, identifier) =>
-  findNodes(
+const functionFromIdentifier = (sourceFile, identifier) => {
+  const declaration = findNodes(
     sourceFile,
     (node) =>
       (ts.isFunctionDeclaration(node) && node.name?.text === identifier.text) ||
       (ts.isVariableDeclaration(node) &&
         ts.isIdentifier(node.name) &&
         node.name.text === identifier.text &&
-        node.initializer &&
-        ts.isFunctionLike(node.initializer)),
-  ).map((node) => (ts.isVariableDeclaration(node) ? node.initializer : node))[0];
+        node.initializer),
+  )[0];
+  if (!declaration) return undefined;
+  if (ts.isFunctionDeclaration(declaration)) return declaration;
+  const initializer = unwrapExpression(declaration.initializer);
+  if (ts.isFunctionLike(initializer)) return initializer;
+  if (
+    ts.isCallExpression(initializer) &&
+    initializer.arguments[0] &&
+    ts.isFunctionLike(unwrapExpression(initializer.arguments[0]))
+  ) {
+    return unwrapExpression(initializer.arguments[0]);
+  }
+  return undefined;
+};
+
+const enclosingFunction = (node) => {
+  let current = node.parent;
+  while (current && !ts.isFunctionLike(current)) current = current.parent;
+  return current;
+};
 
 const resolveJsxHandler = (sourceFile, opening, attributeName) => {
   const attribute = getJsxAttribute(opening, attributeName);
@@ -1083,11 +1479,13 @@ const objectPropertyReferences = (object, property, objectName, member) => {
   );
 };
 
-const findMeasuredImageSizeState = (sourceFile, callback) => {
+const findMeasuredImageSizeState = (component, sourceFile, callback) => {
   const resultName = callbackParameterName(callback);
   assert.ok(resultName, "boundingClientRect 回调应接收实际盒子结果");
-  const states = findNodes(
-    sourceFile,
+  const useStateName = getNamedImportLocalName(sourceFile, "react", "useState");
+  assert.ok(useStateName, "应从 React 命名导入 useState");
+  const states = findNodesInComponent(
+    component,
     (node) =>
       ts.isVariableDeclaration(node) &&
       ts.isArrayBindingPattern(node.name) &&
@@ -1095,7 +1493,11 @@ const findMeasuredImageSizeState = (sourceFile, callback) => {
       ts.isBindingElement(node.name.elements[0]) &&
       ts.isIdentifier(node.name.elements[0].name) &&
       ts.isBindingElement(node.name.elements[1]) &&
-      ts.isIdentifier(node.name.elements[1].name),
+      ts.isIdentifier(node.name.elements[1].name) &&
+      node.initializer &&
+      ts.isCallExpression(unwrapExpression(node.initializer)) &&
+      ts.isIdentifier(unwrapExpression(node.initializer).expression) &&
+      unwrapExpression(node.initializer).expression.text === useStateName,
   );
   for (const state of states) {
     const sizeName = state.name.elements[0].name.text;
@@ -1111,16 +1513,132 @@ const findMeasuredImageSizeState = (sourceFile, callback) => {
         objectPropertyReferences(node.arguments[0], "width", resultName, "width") &&
         objectPropertyReferences(node.arguments[0], "height", resultName, "height"),
     )[0];
-    if (setterCall) return sizeName;
+    if (setterCall) return { sizeName, setterName, declaration: state };
   }
   assert.fail("实际 boundingClientRect 的 width/height 应写入同一个图片尺寸 state");
 };
 
-const assertHotspotMeasurementFlow = () => {
-  const sourceFile = practice.ast;
+const expressionIsLayoutDependency = (expression, binding, member) => {
+  const value = unwrapExpression(expression);
+  if (binding.objectName) {
+    return (
+      ts.isPropertyAccessExpression(value) &&
+      ts.isIdentifier(value.expression) &&
+      value.expression.text === binding.objectName &&
+      value.name.text === member
+    );
+  }
+  return ts.isIdentifier(value) && value.text === binding.members.get(member);
+};
+
+const functionInvokesIdentifier = (callback, identifier) =>
+  findNodesInComponent(
+    callback,
+    (node) =>
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === identifier,
+  ).length > 0;
+
+const objectMemberExpression = (object, member) => {
+  const property = object.properties.find(
+    (item) =>
+      (ts.isPropertyAssignment(item) || ts.isShorthandPropertyAssignment(item)) &&
+      propertyName(item.name) === member,
+  );
+  if (property && ts.isPropertyAssignment(property)) return property.initializer;
+  return property?.name;
+};
+
+const resolveStyleObject = (component, styleAttribute) => {
+  if (
+    !styleAttribute?.initializer ||
+    !ts.isJsxExpression(styleAttribute.initializer) ||
+    !styleAttribute.initializer.expression
+  ) {
+    return undefined;
+  }
+  let expression = unwrapExpression(styleAttribute.initializer.expression);
+  if (ts.isIdentifier(expression)) {
+    const declaration = findNodes(
+      component.body,
+      (node) =>
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === expression.text &&
+        node.initializer,
+    )[0];
+    if (declaration) expression = unwrapExpression(declaration.initializer);
+  }
+  return ts.isObjectLiteralExpression(expression) ? expression : undefined;
+};
+
+const styleReadsClampResult = (styleObject, resultDeclaration) => {
+  for (const member of ["left", "top"]) {
+    const styleValue = objectMemberExpression(styleObject, member);
+    if (!styleValue) return false;
+    if (ts.isIdentifier(resultDeclaration.name)) {
+      const readsCorrectMember = findNodes(
+        styleValue,
+        (node) =>
+          ts.isPropertyAccessExpression(node) &&
+          expressionReferencesIdentifier(node.expression, resultDeclaration.name.text) &&
+          node.name.text === member,
+      ).length > 0;
+      if (!readsCorrectMember) return false;
+      continue;
+    }
+    if (!ts.isObjectBindingPattern(resultDeclaration.name)) return false;
+    const bindingElement = resultDeclaration.name.elements.find(
+      (element) => propertyName(element.propertyName || element.name) === member,
+    );
+    if (
+      !bindingElement ||
+      !ts.isIdentifier(bindingElement.name) ||
+      !expressionReferencesIdentifier(styleValue, bindingElement.name.text)
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const expressionUsesMeasuredSize = (expression, sizeName) => {
+  const value = unwrapExpression(expression);
+  if (ts.isIdentifier(value)) return value.text === sizeName;
+  if (!ts.isObjectLiteralExpression(value)) return false;
+  if (
+    value.properties.some(
+      (property) =>
+        ts.isSpreadAssignment(property) &&
+        ts.isIdentifier(property.expression) &&
+        property.expression.text === sizeName,
+    )
+  ) {
+    return true;
+  }
+  return ["width", "height"].every((member) => {
+    const memberExpression = objectMemberExpression(value, member);
+    return Boolean(
+      memberExpression &&
+        findNodes(
+          memberExpression,
+          (node) =>
+            ts.isPropertyAccessExpression(node) &&
+            ts.isIdentifier(node.expression) &&
+            node.expression.text === sizeName &&
+            node.name.text === member,
+        ).length > 0,
+    );
+  });
+};
+
+const assertHotspotMeasurementFlow = (sourceFile) => {
   const image = findImageByClass(sourceFile, "practice-book-page__image");
   assert.ok(image, "训练页应保留 practice-book-page__image 教材图");
   assert.equal(literalAttributeValue(image, "mode"), "widthFix", "教材图应使用 widthFix");
+  const component = enclosingFunction(image);
+  assert.ok(component?.body, "应定位包含教材图的训练组件");
   const { handler, handlerName } = resolveJsxHandler(sourceFile, image, "onLoad");
   assert.ok(handlerName, "onLoad 测量函数还应由 resize effect 复用");
 
@@ -1154,31 +1672,48 @@ const assertHotspotMeasurementFlow = () => {
       findNodes(node.expression.expression, (candidate) => candidate === selectCall).length > 0,
   )[0];
   assert.ok(rectCall, "同一图片查询链应调用 boundingClientRect");
-  const callback = rectCall.arguments[0];
+  const rectCallbackExpression = rectCall.arguments[0]
+    ? unwrapExpression(rectCall.arguments[0])
+    : undefined;
+  const callback =
+    rectCallbackExpression && ts.isIdentifier(rectCallbackExpression)
+      ? functionFromIdentifier(sourceFile, rectCallbackExpression)
+      : rectCallbackExpression;
   assert.ok(callback && ts.isFunctionLike(callback), "boundingClientRect 应处理测量回调");
-  const imageSizeName = findMeasuredImageSizeState(sourceFile, callback);
+  const { sizeName: imageSizeName } = findMeasuredImageSizeState(
+    component,
+    sourceFile,
+    callback,
+  );
 
+  const layoutBinding = findHookBinding(component, sourceFile);
   const effectName =
     getNamedImportLocalName(sourceFile, "react", "useEffect") || "useEffect";
-  const resizeEffect = findNodes(
-    sourceFile,
+  const resizeEffect = findNodesInComponent(
+    component,
     (node) =>
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === effectName &&
       node.arguments.length >= 2 &&
       ts.isArrayLiteralExpression(node.arguments[1]) &&
-      expressionReferencesIdentifier(node.arguments[0], handlerName) &&
       ["windowWidth", "windowHeight"].every((dimension) =>
         node.arguments[1].elements.some(
-          (element) =>
-            (ts.isIdentifier(element) && element.text === dimension) ||
-            (ts.isPropertyAccessExpression(element) &&
-              element.name.text === dimension),
+          (element) => expressionIsLayoutDependency(element, layoutBinding, dimension),
         ),
       ),
   )[0];
-  assert.ok(resizeEffect, "窗口宽高变化的 effect 必须再次调用同一个图片测量函数");
+  assert.ok(resizeEffect, "resize effect 必须依赖同一 useDeviceLayout 的窗口宽高");
+  const effectExpression = unwrapExpression(resizeEffect.arguments[0]);
+  const effectCallback = ts.isIdentifier(effectExpression)
+    ? functionFromIdentifier(sourceFile, effectExpression)
+    : effectExpression;
+  assert.ok(
+    effectCallback &&
+      ts.isFunctionLike(effectCallback) &&
+      functionInvokesIdentifier(effectCallback, handlerName),
+    "窗口变化 effect 必须真正调用 onLoad 使用的同一测量函数",
+  );
 
   const clampName = getNamedImportLocalName(
     sourceFile,
@@ -1187,13 +1722,13 @@ const assertHotspotMeasurementFlow = () => {
   );
   assert.ok(clampName, "应命名导入 clampHotspotCenter");
   const clampCall = findNodes(
-    sourceFile,
+    component.body,
     (node) =>
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === clampName &&
       node.arguments.length >= 2 &&
-      expressionReferencesIdentifier(node.arguments[1], imageSizeName),
+      expressionUsesMeasuredSize(node.arguments[1], imageSizeName),
   )[0];
   assert.ok(clampCall, "clampHotspotCenter 的图片尺寸必须来自实际盒子测量 state");
   assert.ok(
@@ -1209,51 +1744,88 @@ const assertHotspotMeasurementFlow = () => {
   );
 
   const resultDeclaration = findNodes(
-    sourceFile,
+    component.body,
     (node) =>
       ts.isVariableDeclaration(node) &&
       node.initializer &&
       findNodes(node.initializer, (candidate) => candidate === clampCall).length > 0,
   )[0];
   assert.ok(resultDeclaration, "热点收敛结果应保存后再用于渲染");
-  const hotspot = jsxOpenings(sourceFile).find((opening) =>
-    classTokens(opening).has("audio-hotspot"),
+  const usesClampResult = jsxOpenings(component.body)
+    .filter((opening) => classTokens(opening).has("audio-hotspot"))
+    .some((hotspot) => {
+      const styleObject = resolveStyleObject(
+        component,
+        getJsxAttribute(hotspot, "style"),
+      );
+      return styleObject && styleReadsClampResult(styleObject, resultDeclaration);
+    });
+  assert.ok(
+    usesClampResult,
+    "热点 style.left/style.top 必须分别读取同一 clamp 结果的 left/top",
   );
-  assert.ok(hotspot, "应渲染 audio-hotspot 命中外壳");
-  const style = getJsxAttribute(hotspot, "style")?.initializer;
-  assert.ok(style, "热点外壳应使用收敛后的 style");
-  if (ts.isIdentifier(resultDeclaration.name)) {
-    for (const member of ["left", "top"]) {
-      assert.ok(
-        findNodes(
-          style,
-          (node) =>
-            ts.isPropertyAccessExpression(node) &&
-            ts.isIdentifier(node.expression) &&
-            node.expression.text === resultDeclaration.name.text &&
-            node.name.text === member,
-        ).length > 0,
-        `热点 style.${member} 必须来自 clampHotspotCenter 结果`,
-      );
-    }
-  } else {
-    assert.ok(ts.isObjectBindingPattern(resultDeclaration.name), "收敛结果应使用对象或对象解构");
-    for (const member of ["left", "top"]) {
-      const bindingElement = resultDeclaration.name.elements.find(
-        (element) => propertyName(element.propertyName || element.name) === member,
-      );
-      assert.ok(
-        bindingElement &&
-          ts.isIdentifier(bindingElement.name) &&
-          expressionReferencesIdentifier(style, bindingElement.name.text),
-        `热点 style.${member} 必须来自 clampHotspotCenter 解构结果`,
-      );
-    }
-  }
 };
 
+contract("热点数据流变异夹具逐段绑定 load、resize、state、clamp 与 style", () => {
+  const fixture = ({
+    selector = ".practice-book-page__image",
+    stateFactory = "useState",
+    effectBody = "measureImage();",
+    dependencies = "layout.windowWidth, layout.windowHeight",
+    clampSize = "imageSize",
+    style = "{ left: center.left, top: center.top }",
+  } = {}) =>
+    ts.createSourceFile(
+      "hotspot-fixture.tsx",
+      `
+        import { useEffect, useState } from "react";
+        import { useDeviceLayout } from "@/hooks/useDeviceLayout";
+        import { clampHotspotCenter } from "@/features/listeningPractice/hotspotLayout";
+        export default function Fixture() {
+          const layout = useDeviceLayout();
+          const [imageSize, setImageSize] = ${stateFactory}({ width: 0, height: 0 });
+          const measureImage = () => {
+            Taro.createSelectorQuery()
+              .select("${selector}")
+              .boundingClientRect((rect) => {
+                setImageSize({ width: rect.width, height: rect.height });
+              })
+              .exec();
+          };
+          useEffect(() => { ${effectBody} }, [${dependencies}]);
+          const center = clampHotspotCenter(
+            { left: track.left, top: track.top },
+            ${clampSize},
+          );
+          return <View>
+            <Image className='practice-book-page__image' mode='widthFix' onLoad={measureImage} />
+            <View className='audio-hotspot' style={${style}} />
+          </View>;
+        }
+      `,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+
+  assertHotspotMeasurementFlow(fixture());
+  [
+    { effectBody: "void measureImage;" },
+    { effectBody: "const later = () => measureImage(); void later;" },
+    { dependencies: "windowWidth, windowHeight" },
+    { stateFactory: "makePair" },
+    { selector: ".some-other-image" },
+    { clampSize: "unmeasuredSize" },
+    { clampSize: "{ width: 0, height: 0, ignored: imageSize }" },
+    { style: "{ color: center.left, opacity: center.top }" },
+    { style: "{ left: center.top, top: center.left }" },
+  ].forEach((mutation) =>
+    assert.throws(() => assertHotspotMeasurementFlow(fixture(mutation))),
+  );
+});
+
 contract("训练热点使用图片 load/resize 后的实际盒子", () => {
-  assertHotspotMeasurementFlow();
+  assertHotspotMeasurementFlow(practice.ast);
   const imageRules = matchingRules(practice.styles, [".practice-book-page__image"]);
   assert.ok(
     imageRules.some((rule) => hasDeclaration(rule, "width", "100%")),
@@ -1303,12 +1875,7 @@ contract("训练热点命中外壳与视觉圆点分离", () => {
 });
 
 contract("训练工作区只在 split 下开启双伸展列", () => {
-  assert.ok(
-    jsxOpenings(practice.ast).some((opening) =>
-      classTokens(opening).has("practice-workspace"),
-    ),
-    "训练页应提供 practice-workspace",
-  );
+  assertPracticeWorkspaceStructure(practice.ast);
   assert.ok(
     matchingRules(practice.styles, [
       ".device-layout--split",
@@ -1326,15 +1893,16 @@ contract("训练工作区只在 split 下开启双伸展列", () => {
     }),
     "split 训练区应为 minmax(480PX,1fr) / minmax(320PX,1fr)，间距 24PX",
   );
-  const unsafe = matchingRules(practice.styles, [".practice-workspace"]).some(
-    (rule) =>
-      !rule.selector.includes(".device-layout--split") &&
+  const unsafe = matchingRuleParts(practice.styles, [".practice-workspace"]).some(
+    ({ rule, selector }) =>
+      !rulePartHasClass(selector, "device-layout--split") &&
       declarationValues(rule, "grid-template-columns").some(hasMultipleGridTracks),
   );
   assert.equal(unsafe, false, "split 外允许 1fr 单栏，但不得出现多轨布局");
 });
 
 contract("训练目录是可滚动的底部/右侧抽屉", () => {
+  assertDirectoryStructure(directoryAst);
   assert.ok(
     exactSelectorRules(practice.styles, ".practice-directory-mask").some(
       (rule) =>
@@ -1366,13 +1934,6 @@ contract("训练目录是可滚动的底部/右侧抽屉", () => {
       return width >= 320 && width <= 420 && fillsHeight;
     }),
     "split 目录应为 320–420PX 宽且占满高度的右侧栏",
-  );
-  const scroll = jsxOpenings(directoryAst).find((opening) =>
-    classTokens(opening).has("practice-directory-scroll"),
-  );
-  assert.ok(
-    scroll && jsxTagName(scroll) === "ScrollView" && getJsxAttribute(scroll, "scrollY"),
-    "目录内容应使用启用 scrollY 的 ScrollView",
   );
 });
 
