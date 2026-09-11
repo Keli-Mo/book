@@ -38,6 +38,8 @@
     "test:practice-directory-component": "node scripts/test-practice-directory-component.cjs",
     "test:recording-interaction": "node scripts/test-recording-interaction.cjs",
     "test:audio-playback": "node scripts/test-audio-playback.cjs",
+    "test:device-layout": "node scripts/test-device-layout.cjs",
+    "test:hotspot-layout": "node scripts/test-hotspot-layout.cjs",
     "test:book-catalog": "node scripts/test-book-catalog.cjs",
     "test:book-library-pages": "node scripts/test-book-library-pages.cjs",
     "test:home-navigation": "node scripts/test-home-navigation.cjs",
