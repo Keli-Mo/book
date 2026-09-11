@@ -39,6 +39,7 @@
     "test:practice-directory-component": "node scripts/test-practice-directory-component.cjs",
     "test:recording-interaction": "node scripts/test-recording-interaction.cjs",
     "test:pending-check-in": "node scripts/test-pending-check-in.cjs",
+    "test:check-in-submission": "node scripts/test-check-in-submission.cjs",
     "test:recorder-coordinator": "node scripts/test-recorder-coordinator.cjs",
     "test:audio-playback": "node scripts/test-audio-playback.cjs",
     "test:device-layout": "node scripts/test-device-layout.cjs",
