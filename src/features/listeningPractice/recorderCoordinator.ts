@@ -214,7 +214,14 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
       && add("error", (error) => consumeTerminal("onError", error));
     if (!core) return null;
     const pause = add("pause", () => { if ((phase !== "paused" && phase !== "recording" && phase !== "starting") || (!pausePending && !systemPausePending)) return; clearPending(); phase = "paused"; notify("onPause"); });
-    const resume = add("resume", () => { if (phase !== "recording" || !resumePending) return; clearPending(); notify("onResume"); });
+    const resume = add("resume", () => {
+      if (phase !== "recording" || !resumePending) return;
+      resumePending = false;
+      // 系统中断比更早发出的 resume 优先；迟到确认不能清除中断 watchdog，也不能向页面宣告已恢复。
+      if (systemPausePending) return;
+      clearPending();
+      notify("onResume");
+    });
     const begin = add("interruptionBegin", () => {
       if (!capabilities?.canInterrupt || !["recording", "starting", "paused"].includes(phase)) return;
       systemPausePending = true;

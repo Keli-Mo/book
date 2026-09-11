@@ -227,6 +227,50 @@ interruptionConfirmedNative.emit("pause");
 interruptionConfirmedScheduler.advance(100);
 assert.equal(interruptionConfirmedNative.calls.stop, 0, "系统中断及时 onPause 必须取消 watchdog");
 
+const resumeInterruptedNative = createNativeRecorder();
+const resumeInterruptedScheduler = createFakeScheduler();
+const resumeInterruptedCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => resumeInterruptedNative.manager,
+  scheduler: resumeInterruptedScheduler,
+  operationTimeoutMs: 25,
+});
+const resumeInterruptedOwner = resumeInterruptedCoordinator.acquire();
+let resumeInterruptedEvents = 0;
+resumeInterruptedOwner.owner.subscribe({ onResume() { resumeInterruptedEvents += 1; } });
+resumeInterruptedOwner.owner.start(options);
+resumeInterruptedNative.emit("start");
+resumeInterruptedOwner.owner.pause();
+resumeInterruptedNative.emit("pause");
+resumeInterruptedOwner.owner.resume();
+resumeInterruptedNative.emit("interruptionBegin");
+resumeInterruptedScheduler.advance(24);
+resumeInterruptedNative.emit("resume");
+resumeInterruptedScheduler.advance(1);
+assert.equal(resumeInterruptedNative.calls.stop, 1, "系统中断期间迟到 onResume 不得清除 watchdog");
+assert.equal(resumeInterruptedCoordinator.getPhase(), "stopping");
+assert.equal(resumeInterruptedEvents, 0, "系统中断期间不得把迟到 onResume 报告成恢复成功");
+
+const resumeInterruptedPausedNative = createNativeRecorder();
+const resumeInterruptedPausedScheduler = createFakeScheduler();
+const resumeInterruptedPausedCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => resumeInterruptedPausedNative.manager,
+  scheduler: resumeInterruptedPausedScheduler,
+  operationTimeoutMs: 25,
+});
+const resumeInterruptedPausedOwner = resumeInterruptedPausedCoordinator.acquire();
+resumeInterruptedPausedOwner.owner.start(options);
+resumeInterruptedPausedNative.emit("start");
+resumeInterruptedPausedOwner.owner.pause();
+resumeInterruptedPausedNative.emit("pause");
+resumeInterruptedPausedOwner.owner.resume();
+resumeInterruptedPausedNative.emit("interruptionBegin");
+resumeInterruptedPausedScheduler.advance(24);
+resumeInterruptedPausedNative.emit("resume");
+resumeInterruptedPausedNative.emit("pause");
+resumeInterruptedPausedScheduler.advance(100);
+assert.equal(resumeInterruptedPausedNative.calls.stop, 0, "迟到 onResume 后及时 onPause 必须正常取消中断 watchdog");
+assert.equal(resumeInterruptedPausedCoordinator.getPhase(), "paused");
+
 const releasedWatchdogNative = createNativeRecorder();
 const releasedWatchdogScheduler = createFakeScheduler();
 const releasedWatchdogCoordinator = createRecorderCoordinator({
