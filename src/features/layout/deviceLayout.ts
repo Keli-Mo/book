@@ -12,14 +12,14 @@ export type DeviceLayoutInput = {
   screenHeight: number;
   statusBarHeight?: number;
   safeArea?: DeviceSafeArea;
-  deviceType?: string;
+  deviceType?: "pad";
 };
 
 export type DeviceLayoutProfile = {
   isPad: boolean;
   orientation: DeviceOrientation;
   isSplit: boolean;
-  contentMaxWidth: number | null;
+  contentMaxWidth: 820 | 1280 | null;
   statusBarHeight: number;
   safeAreaBottom: number;
 };
