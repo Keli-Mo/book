@@ -32,6 +32,7 @@ vm.runInNewContext(compiled.outputText, {
 const {
   getRecordingErrorMessage,
   getPracticeSwitchPolicy,
+  getRecordingPermissionStep,
   parseNativeRecordingResult,
   getRecordingElapsedMs,
   pauseRecordingTimeline,
@@ -89,6 +90,10 @@ assert.equal(getPracticeSwitchPolicy("recording"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("paused"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("recorded"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("uploading"), "block-uploading");
+assert.equal(getRecordingPermissionStep(true), "granted");
+assert.equal(getRecordingPermissionStep(false), "open-settings");
+assert.equal(getRecordingPermissionStep(undefined), "request");
+assert.equal(getRecordingPermissionStep(null), "request");
 
 assert.deepEqual(
   JSON.parse(JSON.stringify(parseNativeRecordingResult({

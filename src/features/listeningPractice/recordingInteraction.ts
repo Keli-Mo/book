@@ -7,6 +7,16 @@ export interface RecordingTimeline {
   activeSinceMs: number | null;
 }
 
+/** 区分首次询问与已明确拒绝，只有后者才引导用户进入设置页。 */
+export const getRecordingPermissionStep = (
+  authorized: unknown,
+): "granted" | "request" | "open-settings" =>
+  authorized === true
+    ? "granted"
+    : authorized === false
+      ? "open-settings"
+      : "request";
+
 export type ParsedNativeRecordingResult =
   | {
       ok: true;
