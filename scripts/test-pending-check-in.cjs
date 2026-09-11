@@ -119,6 +119,18 @@ const pending = (overrides = {}) => ({
   ...overrides,
 });
 
+const createBarrier = () => {
+  let release;
+  let entered;
+  const wait = new Promise((resolve) => {
+    release = resolve;
+  });
+  const enteredPromise = new Promise((resolve) => {
+    entered = resolve;
+  });
+  return { wait, release, entered, enteredPromise };
+};
+
 (async () => {
   assert.equal(MAX_PENDING_FILE_BYTES, 8 * MIB, "持久队列容量应为 8MiB");
   assert.equal(RETENTION_MS, 7 * DAY_MS, "待上传录音应保留 7 天");
@@ -328,6 +340,107 @@ const pending = (overrides = {}) => ({
   const completeFailStore = createPendingCheckInStore(completeFails.adapters);
   assert.equal(await completeFailStore.complete(hex(41), true), false);
   assert.equal(completeFailStore.list().length, 1, "完成时删除失败必须保留可重试元数据");
+
+  const invalidSaveResult = createAdapters({
+    saveBehavior: async () => ({ savedFilePath: "" }),
+  });
+  const invalidSaveStore = createPendingCheckInStore(invalidSaveResult.adapters);
+  const invalidSave = await invalidSaveStore.saveRecording(recording());
+  assert.equal(invalidSave.persisted, false);
+  assert.equal(invalidSave.item.recoverable, false);
+  assert.equal(invalidSave.item.status, "failed", "无效保存结果应明确标记为失败会话");
+  assert.match(invalidSave.message, /保存路径无效/);
+  assert.equal(invalidSaveStore.list().length, 1, "无效保存结果必须保留可诊断会话项");
+
+  const concurrentBarrier = createBarrier();
+  const concurrent = createAdapters({
+    existingPaths: ["/tmp/concurrent-a.mp3", "/tmp/concurrent-b.mp3"],
+    storageSetBehavior: async (_records, count) => {
+      if (count === 1) {
+        concurrentBarrier.entered();
+        await concurrentBarrier.wait;
+      }
+    },
+  });
+  const concurrentStore = createPendingCheckInStore(concurrent.adapters);
+  const concurrentFirst = concurrentStore.saveRecording(
+    recording({ tempFilePath: "/tmp/concurrent-a.mp3", fileSizeBytes: 1 }),
+  );
+  await concurrentBarrier.enteredPromise;
+  const concurrentSecond = concurrentStore.saveRecording(
+    recording({ tempFilePath: "/tmp/concurrent-b.mp3", fileSizeBytes: 1 }),
+  );
+  concurrentBarrier.release();
+  const [concurrentA, concurrentB] = await Promise.all([concurrentFirst, concurrentSecond]);
+  assert.equal(concurrentA.persisted, true);
+  assert.equal(concurrentB.persisted, true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(concurrentStore.list().map((item) => item.requestId).sort())),
+    [concurrentA.item.requestId, concurrentB.item.requestId].sort(),
+    "并发不同 ID 保存不得丢写",
+  );
+  assert.equal(concurrent.getRecords().length, 2, "并发持久化最终必须保留两个记录");
+
+  const duplicateBarrier = createBarrier();
+  const concurrentDuplicate = createAdapters({
+    existingPaths: ["/tmp/duplicate-a.mp3", "/tmp/duplicate-b.mp3"],
+    storageSetBehavior: async (_records, count) => {
+      if (count === 1) {
+        duplicateBarrier.entered();
+        await duplicateBarrier.wait;
+      }
+    },
+  });
+  concurrentDuplicate.adapters.random.hex = (() => {
+    const values = [hex(71), hex(71), hex(72)];
+    return () => values.shift();
+  })();
+  const duplicateStore = createPendingCheckInStore(concurrentDuplicate.adapters);
+  const duplicateFirst = duplicateStore.saveRecording(
+    recording({ tempFilePath: "/tmp/duplicate-a.mp3", fileSizeBytes: 1 }),
+  );
+  await duplicateBarrier.enteredPromise;
+  const duplicateSecond = duplicateStore.saveRecording(
+    recording({ tempFilePath: "/tmp/duplicate-b.mp3", fileSizeBytes: 1 }),
+  );
+  duplicateBarrier.release();
+  const [duplicateA, duplicateB] = await Promise.all([duplicateFirst, duplicateSecond]);
+  assert.notEqual(duplicateA.item.requestId, duplicateB.item.requestId, "并发候选 ID 不得重复返回");
+
+  const cleanupWriteFails = createAdapters({
+    now: cleanupNow,
+    records: [pending({ requestId: hex(81), updatedAtMs: cleanupNow - RETENTION_MS, localPath: "/saved/cleanup-write-fail.mp3" })],
+    existingPaths: ["/saved/cleanup-write-fail.mp3", "/tmp/cleanup-retry.mp3"],
+    storageSetBehavior: async (_records, count) => {
+      if (count === 1) throw new Error("metadata write failed");
+    },
+  });
+  const cleanupWriteFailStore = createPendingCheckInStore(cleanupWriteFails.adapters);
+  await cleanupWriteFailStore.cleanup();
+  assert.equal(cleanupWriteFailStore.list().length, 0, "文件已删除后 list 不得暴露失效路径");
+  await cleanupWriteFailStore.saveRecording(
+    recording({ tempFilePath: "/tmp/cleanup-retry.mp3", fileSizeBytes: 1 }),
+  );
+  assert.deepEqual(
+    cleanupWriteFails.getRecords().map((item) => item.requestId),
+    JSON.parse(JSON.stringify(cleanupWriteFailStore.list().map((item) => item.requestId))),
+    "后续 mutation 必须重试脏元数据写入",
+  );
+
+  const completeWriteFails = createAdapters({
+    records: [pending({ requestId: hex(82), localPath: "/saved/complete-write-fail.mp3" })],
+    existingPaths: ["/saved/complete-write-fail.mp3", "/tmp/complete-retry.mp3"],
+    storageSetBehavior: async (_records, count) => {
+      if (count === 1) throw new Error("metadata write failed");
+    },
+  });
+  const completeWriteFailStore = createPendingCheckInStore(completeWriteFails.adapters);
+  assert.equal(await completeWriteFailStore.complete(hex(82), true), false);
+  assert.equal(completeWriteFailStore.list().length, 0, "complete 删除文件后不得暴露失效路径");
+  await completeWriteFailStore.saveRecording(
+    recording({ tempFilePath: "/tmp/complete-retry.mp3", fileSizeBytes: 1 }),
+  );
+  assert.equal(completeWriteFails.getRecords().length, 1, "后续 mutation 应补写完成删除元数据");
 
   const corrupted = createAdapters({ records: [{ requestId: "broken" }] });
   const corruptedStore = createPendingCheckInStore(corrupted.adapters);

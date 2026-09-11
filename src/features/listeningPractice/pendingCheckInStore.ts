@@ -144,6 +144,18 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   let persistedItems: PendingCheckIn[] = [];
   const temporaryItems = new Map<string, PendingCheckIn>();
   let readyPromise: Promise<void> | null = null;
+  let metadataDirty = false;
+  let mutationTail: Promise<void> = Promise.resolve();
+
+  /** 每个变更共享同一队列，失败只影响当前操作，不能让后续操作永久卡住。 */
+  const enqueueMutation = <Result>(operation: () => Promise<Result>) => {
+    const current = mutationTail.then(operation, operation);
+    mutationTail = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    return current;
+  };
 
   const ready = () => {
     if (!readyPromise) {
@@ -172,15 +184,25 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const list = (): readonly PendingCheckIn[] =>
     freezeList([...persistedItems, ...temporaryItems.values()]);
 
-  const writePersistedItems = async (nextItems: PendingCheckIn[]) => {
+  const persistItems = async (nextItems: PendingCheckIn[]) => {
     await adapters.storage.set(
       PENDING_CHECK_IN_STORAGE_KEY,
       nextItems.map(cloneItem),
     );
-    persistedItems = nextItems;
   };
 
-  const cleanup = async () => {
+  const flushDirtyMetadata = async () => {
+    if (!metadataDirty) return true;
+    try {
+      await persistItems(persistedItems);
+      metadataDirty = false;
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  };
+
+  const cleanupInternal = async () => {
     await ready();
     const nowMs = adapters.clock.now();
     const removableIds = new Set<string>();
@@ -206,15 +228,14 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       removableIds.add(item.requestId);
     }
 
-    if (removableIds.size === 0) return;
-    const nextItems = persistedItems.filter(
-      (item) => !removableIds.has(item.requestId),
-    );
-    try {
-      await writePersistedItems(nextItems);
-    } catch (_error) {
-      // 写入失败后保留内存记录；下次启动会根据路径状态再次清理。
+    if (removableIds.size > 0) {
+      // 文件已经删除就立刻从当前可见队列移除，持久化失败由 dirty 标记在后续 mutation 补写。
+      persistedItems = persistedItems.filter(
+        (item) => !removableIds.has(item.requestId),
+      );
+      metadataDirty = true;
     }
+    await flushDirtyMetadata();
   };
 
   const validateRecordingInput = (input: SavePendingRecordingInput) => {
@@ -270,8 +291,9 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const createTemporaryResult = (
     sourceItem: PendingCheckIn,
     message: string,
+    status: PendingCheckInStatus = "local",
   ): SavePendingRecordingResult => {
-    const item = { ...sourceItem, recoverable: false };
+    const item = { ...sourceItem, recoverable: false, status };
     temporaryItems.set(item.requestId, item);
     return { item: freezeItem(item), persisted: false, message };
   };
@@ -288,12 +310,12 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     };
   };
 
-  const saveRecording = async (
+  const saveRecordingInternal = async (
     input: SavePendingRecordingInput,
   ): Promise<SavePendingRecordingResult> => {
     // 先校验原生录音结果，避免为了“修复”无效数据而猜测时长或文件大小。
     validateRecordingInput(input);
-    await cleanup();
+    await cleanupInternal();
     const initialItem = createItem(input, input.tempFilePath, false);
 
     const capacity = hasCapacityFor(input.fileSizeBytes);
@@ -310,7 +332,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       savedFilePath = saved.savedFilePath;
     } catch (error) {
       if (isQuotaFailure(error)) {
-        await cleanup();
+        await cleanupInternal();
         try {
           const saved = await adapters.file.save(input.tempFilePath);
           savedFilePath = saved.savedFilePath;
@@ -332,12 +354,16 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       return createTemporaryResult(
         initialItem,
         "录音保存路径无效，关闭小程序后可能无法恢复",
+        "failed",
       );
     }
 
     const item = { ...initialItem, localPath: savedFilePath, recoverable: true };
     try {
-      await writePersistedItems([...persistedItems, item]);
+      const nextItems = [...persistedItems, item];
+      await persistItems(nextItems);
+      persistedItems = nextItems;
+      metadataDirty = false;
       return { item: freezeItem(item), persisted: true, message: "" };
     } catch (_error) {
       // 已移动的文件仍可用于当前会话，不把未写入元数据的路径伪装成可恢复记录。
@@ -348,11 +374,12 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     }
   };
 
-  const update = async (
+  const updateInternal = async (
     requestId: string,
     patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status">,
   ): Promise<PendingCheckIn | null> => {
     await ready();
+    await flushDirtyMetadata();
     if (!isRequestId(requestId)) return null;
     if (patch.status !== undefined && !isStatus(patch.status)) return null;
     if (patch.cloudFileId !== undefined && typeof patch.cloudFileId !== "string") {
@@ -374,7 +401,9 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       const nextItems = [...persistedItems];
       nextItems[persistedIndex] = nextItem;
       try {
-        await writePersistedItems(nextItems);
+        await persistItems(nextItems);
+        persistedItems = nextItems;
+        metadataDirty = false;
         return freezeItem(nextItem);
       } catch (_error) {
         return null;
@@ -395,8 +424,9 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
   const markFailed = (requestId: string) => update(requestId, { status: "failed" });
 
-  const remove = async (requestId: string): Promise<boolean> => {
+  const removeInternal = async (requestId: string): Promise<boolean> => {
     await ready();
+    await flushDirtyMetadata();
     const temporaryItem = temporaryItems.get(requestId);
     const item =
       temporaryItem ||
@@ -415,16 +445,21 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       return true;
     }
 
-    try {
-      await writePersistedItems(
-        persistedItems.filter((current) => current.requestId !== requestId),
-      );
-      return true;
-    } catch (_error) {
-      return false;
-    }
+    persistedItems = persistedItems.filter(
+      (current) => current.requestId !== requestId,
+    );
+    metadataDirty = true;
+    return flushDirtyMetadata();
   };
 
+  const cleanup = () => enqueueMutation(cleanupInternal);
+  const saveRecording = (input: SavePendingRecordingInput) =>
+    enqueueMutation(() => saveRecordingInternal(input));
+  const update = (
+    requestId: string,
+    patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status">,
+  ) => enqueueMutation(() => updateInternal(requestId, patch));
+  const remove = (requestId: string) => enqueueMutation(() => removeInternal(requestId));
   const complete = (requestId: string, committed: boolean) =>
     committed ? remove(requestId) : Promise.resolve(false);
 
