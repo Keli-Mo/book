@@ -128,6 +128,62 @@ assert.equal(coordinator.getPhase(), "draining");
 primaryScheduler.advance(10);
 assert.equal(coordinator.getPhase(), "idle");
 
+const startTimeoutNative = createNativeRecorder();
+const startTimeoutScheduler = createFakeScheduler();
+const startTimeoutCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => startTimeoutNative.manager,
+  scheduler: startTimeoutScheduler,
+  quietWindowMs: 10,
+  drainTimeoutMs: 40,
+});
+const startTimeoutOwner = startTimeoutCoordinator.acquire();
+const startTimeoutEvents = { errors: [], stops: [] };
+startTimeoutOwner.owner.subscribe({
+  onError(error) { startTimeoutEvents.errors.push(error); },
+  onStop(result) { startTimeoutEvents.stops.push(result); },
+});
+assert.equal(startTimeoutOwner.owner.start(options).ok, true);
+startTimeoutScheduler.advance(9999);
+assert.equal(startTimeoutNative.calls.stop, 0, "start 确认窗口内不得提前 stop");
+startTimeoutScheduler.advance(1);
+assert.equal(startTimeoutNative.calls.stop, 1, "start 无 onStart/onError 时必须主动安全 stop");
+assert.equal(startTimeoutCoordinator.getPhase(), "draining", "start 回调缺失后必须进入旧会话隔离态");
+assert.match(String(startTimeoutEvents.errors[0]?.errMsg), /启动.*超时/, "页面必须收到可恢复的启动超时错误");
+assert.equal(startTimeoutOwner.owner.start(options).reason, "busy", "旧 start 未收口前不能开启新会话");
+startTimeoutNative.emit("stop", { tempFilePath: "/tmp/late-start.mp3" });
+assert.deepEqual(startTimeoutEvents.stops, [], "start 超时后的迟到 terminal 不得冒充成功录音");
+startTimeoutScheduler.advance(10);
+assert.equal(startTimeoutOwner.owner.start(options).ok, true, "迟到 terminal 静默收口后应允许新会话");
+
+const stopTimeoutNative = createNativeRecorder();
+const stopTimeoutScheduler = createFakeScheduler();
+const stopTimeoutCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => stopTimeoutNative.manager,
+  scheduler: stopTimeoutScheduler,
+  quietWindowMs: 10,
+  drainTimeoutMs: 40,
+});
+const stopTimeoutOwner = stopTimeoutCoordinator.acquire();
+const stopTimeoutEvents = { errors: [], stops: [] };
+stopTimeoutOwner.owner.subscribe({
+  onError(error) { stopTimeoutEvents.errors.push(error); },
+  onStop(result) { stopTimeoutEvents.stops.push(result); },
+});
+stopTimeoutOwner.owner.start(options);
+stopTimeoutNative.emit("start");
+assert.equal(stopTimeoutOwner.owner.stop().ok, true);
+stopTimeoutScheduler.advance(29999);
+assert.equal(stopTimeoutCoordinator.getPhase(), "stopping", "stop 确认窗口内必须继续等待原生 terminal");
+stopTimeoutScheduler.advance(1);
+assert.equal(stopTimeoutCoordinator.getPhase(), "draining", "stop 无 onStop/onError 时必须进入有限隔离态");
+assert.match(String(stopTimeoutEvents.errors[0]?.errMsg), /停止.*超时/, "页面必须收到可恢复的停止超时错误");
+assert.equal(stopTimeoutOwner.owner.start(options).reason, "busy", "旧 stop 未收口前不能开启新会话");
+const lateTimedOutStop = { tempFilePath: "/tmp/late-stop.mp3" };
+stopTimeoutNative.emit("stop", lateTimedOutStop);
+assert.deepEqual(stopTimeoutEvents.stops, [lateTimedOutStop], "stop 超时后的迟到结果仍必须交给原会话保存");
+stopTimeoutScheduler.advance(10);
+assert.equal(stopTimeoutOwner.owner.start(options).ok, true, "迟到 stop 静默收口后应允许新会话");
+
 const pauseWatchdogNative = createNativeRecorder();
 const pauseWatchdogScheduler = createFakeScheduler();
 const pauseWatchdogCoordinator = createRecorderCoordinator({
