@@ -135,9 +135,11 @@ materialRepair("教材 11 移除官方不存在的伪轨 5.15", () => {
     Object.values(audioByPage).flatMap((tracks) => tracks.map(({ url }) => url)),
   );
   assert.equal(
-    allAudioUrls.some((url) => url.endsWith("/ow2e_sb1_ame_5.15.mp3")),
+    allAudioUrls.some((url) =>
+      new URL(url).pathname.endsWith("/ow2e_sb1_ame_5.15.mp3"),
+    ),
     false,
-    "全部教材不得引用官方不存在的伪轨 5.15",
+    "全部教材不得通过查询串或片段掩盖官方不存在的伪轨 5.15",
   );
 });
 assert.equal(
