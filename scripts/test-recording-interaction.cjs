@@ -68,6 +68,8 @@ const {
   handleInterruptionBegin,
   handleInterruptionEnd,
   requestRecorderAction,
+  resetRecordingMachine,
+  restoreRecordedMachine,
   resolveRecordingCapabilities,
   resolveRecorderCallback,
 } = stateMachineModule.exports;
@@ -86,6 +88,24 @@ assert.equal(getPracticeSwitchPolicy("recording"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("paused"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("recorded"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("uploading"), "block-uploading");
+
+const readyForRestore = resolveRecordingCapabilities(
+  createRecordingMachine(),
+  { canRecord: true, canPause: true, canResume: true, canInterrupt: true },
+);
+const restored = restoreRecordedMachine(readyForRestore);
+assert.equal(restored.state, "recorded", "重启后可恢复已保存的待上传录音");
+assert.equal(
+  restoreRecordedMachine(requestRecorderAction(readyForRestore, "start").machine).state,
+  "starting",
+  "活动录音不得被恢复记录覆盖",
+);
+assert.equal(resetRecordingMachine(restored).state, "idle", "放弃已保存录音后回到 idle");
+assert.equal(
+  resetRecordingMachine(beginRecordingUpload(restored)).state,
+  "uploading",
+  "上传中不得被普通重置绕过",
+);
 
 assert.equal(
   typeof getRecordingErrorMessage,

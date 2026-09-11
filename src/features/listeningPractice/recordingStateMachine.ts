@@ -370,6 +370,43 @@ export const finishRecordingUpload = (
       }
     : machine;
 
+/** 启动时发现同一训练已有本地录音，可恢复回听与手动提交，不会自动联网。 */
+export const restoreRecordedMachine = (
+  machine: RecordingMachine,
+): RecordingMachine =>
+  machine.mounted &&
+  !machine.pendingAction &&
+  (machine.state === "idle" ||
+    machine.state === "unsupported" ||
+    machine.state === "recorded" ||
+    machine.state === "error")
+    ? {
+        ...machine,
+        state: "recorded",
+        pauseReason: null,
+        needsManualResume: false,
+        clockFrozen: false,
+        lastError: null,
+      }
+    : machine;
+
+/** 只重置稳定的本地录音；上传中和原生操作进行中必须由各自回调收敛。 */
+export const resetRecordingMachine = (
+  machine: RecordingMachine,
+): RecordingMachine =>
+  machine.mounted &&
+  !machine.pendingAction &&
+  (machine.state === "recorded" || machine.state === "error")
+    ? {
+        ...machine,
+        state: machine.capabilities?.canRecord ? "idle" : "unsupported",
+        pauseReason: null,
+        needsManualResume: false,
+        clockFrozen: false,
+        lastError: null,
+      }
+    : machine;
+
 /** 卸载后不再接受任何原生回调，避免旧页面覆盖新会话。 */
 export const disposeRecordingMachine = (
   machine: RecordingMachine,
