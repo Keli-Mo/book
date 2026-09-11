@@ -252,7 +252,7 @@ const createBarrier = () => {
   countBoundary.adapters.random.hex = () => hex(501);
   const countStore = createPendingCheckInStore(countBoundary.adapters);
   const countOver = await countStore.saveRecording(recording({ fileSizeBytes: 1 }));
-  assert.equal(countOver.persisted, false, "第三条之后不得再持久保存");
+  assert.equal(countOver.persisted, false, "第 501 条不得再持久保存");
   assert.match(countOver.message, /最多 500 条/);
 
   const cleanupNow = 1_900_000_000_000;
@@ -444,6 +444,18 @@ const createBarrier = () => {
   const shareRestart = createPendingCheckInStore(shareAdapters.adapters);
   await shareRestart.ready();
   assert.equal(shareRestart.list()[0].shareRequestId, hex(192), "新代写入成功后重启仍保持");
+
+  const uppercaseGeneration = createAdapters({
+    records: [pending({ requestId: "B".repeat(32), shareRequestId: "A".repeat(32) })],
+    existingPaths: ["/saved/existing.mp3"],
+  });
+  const uppercaseStore = createPendingCheckInStore(uppercaseGeneration.adapters);
+  await uppercaseStore.ready();
+  assert.equal(uppercaseStore.list()[0].requestId, "B".repeat(32), "旧本地 ID 保持原值，避免记录失联");
+  assert.equal(uppercaseStore.list()[0].shareRequestId, "a".repeat(32), "旧大写分享代次在读取时规范为小写");
+  const uppercaseMarked = await uppercaseStore.markShared("B".repeat(32), { id: "upper", shareToken: "token", expiresAtMs: expiry }, "a".repeat(32));
+  assert.equal(uppercaseMarked.share.id, "upper", "混合大小写代次 guard 仍允许同代回写");
+  assert.equal(uppercaseGeneration.getRecords()[0].shareRequestId, "a".repeat(32));
 
   const generationWriteFailure = createAdapters({
     records: [pending({ requestId: hex(92) })],

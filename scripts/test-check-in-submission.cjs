@@ -134,6 +134,13 @@ test("实际文件指纹和规范 request/snapshot 贯穿提交", async () => {
   assert.equal(h.calls[5][1].recordingFileId, "cloud://test.bucket/checkins/fresh.mp3");
 });
 
+test("大写分享代次发送云端时规范为小写", async () => {
+  const h = harness();
+  const result = await h.submit(item({ shareRequestId: "A".repeat(32) })).promise;
+  assert.equal(result.state, "committed");
+  assert.equal(h.calls.find(call => call[0] === "prepare")[1].requestId, "a".repeat(32));
+});
+
 test("旧录音回调大小有偏差时以实际文件建立基准并提交，原录音不丢失", async () => {
   for (const actualBytes of [1799, 1801, 2400]) {
     const h = harness({ recordingInfo: { fileSizeBytes: actualBytes, contentSha1: "A".repeat(40) } });
@@ -390,7 +397,7 @@ test("缺失的旧云录音会清空 fileID，并且只重传一次", async () =
   }
 });
 
-test("complete 本地清理失败仍返回云端成功 cleanupPending，冲突/删除不换 requestId", async () => {
+test("分享信息回写失败仍返回云端成功 cleanupPending，冲突/删除不换分享代次", async () => {
   const cleanup = harness({ completeResult: false }); const done = await cleanup.submit(item()).promise;
   assert.equal(done.state, "committed"); assert.equal(done.cleanupPending, true);
 

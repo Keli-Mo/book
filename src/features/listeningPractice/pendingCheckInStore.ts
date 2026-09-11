@@ -156,6 +156,7 @@ const cloneItem = (item: PendingCheckIn): PendingCheckIn => ({
   ...item,
   context: { ...item.context },
   ...(item.share ? { share: { ...item.share } } : {}),
+  ...(item.shareRequestId ? { shareRequestId: item.shareRequestId.toLowerCase() } : {}),
   ...(item.contentSha1 ? { contentSha1: item.contentSha1.toLowerCase() } : {}),
 });
 
@@ -446,7 +447,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       (item) => item.requestId === requestId,
     );
     if (persistedIndex >= 0) {
-      if (expectedShareRequestId && persistedItems[persistedIndex].shareRequestId !== expectedShareRequestId) return null;
+      if (expectedShareRequestId && persistedItems[persistedIndex].shareRequestId?.toLowerCase() !== expectedShareRequestId.toLowerCase()) return null;
       const nextItem = updateItem(persistedItems[persistedIndex]);
       const nextItems = [...persistedItems];
       nextItems[persistedIndex] = nextItem;
@@ -514,7 +515,11 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const candidate = adapters.random.hex();
       if (!isRequestId(candidate)) throw new Error("shareRequestId 必须是 32 位十六进制随机值");
-      if (candidate !== requestId && candidate !== current.shareRequestId) { shareRequestId = candidate; break; }
+      const normalizedCandidate = candidate.toLowerCase();
+      if (normalizedCandidate !== requestId.toLowerCase() && normalizedCandidate !== current.shareRequestId?.toLowerCase()) {
+        shareRequestId = normalizedCandidate;
+        break;
+      }
     }
     if (!shareRequestId) throw new Error("无法生成新的分享代次");
     const nextItem = {
@@ -544,7 +549,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     await flushDirtyMetadata();
     const index = persistedItems.findIndex((item) => item.requestId === requestId);
     if (index < 0 || !persistedItems[index].shareRequestId) return null;
-    if (expectedShareRequestId && persistedItems[index].shareRequestId !== expectedShareRequestId) return null;
+    if (expectedShareRequestId && persistedItems[index].shareRequestId?.toLowerCase() !== expectedShareRequestId.toLowerCase()) return null;
     const nowMs = adapters.clock.now();
     if (!isNonNegativeInteger(nowMs)) throw new Error("clock.now 必须返回有效时间");
     const nextItem = { ...persistedItems[index], share: { ...share }, status: "local" as PendingCheckInStatus, updatedAtMs: nowMs };
@@ -565,7 +570,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     await ready();
     if (!metadataReadable) return false;
     const index = persistedItems.findIndex((item) => item.requestId === requestId);
-    if (index < 0 || persistedItems[index].shareRequestId !== expectedShareRequestId) return false;
+    if (index < 0 || persistedItems[index].shareRequestId?.toLowerCase() !== expectedShareRequestId.toLowerCase()) return false;
     const nowMs = adapters.clock.now();
     const nextItem = { ...persistedItems[index], shareRequestId: undefined, share: undefined, cloudFileId: "", status: "local" as PendingCheckInStatus, updatedAtMs: nowMs };
     const nextItems = [...persistedItems];

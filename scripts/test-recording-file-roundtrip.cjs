@@ -79,7 +79,7 @@ const load = relative => {
       assert.equal(payload.fileSizeBytes, uploadedBytes.length);
       assert.equal(payload.contentSha1, sha1(uploadedBytes));
       network.push(["commit", payload]);
-      return { id: "checkin", shareToken: "share" };
+      return { id: "checkin", shareToken: "share", expiresAtMs: Date.now() + 1000 };
     },
     scheduler: { setTimeout, clearTimeout }, clock: { now: Date.now },
   });
@@ -99,13 +99,14 @@ const load = relative => {
   assert.equal(fs.existsSync(tempFilePath), false);
   assert.equal(saved.item.fileSizeBytes, 4097, "保存后的实际文件大小应替代回调大小");
   assert.equal(saved.item.contentSha1, sha1(fs.readFileSync(saved.item.localPath)));
-  assert.equal((await coordinator.submit(saved.item).promise).state, "committed");
-  assert.equal(fs.existsSync(saved.item.localPath), false, "只在云端确认后清除本地副本");
+  const shareReady = await store.beginShare(saved.item.requestId);
+  assert.equal((await coordinator.submit(shareReady).promise).state, "committed");
+  assert.equal(fs.existsSync(saved.item.localPath), true, "云端确认后仍保留本地副本");
   assert.deepEqual(network.map(row => row[0]), ["prepare", "upload", "commit"]);
 
   const another = await store.saveRecording({ tempFilePath: createFixture("changed.mp3"), context, durationMs: 3100, fileSizeBytes: 4096 });
   fs.writeFileSync(another.item.localPath, Buffer.alloc(4097, 72));
-  const changed = await coordinator.submit(another.item).promise;
+  const changed = await coordinator.submit(await store.beginShare(another.item.requestId)).promise;
   assert.equal(changed.state, "failed");
   assert.equal(changed.error.code, "RECORDING_FILE_CHANGED", "相同大小但内容变化也必须识别");
   assert.equal(fs.existsSync(another.item.localPath), true);
@@ -136,12 +137,13 @@ const load = relative => {
     commitCheckIn: async payload => {
       assert.equal(payload.fileSizeBytes, uploadedBytes.length);
       assert.equal(payload.contentSha1, sha1(uploadedBytes));
-      return { id: "legacy", shareToken: "share" };
+      return { id: "legacy", shareToken: "share", expiresAtMs: Date.now() + 1000 };
     },
     scheduler: { setTimeout, clearTimeout }, clock: { now: Date.now },
   });
-  assert.equal((await legacyCoordinator.submit(restoredStore.list()[0]).promise).state, "committed");
-  assert.equal(fs.existsSync(legacyRecord.localPath), false);
+  const legacyShare = await restoredStore.beginShare(legacyRecord.requestId);
+  assert.equal((await legacyCoordinator.submit(legacyShare).promise).state, "committed");
+  assert.equal(fs.existsSync(legacyRecord.localPath), true);
   console.log("录音真实文件链路通过：保存后字节与指纹、云端确认前保留、同大小内容变化、旧失败录音重启重试。");
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
   for (const filePath of files) if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
