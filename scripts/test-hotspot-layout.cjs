@@ -5,27 +5,79 @@ const path = require("path");
 const vm = require("vm");
 const ts = require("typescript");
 
-const sourcePath = path.resolve(
-  __dirname,
-  "../src/features/listeningPractice/hotspotLayout.ts",
+const sourceRoot = path.resolve(__dirname, "../src");
+const sourcePath = path.join(
+  sourceRoot,
+  "features/listeningPractice/hotspotLayout.ts",
 );
+const moduleCache = new Map();
 
-assert.equal(fs.existsSync(sourcePath), true, "教材热点布局模型文件应存在");
+const isInsideSourceRoot = (candidate) =>
+  candidate === sourceRoot || candidate.startsWith(`${sourceRoot}${path.sep}`);
+const resolveTypeScriptDependency = (request, importerPath) => {
+  assert.equal(
+    request.startsWith("."),
+    true,
+    `测试加载器只允许 src 内相对依赖：${request}`,
+  );
+  const basePath = path.resolve(path.dirname(importerPath), request);
+  assert.equal(
+    isInsideSourceRoot(basePath),
+    true,
+    `测试加载器禁止依赖离开 src：${request}`,
+  );
+  const candidates = [
+    basePath,
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    path.join(basePath, "index.ts"),
+    path.join(basePath, "index.tsx"),
+  ];
+  const dependencyPath = candidates.find(
+    (candidate) =>
+      isInsideSourceRoot(candidate) &&
+      [".ts", ".tsx"].includes(path.extname(candidate)) &&
+      fs.existsSync(candidate) &&
+      fs.statSync(candidate).isFile(),
+  );
+  assert.ok(dependencyPath, `TypeScript 相对依赖必须存在：${request}`);
+  return dependencyPath;
+};
+const loadTypeScriptModule = (modulePath) => {
+  const absolutePath = path.resolve(modulePath);
+  assert.equal(
+    isInsideSourceRoot(absolutePath),
+    true,
+    `测试加载器禁止模块离开 src：${absolutePath}`,
+  );
+  assert.equal(fs.existsSync(absolutePath), true, "教材热点布局模型文件应存在");
+  if (moduleCache.has(absolutePath)) return moduleCache.get(absolutePath).exports;
 
-const compiled = ts.transpileModule(fs.readFileSync(sourcePath, "utf8"), {
-  compilerOptions: {
-    module: ts.ModuleKind.CommonJS,
-    target: ts.ScriptTarget.ES2017,
-  },
-});
-const moduleContainer = { exports: {} };
+  const compiled = ts.transpileModule(fs.readFileSync(absolutePath, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2017,
+    },
+    fileName: absolutePath,
+  });
+  const moduleContainer = { exports: {} };
+  moduleCache.set(absolutePath, moduleContainer);
+  const localRequire = (request) =>
+    loadTypeScriptModule(resolveTypeScriptDependency(request, absolutePath));
 
-vm.runInNewContext(compiled.outputText, {
-  module: moduleContainer,
-  exports: moduleContainer.exports,
-});
+  vm.runInNewContext(
+    compiled.outputText,
+    {
+      module: moduleContainer,
+      exports: moduleContainer.exports,
+      require: localRequire,
+    },
+    { filename: absolutePath },
+  );
+  return moduleContainer.exports;
+};
 
-const { clampHotspotCenter } = moduleContainer.exports;
+const { clampHotspotCenter } = loadTypeScriptModule(sourcePath);
 assert.equal(
   typeof clampHotspotCenter,
   "function",

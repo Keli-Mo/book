@@ -5,27 +5,76 @@ const path = require("path");
 const vm = require("vm");
 const ts = require("typescript");
 
-const sourcePath = path.resolve(
-  __dirname,
-  "../src/features/layout/deviceLayout.ts",
-);
+const sourceRoot = path.resolve(__dirname, "../src");
+const sourcePath = path.join(sourceRoot, "features/layout/deviceLayout.ts");
+const moduleCache = new Map();
 
-assert.equal(fs.existsSync(sourcePath), true, "设备布局模型文件应存在");
+const isInsideSourceRoot = (candidate) =>
+  candidate === sourceRoot || candidate.startsWith(`${sourceRoot}${path.sep}`);
+const resolveTypeScriptDependency = (request, importerPath) => {
+  assert.equal(
+    request.startsWith("."),
+    true,
+    `测试加载器只允许 src 内相对依赖：${request}`,
+  );
+  const basePath = path.resolve(path.dirname(importerPath), request);
+  assert.equal(
+    isInsideSourceRoot(basePath),
+    true,
+    `测试加载器禁止依赖离开 src：${request}`,
+  );
+  const candidates = [
+    basePath,
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    path.join(basePath, "index.ts"),
+    path.join(basePath, "index.tsx"),
+  ];
+  const dependencyPath = candidates.find(
+    (candidate) =>
+      isInsideSourceRoot(candidate) &&
+      [".ts", ".tsx"].includes(path.extname(candidate)) &&
+      fs.existsSync(candidate) &&
+      fs.statSync(candidate).isFile(),
+  );
+  assert.ok(dependencyPath, `TypeScript 相对依赖必须存在：${request}`);
+  return dependencyPath;
+};
+const loadTypeScriptModule = (modulePath) => {
+  const absolutePath = path.resolve(modulePath);
+  assert.equal(
+    isInsideSourceRoot(absolutePath),
+    true,
+    `测试加载器禁止模块离开 src：${absolutePath}`,
+  );
+  assert.equal(fs.existsSync(absolutePath), true, "设备布局模型文件应存在");
+  if (moduleCache.has(absolutePath)) return moduleCache.get(absolutePath).exports;
 
-const compiled = ts.transpileModule(fs.readFileSync(sourcePath, "utf8"), {
-  compilerOptions: {
-    module: ts.ModuleKind.CommonJS,
-    target: ts.ScriptTarget.ES2017,
-  },
-});
-const moduleContainer = { exports: {} };
+  const compiled = ts.transpileModule(fs.readFileSync(absolutePath, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2017,
+    },
+    fileName: absolutePath,
+  });
+  const moduleContainer = { exports: {} };
+  moduleCache.set(absolutePath, moduleContainer);
+  const localRequire = (request) =>
+    loadTypeScriptModule(resolveTypeScriptDependency(request, absolutePath));
 
-vm.runInNewContext(compiled.outputText, {
-  module: moduleContainer,
-  exports: moduleContainer.exports,
-});
+  vm.runInNewContext(
+    compiled.outputText,
+    {
+      module: moduleContainer,
+      exports: moduleContainer.exports,
+      require: localRequire,
+    },
+    { filename: absolutePath },
+  );
+  return moduleContainer.exports;
+};
 
-const { calculateDeviceLayout } = moduleContainer.exports;
+const { calculateDeviceLayout } = loadTypeScriptModule(sourcePath);
 assert.equal(
   typeof calculateDeviceLayout,
   "function",
@@ -43,6 +92,10 @@ const assertProfile = (scenario, input, expected) => {
   assert.ok(
     Number.isFinite(actual.safeAreaBottom),
     `${scenario}：safeAreaBottom 必须是有限数`,
+  );
+  assert.ok(
+    actual.safeAreaBottom >= 0,
+    `${scenario}：safeAreaBottom 必须是非负数`,
   );
 };
 
@@ -144,6 +197,39 @@ const deviceMatrix = [
       ...defaultInsets,
     },
   ],
+  [
+    "960×600 Pad 在精确阈值进入双栏",
+    { windowWidth: 960, windowHeight: 600, screenWidth: 1024, screenHeight: 768 },
+    {
+      isPad: true,
+      orientation: "landscape",
+      isSplit: true,
+      contentMaxWidth: 1280,
+      ...defaultInsets,
+    },
+  ],
+  [
+    "959×600 Pad 宽度低于精确阈值时保持单栏",
+    { windowWidth: 959, windowHeight: 600, screenWidth: 1024, screenHeight: 768 },
+    {
+      isPad: true,
+      orientation: "landscape",
+      isSplit: false,
+      contentMaxWidth: 820,
+      ...defaultInsets,
+    },
+  ],
+  [
+    "窗口短边达到 600 不能把小屏幕设备误判为 Pad",
+    { windowWidth: 960, windowHeight: 600, screenWidth: 844, screenHeight: 390 },
+    {
+      isPad: false,
+      orientation: "landscape",
+      isSplit: false,
+      contentMaxWidth: null,
+      ...defaultInsets,
+    },
+  ],
 ];
 
 for (const [scenario, input, expected] of deviceMatrix) {
@@ -186,43 +272,74 @@ assertProfile(
 );
 
 assertProfile(
-  "安全区底部超出屏幕时收敛为 0",
+  "分屏窗口的底部安全区只按 screenHeight 计算",
   {
-    windowWidth: 430,
-    windowHeight: 932,
-    screenWidth: 430,
-    screenHeight: 932,
-    statusBarHeight: 47,
-    safeArea: { top: 47, bottom: 960 },
+    windowWidth: 960,
+    windowHeight: 600,
+    screenWidth: 1024,
+    screenHeight: 768,
+    statusBarHeight: 24,
+    safeArea: { top: 24, bottom: 734 },
   },
   {
-    isPad: false,
-    orientation: "portrait",
-    isSplit: false,
-    contentMaxWidth: null,
-    statusBarHeight: 47,
-    safeAreaBottom: 0,
+    isPad: true,
+    orientation: "landscape",
+    isSplit: true,
+    contentMaxWidth: 1280,
+    statusBarHeight: 24,
+    safeAreaBottom: 34,
   },
 );
 
-assertProfile(
-  "非法状态栏与安全区使用默认值",
-  {
-    windowWidth: 430,
-    windowHeight: 932,
-    screenWidth: 430,
-    screenHeight: 932,
-    statusBarHeight: Number.POSITIVE_INFINITY,
-    safeArea: { top: Number.NaN, bottom: 898 },
-  },
-  {
-    isPad: false,
-    orientation: "portrait",
-    isSplit: false,
-    contentMaxWidth: null,
-    ...defaultInsets,
-  },
-);
+const phoneInput = {
+  windowWidth: 430,
+  windowHeight: 932,
+  screenWidth: 430,
+  screenHeight: 932,
+};
+const phoneProfile = {
+  isPad: false,
+  orientation: "portrait",
+  isSplit: false,
+  contentMaxWidth: null,
+};
+const invalidStatusBarCases = [
+  ["负数", -1],
+  ["NaN", Number.NaN],
+  ["正 Infinity", Number.POSITIVE_INFINITY],
+  ["负 Infinity", Number.NEGATIVE_INFINITY],
+  ["零", 0],
+];
+
+for (const [scenario, statusBarHeight] of invalidStatusBarCases) {
+  assertProfile(
+    `非法状态栏：${scenario}`,
+    { ...phoneInput, statusBarHeight },
+    { ...phoneProfile, ...defaultInsets },
+  );
+}
+
+const invalidSafeAreaCases = [
+  ["缺失 safeArea", undefined],
+  ["top 为负数", { top: -1, bottom: 898 }],
+  ["bottom 为负数", { top: 0, bottom: -1 }],
+  ["top 为 NaN", { top: Number.NaN, bottom: 898 }],
+  ["bottom 为 NaN", { top: 59, bottom: Number.NaN }],
+  ["top 为正 Infinity", { top: Number.POSITIVE_INFINITY, bottom: 898 }],
+  ["top 为负 Infinity", { top: Number.NEGATIVE_INFINITY, bottom: 898 }],
+  ["bottom 为正 Infinity", { top: 59, bottom: Number.POSITIVE_INFINITY }],
+  ["bottom 为负 Infinity", { top: 59, bottom: Number.NEGATIVE_INFINITY }],
+  ["bottom 超过 screenHeight", { top: 59, bottom: 960 }],
+  ["top 大于 bottom", { top: 900, bottom: 898 }],
+];
+
+for (const [scenario, safeArea] of invalidSafeAreaCases) {
+  assertProfile(
+    `非法安全区：${scenario}`,
+    { ...phoneInput, statusBarHeight: 47, safeArea },
+    { ...phoneProfile, statusBarHeight: 47, safeAreaBottom: 0 },
+  );
+}
 
 const invalidDimensionCases = [
   [
