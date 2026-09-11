@@ -1,6 +1,7 @@
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidHide, useRouter } from "@tarojs/taro";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import {
   createTrackAudioController,
   stopAudioIfLoaded,
@@ -11,6 +12,7 @@ import {
   type BookPracticeBundle,
   type ListeningPractice,
 } from "@/features/listeningPractice/bookPractice";
+import { clampHotspotCenter } from "@/features/listeningPractice/hotspotLayout";
 import { buildPracticeDirectoryGroups } from "@/features/listeningPractice/practiceDirectory";
 import {
   getPracticeSwitchPolicy,
@@ -27,6 +29,10 @@ import {
   removeUploadedRecording,
   uploadCheckInRecording,
 } from "@/services/cloudCheckIn";
+import {
+  useDeviceLayout,
+  type DeviceLayoutState,
+} from "@/hooks/useDeviceLayout";
 import PracticeDirectory from "./PracticeDirectory";
 
 import "./Practice.scss";
@@ -39,6 +45,8 @@ const formatDuration = (durationMs: number) => {
 };
 
 export default function Practice() {
+  const layout = useDeviceLayout();
+  const layoutClassName = buildDeviceLayoutClassName(layout);
   const router = useRouter();
   const bookId = router.params?.bookId;
   const rawPracticeIndex = router.params?.practice;
@@ -68,10 +76,13 @@ export default function Practice() {
 
   if (!route.bundle) {
     return (
-      <View className='practice-empty'>
+      <View className={`practice-empty device-layout__content ${layoutClassName}`}>
         <Text>暂时无法打开训练</Text>
         <Text>{route.errorMessage}</Text>
-        <Button onClick={() => Taro.navigateTo({ url: "/pages/BookLibrary/BookLibrary" })}>
+        <Button
+          className='practice-empty__button device-touch-target'
+          onClick={() => Taro.navigateTo({ url: "/pages/BookLibrary/BookLibrary" })}
+        >
           选择教材
         </Button>
       </View>
@@ -85,14 +96,24 @@ export default function Practice() {
       bundle={route.bundle}
       initialPracticeIndex={route.practiceIndex}
       initialPractice={route.practice}
+      layout={layout}
+      layoutClassName={layoutClassName}
     />
   );
 }
 
-function PracticeSession({ bundle, initialPracticeIndex, initialPractice }: {
+function PracticeSession({
+  bundle,
+  initialPracticeIndex,
+  initialPractice,
+  layout,
+  layoutClassName,
+}: {
   bundle: BookPracticeBundle;
   initialPracticeIndex: number;
   initialPractice: ListeningPractice;
+  layout: DeviceLayoutState;
+  layoutClassName: string;
 }) {
   const directoryGroups = useMemo(
     () => buildPracticeDirectoryGroups(bundle.practices),
@@ -109,6 +130,7 @@ function PracticeSession({ bundle, initialPracticeIndex, initialPractice }: {
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [isPlayingRecording, setIsPlayingRecording] = useState(false);
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const modelAudioControllerRef = useRef<ReturnType<
     typeof createTrackAudioController
   > | null>(null);
@@ -121,6 +143,55 @@ function PracticeSession({ bundle, initialPracticeIndex, initialPractice }: {
   const pendingRecorderActionRef = useRef<"pause" | "resume" | null>(null);
   const discardNextRecordingRef = useRef(false);
   const submittingRef = useRef(false);
+
+  const measureBookImage = useMemo(
+    () => () => {
+      if (typeof Taro.createSelectorQuery !== "function") return;
+      Taro.createSelectorQuery()
+        .select(".practice-book-page__image")
+        .boundingClientRect((rect) => {
+          if (
+            !rect ||
+            Array.isArray(rect) ||
+            !Number.isFinite(rect.width) ||
+            !Number.isFinite(rect.height) ||
+            rect.width <= 0 ||
+            rect.height <= 0
+          ) {
+            return;
+          }
+          setImageSize({ width: rect.width, height: rect.height });
+        })
+        .exec();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    // 图片加载和窗口尺寸变化都复用同一次实测，不触碰音频或录音实例。
+    measureBookImage();
+  }, [layout.windowHeight, layout.windowWidth, measureBookImage]);
+
+  const clampedHotspots = useMemo(
+    () =>
+      practice.tracks.map((track) => {
+        if (imageSize.width <= 0 || imageSize.height <= 0) return track;
+        const originalCenter = {
+          left: Number.parseFloat(track.left),
+          top: Number.parseFloat(track.top),
+        };
+        const center = clampHotspotCenter(originalCenter, {
+          width: imageSize.width,
+          height: imageSize.height,
+        });
+        return {
+          ...track,
+          left: `${center.left}%`,
+          top: `${center.top}%`,
+        };
+      }),
+    [imageSize.height, imageSize.width, practice.tracks],
+  );
 
   useEffect(() => {
     const modelAudioController = createTrackAudioController(
@@ -454,165 +525,181 @@ function PracticeSession({ bundle, initialPracticeIndex, initialPractice }: {
       : recordingDurationMs;
 
   return (
-    <View className='practice-page'>
-      <View className='practice-header'>
-        <Text className='practice-header__course'>{bundle.book.title}</Text>
-        <Text className='practice-header__section'>{practice.sectionTitle}</Text>
-        <View className='practice-header__progress-row'>
-          <Text className='practice-header__progress'>
-            跟读训练 {practiceIndex + 1} / {bundle.practices.length}
-          </Text>
-          <Text
-            className='practice-header__directory'
-            onClick={openPracticeDirectory}
-          >
-            目录
-          </Text>
-        </View>
-      </View>
-
-      <View className='practice-book-page'>
-        <Image
-          className='practice-book-page__image'
-          src={practice.imageUrl}
-          mode='widthFix'
-          webp
-          lazyLoad
-        />
-        {practice.tracks.map((track, index) => (
-          <View
-            key={track.id}
-            className={`audio-hotspot ${
-              playingTrackId === track.id ? "audio-hotspot--playing" : ""
-            }`}
-            style={{ left: track.left, top: track.top }}
-            onClick={() => playModelAudio(track.id, track.url)}
-          >
-            <Text className='audio-hotspot__icon'>
-              {playingTrackId === track.id ? "◼" : "▶"}
+    <View className={`practice-page ${layoutClassName}`}>
+      <View className='practice-page__content device-layout__content'>
+        <View className='practice-header'>
+          <Text className='practice-header__course'>{bundle.book.title}</Text>
+          <Text className='practice-header__section'>{practice.sectionTitle}</Text>
+          <View className='practice-header__progress-row'>
+            <Text className='practice-header__progress'>
+              跟读训练 {practiceIndex + 1} / {bundle.practices.length}
             </Text>
-            <Text className='audio-hotspot__number'>{index + 1}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View className='practice-recorder'>
-        <View className='practice-recorder__heading'>
-          <Text className='practice-recorder__title'>我的跟读</Text>
-          <Text className='practice-recorder__time'>
-            {shownDuration > 0 ? formatDuration(shownDuration) : "最长 5:00"}
-          </Text>
-        </View>
-
-        {recordingState === "idle" && (
-          <Button className='record-button' onClick={startRecording}>
-            <Text className='record-button__dot' />
-            开始跟读录音
-          </Button>
-        )}
-
-        {recordingState === "recording" && (
-          <>
-            <View className='recording-indicator'>
-              <Text className='recording-indicator__pulse' />
-              <Text>正在录音，请完成本页跟读</Text>
-            </View>
-            <View className='recording-controls'>
-              <Button
-                className='record-button record-button--pause'
-                onClick={pauseRecording}
-              >
-                暂停录音
-              </Button>
-              <Button
-                className='record-button record-button--stop'
-                onClick={stopRecording}
-              >
-                结束录音
-              </Button>
-            </View>
-          </>
-        )}
-
-        {recordingState === "paused" && (
-          <>
-            <View className='recording-indicator recording-indicator--paused'>
-              <Text className='recording-indicator__pulse' />
-              <Text>录音已暂停，可播放示范音频后继续</Text>
-            </View>
-            <View className='recording-controls'>
-              <Button
-                className='record-button record-button--resume'
-                onClick={resumeRecording}
-              >
-                继续录音
-              </Button>
-              <Button
-                className='record-button record-button--stop'
-                onClick={stopRecording}
-              >
-                结束录音
-              </Button>
-            </View>
-          </>
-        )}
-
-        {(recordingState === "recorded" || recordingState === "uploading") && (
-          <>
-            <Text className='practice-recorder__tip'>
-              已录制 {formatDuration(recordingDurationMs)}，请先回听确认。
-            </Text>
-            <View className='record-actions'>
-              <Button
-                className='record-actions__secondary'
-                disabled={recordingState === "uploading"}
-                onClick={playRecording}
-              >
-                {isPlayingRecording ? "停止回听" : "回听录音"}
-              </Button>
-              <Button
-                className='record-actions__secondary'
-                disabled={recordingState === "uploading"}
-                onClick={startRecording}
-              >
-                重新录制
-              </Button>
-            </View>
-            <Button
-              className='check-in-button'
-              loading={recordingState === "uploading"}
-              disabled={recordingState === "uploading"}
-              onClick={submitCheckIn}
+            <Text
+              className='practice-header__directory device-touch-target'
+              onClick={openPracticeDirectory}
             >
-              {recordingState === "uploading" ? "正在上传" : "完成本次打卡"}
-            </Button>
-          </>
-        )}
-      </View>
-
-      <View className='practice-navigation'>
-        <View
-          className={`practice-navigation__button ${
-            practiceIndex === 0 ? "practice-navigation__button--disabled" : ""
-          }`}
-          onClick={() =>
-            practiceIndex > 0 && requestPracticeSwitch(practiceIndex - 1)
-          }
-        >
-          <Text>上一个训练</Text>
+              目录
+            </Text>
+          </View>
         </View>
-        <View
-          className={`practice-navigation__button practice-navigation__button--primary ${
-            practiceIndex === bundle.practices.length - 1
-              ? "practice-navigation__button--disabled"
-              : ""
-          }`}
-          onClick={() =>
-            practiceIndex < bundle.practices.length - 1 &&
-            requestPracticeSwitch(practiceIndex + 1)
-          }
-        >
-          <Text>下一个训练</Text>
+
+        <View className='practice-workspace'>
+          <View className='practice-workspace__book'>
+            <View className='practice-book-page'>
+              <Image
+                className='practice-book-page__image'
+                src={practice.imageUrl}
+                mode='widthFix'
+                webp
+                lazyLoad
+                onLoad={measureBookImage}
+              />
+              <View className='practice-book-page__hotspots'>
+                {clampedHotspots.map((hotspot, index) => (
+                  <View
+                    key={hotspot.id}
+                    className={`audio-hotspot device-touch-target ${
+                      playingTrackId === hotspot.id ? "audio-hotspot--playing" : ""
+                    }`}
+                    style={{ left: hotspot.left, top: hotspot.top }}
+                    onClick={() => playModelAudio(hotspot.id, hotspot.url)}
+                  >
+                    <View className='audio-hotspot__visual'>
+                      <Text className='audio-hotspot__icon'>
+                        {playingTrackId === hotspot.id ? "◼" : "▶"}
+                      </Text>
+                      <Text className='audio-hotspot__number'>{index + 1}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          <View className='practice-workspace__controls'>
+            <View className='practice-recorder'>
+              <View className='practice-recorder__heading'>
+                <Text className='practice-recorder__title'>我的跟读</Text>
+                <Text className='practice-recorder__time'>
+                  {shownDuration > 0 ? formatDuration(shownDuration) : "最长 5:00"}
+                </Text>
+              </View>
+
+              {recordingState === "idle" && (
+                <Button
+                  className='record-button device-touch-target'
+                  onClick={startRecording}
+                >
+                  <Text className='record-button__dot' />
+                  开始跟读录音
+                </Button>
+              )}
+
+              {recordingState === "recording" && (
+                <>
+                  <View className='recording-indicator'>
+                    <Text className='recording-indicator__pulse' />
+                    <Text>正在录音，请完成本页跟读</Text>
+                  </View>
+                  <View className='recording-controls device-actions'>
+                    <Button
+                      className='record-button device-touch-target record-button--pause'
+                      onClick={pauseRecording}
+                    >
+                      暂停录音
+                    </Button>
+                    <Button
+                      className='record-button device-touch-target record-button--stop'
+                      onClick={stopRecording}
+                    >
+                      结束录音
+                    </Button>
+                  </View>
+                </>
+              )}
+
+              {recordingState === "paused" && (
+                <>
+                  <View className='recording-indicator recording-indicator--paused'>
+                    <Text className='recording-indicator__pulse' />
+                    <Text>录音已暂停，可播放示范音频后继续</Text>
+                  </View>
+                  <View className='recording-controls device-actions'>
+                    <Button
+                      className='record-button device-touch-target record-button--resume'
+                      onClick={resumeRecording}
+                    >
+                      继续录音
+                    </Button>
+                    <Button
+                      className='record-button device-touch-target record-button--stop'
+                      onClick={stopRecording}
+                    >
+                      结束录音
+                    </Button>
+                  </View>
+                </>
+              )}
+
+              {(recordingState === "recorded" || recordingState === "uploading") && (
+                <>
+                  <Text className='practice-recorder__tip'>
+                    已录制 {formatDuration(recordingDurationMs)}，请先回听确认。
+                  </Text>
+                  <View className='record-actions device-actions'>
+                    <Button
+                      className='record-actions__secondary device-touch-target'
+                      disabled={recordingState === "uploading"}
+                      onClick={playRecording}
+                    >
+                      {isPlayingRecording ? "停止回听" : "回听录音"}
+                    </Button>
+                    <Button
+                      className='record-actions__secondary device-touch-target'
+                      disabled={recordingState === "uploading"}
+                      onClick={startRecording}
+                    >
+                      重新录制
+                    </Button>
+                  </View>
+                  <Button
+                    className='check-in-button device-touch-target'
+                    loading={recordingState === "uploading"}
+                    disabled={recordingState === "uploading"}
+                    onClick={submitCheckIn}
+                  >
+                    {recordingState === "uploading" ? "正在上传" : "完成本次打卡"}
+                  </Button>
+                </>
+              )}
+            </View>
+
+            <View className='practice-navigation device-actions'>
+              <View
+                className={`practice-navigation__button device-touch-target ${
+                  practiceIndex === 0 ? "practice-navigation__button--disabled" : ""
+                }`}
+                onClick={() =>
+                  practiceIndex > 0 && requestPracticeSwitch(practiceIndex - 1)
+                }
+              >
+                <Text>上一个训练</Text>
+              </View>
+              <View
+                className={`practice-navigation__button device-touch-target practice-navigation__button--primary ${
+                  practiceIndex === bundle.practices.length - 1
+                    ? "practice-navigation__button--disabled"
+                    : ""
+                }`}
+                onClick={() =>
+                  practiceIndex < bundle.practices.length - 1 &&
+                  requestPracticeSwitch(practiceIndex + 1)
+                }
+              >
+                <Text>下一个训练</Text>
+              </View>
+            </View>
+          </View>
         </View>
       </View>
 

@@ -1,4 +1,5 @@
 export default definePageConfig({
+  pageOrientation: "auto",
   navigationBarTitleText: "全部教材",
   navigationBarBackgroundColor: "#ffffff",
   navigationBarTextStyle: "black",

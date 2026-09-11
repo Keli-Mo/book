@@ -1,6 +1,7 @@
 .check-in-detail {
   min-height: 100vh;
   padding: 42rpx 30rpx 80rpx;
+  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
   box-sizing: border-box;
   background:
     radial-gradient(circle at 50% 0, rgba(68, 161, 128, 0.18), transparent 32%),
@@ -91,6 +92,7 @@
   flex-direction: column;
   min-height: 100vh;
   padding: 50rpx;
+  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
   box-sizing: border-box;
   background: #f4f7f5;
   color: #71827b;
@@ -99,4 +101,22 @@
   &__title { color: #2b443b; font-size: 34rpx; font-weight: 700; }
   &__message { margin-top: 18rpx; font-size: 24rpx; line-height: 1.7; }
   &__button { width: 280rpx; margin-top: 32rpx; background: #2f896c; color: #ffffff; }
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .check-in-detail,
+  .check-in-state { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 360PX) {
+  .check-in-course-card {
+    &__image { width: 150rpx; flex-basis: 150rpx; }
+    &__content { min-width: 0; padding: 22rpx; }
+    &__book,
+    &__section,
+    &__meta { overflow-wrap: anywhere; }
+  }
+
+  .check-in-actions__share,
+  .check-in-actions__practice { flex: 1 1 100%; }
 }

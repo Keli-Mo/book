@@ -1,6 +1,7 @@
 .my-check-ins {
   min-height: 100vh;
   padding: 38rpx 28rpx 80rpx;
+  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
   box-sizing: border-box;
   background: #f4f7f5;
   color: #24362f;
@@ -8,6 +9,15 @@
   &__intro { display: flex; flex-direction: column; padding: 8rpx 8rpx 30rpx; }
   &__title { color: #183f34; font-size: 42rpx; font-weight: 800; }
   &__tip { margin-top: 10rpx; color: #71827b; font-size: 24rpx; }
+}
+
+// 宽 Pad 以两列提高检查效率，单栏手机仍保持原卡片节奏。
+.device-layout--split .my-check-ins__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24PX;
+
+  .check-in-list-card { margin-bottom: 0; }
 }
 
 .check-in-list-card {
@@ -64,6 +74,7 @@
   flex-direction: column;
   min-height: 100vh;
   padding: 52rpx;
+  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
   box-sizing: border-box;
   background: #f4f7f5;
   color: #71827b;
@@ -82,5 +93,22 @@
     line-height: 82rpx;
 
     &::after { border: 0; }
+  }
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .my-check-ins,
+  .my-check-ins-state { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 360PX) {
+  .check-in-list-card {
+    &__preview { width: 146rpx; flex-basis: 146rpx; padding: 8rpx; }
+    &__content { padding-right: 18rpx; padding-left: 18rpx; }
+    &__section,
+    &__book { white-space: normal; overflow-wrap: anywhere; }
+    &__actions { flex-direction: column; }
+    &__open,
+    &__delete { width: 100%; }
   }
 }

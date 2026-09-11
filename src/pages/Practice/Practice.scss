@@ -1,10 +1,13 @@
 .practice-page {
   min-height: 100vh;
   padding: 34rpx 26rpx 80rpx;
+  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
   box-sizing: border-box;
   background: #f4f7f5;
   color: #24362f;
 }
+
+.practice-page__content { min-width: 0; }
 
 .practice-header {
   display: flex;
@@ -39,6 +42,22 @@
   box-shadow: 0 16rpx 40rpx rgba(37, 69, 58, 0.12);
 
   &__image { display: block; width: 100%; }
+  &__hotspots {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+}
+
+.practice-workspace__book,
+.practice-workspace__controls { min-width: 0; }
+
+// 宽 Pad 的教材与录音控制同时可见；手机横屏仍走单栏。
+.device-layout--split .practice-workspace {
+  display: grid;
+  grid-template-columns: minmax(480PX, 1fr) minmax(320PX, 1fr);
+  gap: 24PX;
+  align-items: start;
 }
 
 .audio-hotspot {
@@ -46,15 +65,30 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 58rpx;
-  height: 58rpx;
-  border: 4rpx solid #ffffff;
-  border-radius: 50%;
-  background: #ed7040;
-  box-shadow: 0 6rpx 16rpx rgba(132, 48, 17, 0.32);
+  width: 44PX;
+  height: 44PX;
+  border: 0;
+  background: transparent;
   transform: translate(-50%, -50%);
+  pointer-events: auto;
 
-  &--playing { background: #2e8b70; box-shadow: 0 6rpx 18rpx rgba(32, 110, 86, 0.34); }
+  &__visual {
+    position: relative;
+    display: flex;
+    width: 58rpx;
+    height: 58rpx;
+    flex: 0 0 58rpx;
+    align-items: center;
+    justify-content: center;
+    border: 4rpx solid #ffffff;
+    border-radius: 50%;
+    background: #ed7040;
+    box-shadow: 0 6rpx 16rpx rgba(132, 48, 17, 0.32);
+  }
+  &--playing &__visual {
+    background: #2e8b70;
+    box-shadow: 0 6rpx 18rpx rgba(32, 110, 86, 0.34);
+  }
   &__icon { margin-left: 2rpx; color: #ffffff; font-size: 20rpx; }
   &__number {
     position: absolute;
@@ -184,7 +218,21 @@ button[disabled] { opacity: 0.5; }
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  padding: 32rpx;
+  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
+  box-sizing: border-box;
+  flex-direction: column;
   color: #7c8984;
+
+  &__button {
+    margin-top: 28rpx;
+    border: 0;
+    border-radius: 18rpx;
+    background: #2f896c;
+    color: #ffffff;
+
+    &::after { border: 0; }
+  }
 }
 
 .practice-directory-mask {
@@ -199,7 +247,8 @@ button[disabled] { opacity: 0.5; }
 .practice-directory-sheet {
   width: 100%;
   max-height: 78vh;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
+  box-sizing: border-box;
   border-radius: 32rpx 32rpx 0 0;
   background: #f5f8f6;
 }
@@ -230,6 +279,45 @@ button[disabled] { opacity: 0.5; }
   border: 2rpx solid #d6e0dc;
   border-radius: 18rpx;
   background: #ffffff;
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .practice-page,
+  .practice-empty { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
+  .practice-directory-sheet { padding-bottom: calc(12PX + env(safe-area-inset-bottom)); }
+}
+
+.device-layout--split .practice-directory-mask {
+  justify-content: flex-end;
+  align-items: stretch;
+}
+
+.device-layout--split .practice-directory-sheet {
+  width: 360PX;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 32rpx 0 0 32rpx;
+}
+
+.device-layout--split .practice-directory-scroll {
+  height: calc(100vh - 88PX);
+}
+
+@media (max-width: 360PX) {
+  .practice-header {
+    &__course,
+    &__section,
+    &__progress { overflow-wrap: anywhere; }
+    &__progress-row { gap: 12rpx; }
+  }
+
+  .recording-controls,
+  .record-actions,
+  .practice-navigation { flex-direction: column; }
+
+  .recording-controls .record-button,
+  .record-actions__secondary,
+  .practice-navigation__button { width: 100%; flex: 1 1 auto; }
 }
 .practice-directory-item--active { border-color: #2f896c; background: #e4f3ed; }
 .practice-directory-item__page { display: block; font-size: 26rpx; font-weight: 700; }

@@ -75,8 +75,14 @@ export const useDeviceLayout = (): DeviceLayoutState => {
       setLayout(readDeviceLayout(size));
     };
 
+    // 非微信测试壳或旧运行时可能没有窗口订阅 API，保留初始化布局即可。
+    if (typeof Taro.onWindowResize !== "function") return undefined;
     Taro.onWindowResize(handleResize);
-    return () => Taro.offWindowResize(handleResize);
+    return () => {
+      if (typeof Taro.offWindowResize === "function") {
+        Taro.offWindowResize(handleResize);
+      }
+    };
   }, []);
 
   return layout;

@@ -7,7 +7,9 @@ import {
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
 import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavigation";
+import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import { sharedImage } from "@/constant";
 
 import "./Home.scss";
@@ -15,10 +17,15 @@ import "./Home.scss";
 const PRIMARY_BOOK = BOOKS.find((book) => book.id === DEFAULT_BOOK_ID) || BOOKS[0];
 
 export default function Home() {
-  const windowInfo = Taro.getSystemInfoSync();
+  const layout = useDeviceLayout();
+  // 首页采用用户确认的单栏方案，宽 Pad 也只增加留白，不改成信息双列。
+  const layoutClassName = buildDeviceLayoutClassName({
+    ...layout,
+    isSplit: false,
+  });
   const navigationMetrics = calculateHomeNavigationMetrics(
-    windowInfo.windowWidth,
-    windowInfo.statusBarHeight || 20,
+    layout.windowWidth,
+    layout.statusBarHeight,
     Taro.getMenuButtonBoundingClientRect(),
   );
 
@@ -46,7 +53,7 @@ export default function Home() {
   };
 
   return (
-    <View className='library-home'>
+    <View className={`library-home ${layoutClassName}`}>
       <View
         className='library-home__navigation'
         style={{ paddingTop: `${navigationMetrics.statusBarHeight}px` }}
@@ -63,7 +70,7 @@ export default function Home() {
             <Text>海沙牛娃</Text>
           </View>
           <View
-            className='library-home__search'
+            className='library-home__search device-touch-target'
             hoverClass='is-pressed'
             onClick={() => openLibrary("all")}
           >
@@ -72,7 +79,7 @@ export default function Home() {
         </View>
       </View>
 
-      <View className='library-home__content'>
+      <View className='library-home__content device-layout__content'>
         <Text className='library-home__heading'>继续跟读</Text>
 
         <View className='continue-card'>
@@ -90,7 +97,7 @@ export default function Home() {
               <Text>可跟读</Text>
             </View>
             <View
-              className='continue-card__button'
+              className='continue-card__button device-touch-target'
               hoverClass='is-pressed'
               onClick={startPractice}
             >
@@ -106,7 +113,7 @@ export default function Home() {
               <Text className='series-section__summary'>5 个系列 · 23 册</Text>
             </View>
             <View
-              className='series-section__all'
+              className='series-section__all device-touch-target'
               hoverClass='is-pressed'
               onClick={() => openLibrary("all")}
             >
@@ -150,12 +157,12 @@ export default function Home() {
       </View>
 
       <View className='home-tabs'>
-        <View className='home-tabs__item is-active'>
+        <View className='home-tabs__item device-touch-target is-active'>
           <AtIcon value='folder' size='24' color='#2f856a' />
           <Text>学习</Text>
         </View>
         <View
-          className='home-tabs__item'
+          className='home-tabs__item device-touch-target'
           hoverClass='is-pressed'
           onClick={openMyCheckIns}
         >

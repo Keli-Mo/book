@@ -2,6 +2,7 @@
   min-height: 100vh;
   box-sizing: border-box;
   padding: 32rpx 34rpx 64rpx;
+  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
   background:
     radial-gradient(circle at 88% 2%, rgba(210, 239, 229, 0.34), transparent 25%),
     #f7faf9;
@@ -24,6 +25,24 @@
     margin-top: 8rpx;
     color: #6f817a;
     font-size: 23rpx;
+  }
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .book-library { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
+}
+
+// 宽 Pad 才将教材列表分为两栏；手机横屏仍沿用原来的单栏列表。
+.device-layout--split .book-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24PX;
+}
+
+@media (max-width: 360PX) {
+  .book-row {
+    &__meta,
+    &__state { white-space: normal; }
   }
 }
 

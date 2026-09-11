@@ -24,6 +24,25 @@ export type DeviceLayoutProfile = {
   safeAreaBottom: number;
 };
 
+type DeviceLayoutClassProfile = Pick<
+  DeviceLayoutProfile,
+  "isPad" | "orientation" | "isSplit"
+>;
+
+/**
+ * 页面只消费互斥的设备 class，避免横屏手机误进 Pad 双栏。
+ * Home 等需要固定单栏的页面可在调用前把 isSplit 覆盖为 false。
+ */
+export const buildDeviceLayoutClassName = (
+  profile: DeviceLayoutClassProfile,
+): string =>
+  [
+    "device-layout",
+    `device-layout--${profile.orientation}`,
+    profile.isPad ? "device-layout--pad" : "device-layout--phone",
+    profile.isSplit ? "device-layout--split" : "device-layout--single",
+  ].join(" ");
+
 const isPositiveFinite = (value: number): boolean =>
   Number.isFinite(value) && value > 0;
 

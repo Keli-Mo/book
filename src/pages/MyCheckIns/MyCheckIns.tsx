@@ -11,11 +11,15 @@ import {
   formatCheckInTime,
   formatRecordingDuration,
 } from "@/utils/checkInFormat";
+import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 
 import "./MyCheckIns.scss";
 
 export default function MyCheckIns() {
+  const layout = useDeviceLayout();
+  const layoutClassName = buildDeviceLayoutClassName(layout);
   const [records, setRecords] = useState<CheckInSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -70,26 +74,35 @@ export default function MyCheckIns() {
   };
 
   if (loading) {
-    return <View className='my-check-ins-state'>正在读取我的打卡…</View>;
+    return (
+      <View className={`my-check-ins-state device-layout__content ${layoutClassName}`}>
+        正在读取我的打卡…
+      </View>
+    );
   }
 
   if (errorMessage) {
     return (
-      <View className='my-check-ins-state'>
+      <View className={`my-check-ins-state device-layout__content ${layoutClassName}`}>
         <Text className='my-check-ins-state__title'>暂时无法读取打卡</Text>
         <Text className='my-check-ins-state__text'>{errorMessage}</Text>
-        <Button className='my-check-ins-state__button' onClick={loadRecords}>重新加载</Button>
+        <Button
+          className='my-check-ins-state__button device-touch-target'
+          onClick={loadRecords}
+        >
+          重新加载
+        </Button>
       </View>
     );
   }
 
   if (records.length === 0) {
     return (
-      <View className='my-check-ins-state'>
+      <View className={`my-check-ins-state device-layout__content ${layoutClassName}`}>
         <Text className='my-check-ins-state__title'>还没有跟读打卡</Text>
         <Text className='my-check-ins-state__text'>完成一段录音并确认上传后，会显示在这里。</Text>
         <Button
-          className='my-check-ins-state__button'
+          className='my-check-ins-state__button device-touch-target'
           onClick={() =>
             Taro.navigateTo({
               url: `/pages/Practice/Practice?bookId=${DEFAULT_BOOK_ID}&practice=0`,
@@ -103,37 +116,49 @@ export default function MyCheckIns() {
   }
 
   return (
-    <View className='my-check-ins'>
+    <View className={`my-check-ins device-layout__content ${layoutClassName}`}>
       <View className='my-check-ins__intro'>
         <Text className='my-check-ins__title'>我的录音打卡</Text>
         <Text className='my-check-ins__tip'>共 {records.length} 次</Text>
       </View>
 
-      {records.map((record) => (
-        <View className='check-in-list-card' key={record.id}>
-          <View className='check-in-list-card__preview'>
-            {/* 使用打卡记录中的教材内页，老师可直接确认学生练习的位置。 */}
-            <Image
-              className='check-in-list-card__image'
-              src={record.imageUrl}
-              mode='aspectFit'
-              webp
-              lazyLoad
-            />
-          </View>
-          <View className='check-in-list-card__content'>
-            <Text className='check-in-list-card__section'>{record.sectionTitle}</Text>
-            <Text className='check-in-list-card__book'>{record.bookTitle}</Text>
-            <Text className='check-in-list-card__meta'>
-              第 {record.pageNumber} 页 · {formatCheckInTime(record.createdAt)} · {formatRecordingDuration(record.durationMs)}
-            </Text>
-            <View className='check-in-list-card__actions'>
-              <Button className='check-in-list-card__open' onClick={() => openRecord(record)}>回听与分享</Button>
-              <Button className='check-in-list-card__delete' onClick={() => deleteRecord(record)}>删除</Button>
+      <View className='my-check-ins__list'>
+        {records.map((record) => (
+          <View className='check-in-list-card' key={record.id}>
+            <View className='check-in-list-card__preview'>
+              {/* 使用打卡记录中的教材内页，老师可直接确认学生练习的位置。 */}
+              <Image
+                className='check-in-list-card__image'
+                src={record.imageUrl}
+                mode='aspectFit'
+                webp
+                lazyLoad
+              />
+            </View>
+            <View className='check-in-list-card__content'>
+              <Text className='check-in-list-card__section'>{record.sectionTitle}</Text>
+              <Text className='check-in-list-card__book'>{record.bookTitle}</Text>
+              <Text className='check-in-list-card__meta'>
+                第 {record.pageNumber} 页 · {formatCheckInTime(record.createdAt)} · {formatRecordingDuration(record.durationMs)}
+              </Text>
+              <View className='check-in-list-card__actions device-actions'>
+                <Button
+                  className='check-in-list-card__open device-touch-target'
+                  onClick={() => openRecord(record)}
+                >
+                  回听与分享
+                </Button>
+                <Button
+                  className='check-in-list-card__delete device-touch-target'
+                  onClick={() => deleteRecord(record)}
+                >
+                  删除
+                </Button>
+              </View>
             </View>
           </View>
-        </View>
-      ))}
+        ))}
+      </View>
     </View>
   );
 }

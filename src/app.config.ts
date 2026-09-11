@@ -1,4 +1,5 @@
 export default defineAppConfig({
+  resizable: true,
   pages: [
     "pages/Home/Home",
     "pages/BookLibrary/BookLibrary",

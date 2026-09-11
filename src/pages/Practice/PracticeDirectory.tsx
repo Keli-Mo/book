@@ -35,7 +35,10 @@ export default function PracticeDirectory({
       >
         <View className='practice-directory-header'>
           <Text className='practice-directory-title'>训练目录</Text>
-          <Text className='practice-directory-close' onClick={onClose}>
+          <Text
+            className='practice-directory-close device-touch-target'
+            onClick={onClose}
+          >
             关闭
           </Text>
         </View>
@@ -57,7 +60,7 @@ export default function PracticeDirectory({
                 {group.items.map((item) => (
                   <View
                     key={item.id}
-                    className={`practice-directory-item ${
+                    className={`practice-directory-item device-touch-target ${
                       item.practiceIndex === currentPracticeIndex
                         ? "practice-directory-item--active"
                         : ""

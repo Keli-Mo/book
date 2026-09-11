@@ -10,6 +10,8 @@ import {
   type BookCatalogItem,
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
+import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
+import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import { sharedImage } from "@/constant";
 
 import "./BookLibrary.scss";
@@ -18,6 +20,8 @@ const isSeriesId = (value: string): value is BookSeriesId =>
   BOOK_SERIES.some((series) => series.id === value);
 
 export default function BookLibrary() {
+  const layout = useDeviceLayout();
+  const layoutClassName = buildDeviceLayoutClassName(layout);
   const router = useRouter();
   const requestedSeries = router.params?.series || "all";
   const [seriesId, setSeriesId] = useState<BookSeriesId | "all">(
@@ -45,7 +49,7 @@ export default function BookLibrary() {
   };
 
   return (
-    <View className='book-library'>
+    <View className={`book-library device-layout__content ${layoutClassName}`}>
       <View className='book-library__heading'>
         <Text className='book-library__title'>
           {currentSeries?.title || "全部教材"}
@@ -66,7 +70,7 @@ export default function BookLibrary() {
         />
         {query ? (
           <View
-            className='book-search__clear'
+            className='book-search__clear device-touch-target'
             hoverClass='is-pressed'
             onClick={() => setQuery("")}
           >
@@ -78,7 +82,9 @@ export default function BookLibrary() {
       <ScrollView className='series-filters' scrollX enhanced showScrollbar={false}>
         <View className='series-filters__track'>
           <View
-            className={`series-filter ${seriesId === "all" ? "is-selected" : ""}`}
+            className={`series-filter device-touch-target ${
+              seriesId === "all" ? "is-selected" : ""
+            }`}
             hoverClass='is-pressed'
             onClick={() => setSeriesId("all")}
           >
@@ -86,7 +92,7 @@ export default function BookLibrary() {
           </View>
           {BOOK_SERIES.map((series) => (
             <View
-              className={`series-filter ${
+              className={`series-filter device-touch-target ${
                 seriesId === series.id ? "is-selected" : ""
               }`}
               key={series.id}

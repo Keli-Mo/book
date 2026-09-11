@@ -6,6 +6,7 @@ import Taro, {
 } from "@tarojs/taro";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { sharedImage } from "@/constant";
+import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import {
   getPlaybackPositionMs,
@@ -20,10 +21,13 @@ import {
   formatCheckInTime,
   formatPlaybackDurationLabel,
 } from "@/utils/checkInFormat";
+import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 
 import "./CheckInDetail.scss";
 
 export default function CheckInDetail() {
+  const layout = useDeviceLayout();
+  const layoutClassName = buildDeviceLayoutClassName(layout);
   const router = useRouter();
   const recordId = router.params?.id || "";
   const routeToken = router.params?.token || "";
@@ -147,15 +151,22 @@ export default function CheckInDetail() {
   };
 
   if (loading) {
-    return <View className='check-in-state'>正在读取打卡录音…</View>;
+    return (
+      <View className={`check-in-state device-layout__content ${layoutClassName}`}>
+        正在读取打卡录音…
+      </View>
+    );
   }
 
   if (!detail) {
     return (
-      <View className='check-in-state'>
+      <View className={`check-in-state device-layout__content ${layoutClassName}`}>
         <Text className='check-in-state__title'>暂时无法打开这条打卡</Text>
         <Text className='check-in-state__message'>{errorMessage}</Text>
-        <Button className='check-in-state__button' onClick={() => Taro.reLaunch({ url: "/pages/Home/Home" })}>
+        <Button
+          className='check-in-state__button device-touch-target'
+          onClick={() => Taro.reLaunch({ url: "/pages/Home/Home" })}
+        >
           返回首页
         </Button>
       </View>
@@ -163,7 +174,7 @@ export default function CheckInDetail() {
   }
 
   return (
-    <View className='check-in-detail'>
+    <View className={`check-in-detail device-layout__content ${layoutClassName}`}>
       <View className='check-in-detail__success'>
         <Text className='check-in-detail__check'>✓</Text>
         <Text className='check-in-detail__eyebrow'>FOLLOW-READING CHECK-IN</Text>
@@ -172,7 +183,7 @@ export default function CheckInDetail() {
       </View>
 
       <View className='check-in-course-card'>
-        <Image className='check-in-course-card__image' src={detail.imageUrl} mode='aspectFill' webp />
+        <Image className='check-in-course-card__image' src={detail.imageUrl} mode='aspectFit' webp />
         <View className='check-in-course-card__content'>
           <Text className='check-in-course-card__book'>{detail.bookTitle}</Text>
           <Text className='check-in-course-card__section'>{detail.sectionTitle}</Text>
@@ -191,7 +202,10 @@ export default function CheckInDetail() {
             detail.durationMs,
           )}
         </Text>
-        <Button className='shared-recording__play' onClick={toggleRecording}>
+        <Button
+          className='shared-recording__play device-touch-target'
+          onClick={toggleRecording}
+        >
           <Text className='shared-recording__play-icon'>{isPlaying ? "■" : "▶"}</Text>
           {isPlaying ? "停止播放" : "播放本次跟读"}
         </Button>
@@ -200,9 +214,14 @@ export default function CheckInDetail() {
         </Text>
       </View>
 
-      <View className='check-in-actions'>
-        <Button className='check-in-actions__share' openType='share'>分享这次打卡</Button>
-        <Button className='check-in-actions__practice' onClick={startThisPractice}>
+      <View className='check-in-actions device-actions'>
+        <Button className='check-in-actions__share device-touch-target' openType='share'>
+          分享这次打卡
+        </Button>
+        <Button
+          className='check-in-actions__practice device-touch-target'
+          onClick={startThisPractice}
+        >
           {practiceUrl ? "我也来跟读" : "选择教材"}
         </Button>
       </View>

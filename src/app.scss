@@ -1,0 +1,34 @@
+.device-layout {
+  width: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.device-layout__content {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+}
+
+// Pad 单栏与双栏统一由运行时 profile 控制，手机横屏不会触发这些宽度。
+.device-layout--pad.device-layout--single.device-layout__content,
+.device-layout--pad.device-layout--single .device-layout__content {
+  max-width: 820PX;
+}
+
+.device-layout--split.device-layout__content,
+.device-layout--split .device-layout__content {
+  max-width: 1280PX;
+}
+
+// 大写 PX 会跳过 Taro 的 px→rpx 转换，保证所有机型都有 44 CSS px 命中区。
+.device-touch-target {
+  min-width: 44PX;
+  min-height: 44PX;
+  box-sizing: border-box;
+}
+
+.device-actions {
+  display: flex;
+  flex-wrap: wrap;
+}
