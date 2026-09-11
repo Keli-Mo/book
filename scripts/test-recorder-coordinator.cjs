@@ -128,6 +128,121 @@ assert.equal(coordinator.getPhase(), "draining");
 primaryScheduler.advance(10);
 assert.equal(coordinator.getPhase(), "idle");
 
+const pauseWatchdogNative = createNativeRecorder();
+const pauseWatchdogScheduler = createFakeScheduler();
+const pauseWatchdogCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => pauseWatchdogNative.manager,
+  scheduler: pauseWatchdogScheduler,
+  quietWindowMs: 10,
+});
+const pauseWatchdogOwner = pauseWatchdogCoordinator.acquire();
+const pauseWatchdogStops = [];
+pauseWatchdogOwner.owner.subscribe({ onStop(result) { pauseWatchdogStops.push(result); } });
+pauseWatchdogOwner.owner.start(options);
+pauseWatchdogNative.emit("start");
+pauseWatchdogOwner.owner.pause();
+pauseWatchdogScheduler.advance(999);
+assert.equal(pauseWatchdogNative.calls.stop, 0, "pause 确认等待未满 1000ms 时不得提前 stop");
+pauseWatchdogScheduler.advance(1);
+assert.equal(pauseWatchdogNative.calls.stop, 1, "pause 确认超过 1000ms 未到必须触发安全 stop");
+assert.equal(pauseWatchdogCoordinator.getPhase(), "stopping");
+const pauseTimeoutStop = { duration: 1000, fileSize: 10, tempFilePath: "/tmp/pause-timeout.mp3" };
+pauseWatchdogNative.emit("stop", pauseTimeoutStop);
+assert.deepEqual(pauseWatchdogStops, [pauseTimeoutStop], "watchdog stop 的原生结果仍须交给当前 owner 保存");
+pauseWatchdogScheduler.advance(10);
+
+const resumeWatchdogNative = createNativeRecorder();
+const resumeWatchdogScheduler = createFakeScheduler();
+const resumeWatchdogCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => resumeWatchdogNative.manager,
+  scheduler: resumeWatchdogScheduler,
+  operationTimeoutMs: 25,
+  quietWindowMs: 10,
+});
+const resumeWatchdogOwner = resumeWatchdogCoordinator.acquire();
+resumeWatchdogOwner.owner.start(options);
+resumeWatchdogNative.emit("start");
+resumeWatchdogOwner.owner.pause();
+resumeWatchdogNative.emit("pause");
+resumeWatchdogOwner.owner.resume();
+resumeWatchdogScheduler.advance(24);
+assert.equal(resumeWatchdogNative.calls.stop, 0, "自定义 resume 确认窗口内不得提前 stop");
+resumeWatchdogScheduler.advance(1);
+assert.equal(resumeWatchdogNative.calls.stop, 1, "resume 确认超时必须触发安全 stop");
+assert.equal(resumeWatchdogCoordinator.getPhase(), "stopping");
+
+const confirmedNative = createNativeRecorder();
+const confirmedScheduler = createFakeScheduler();
+const confirmedCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => confirmedNative.manager,
+  scheduler: confirmedScheduler,
+  operationTimeoutMs: 25,
+});
+const confirmedOwner = confirmedCoordinator.acquire();
+confirmedOwner.owner.start(options);
+confirmedNative.emit("start");
+confirmedOwner.owner.pause();
+confirmedScheduler.advance(24);
+confirmedNative.emit("pause");
+confirmedScheduler.advance(100);
+assert.equal(confirmedNative.calls.stop, 0, "及时 onPause 必须取消 watchdog");
+confirmedOwner.owner.resume();
+confirmedScheduler.advance(24);
+confirmedNative.emit("resume");
+confirmedScheduler.advance(100);
+assert.equal(confirmedNative.calls.stop, 0, "及时 onResume 必须取消 watchdog");
+confirmedOwner.owner.stop();
+assert.equal(confirmedNative.calls.stop, 1, "确认成功后只允许用户 stop 一次");
+
+const releasedWatchdogNative = createNativeRecorder();
+const releasedWatchdogScheduler = createFakeScheduler();
+const releasedWatchdogCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => releasedWatchdogNative.manager,
+  scheduler: releasedWatchdogScheduler,
+  operationTimeoutMs: 25,
+});
+const releasedWatchdogOwner = releasedWatchdogCoordinator.acquire();
+releasedWatchdogOwner.owner.start(options);
+releasedWatchdogNative.emit("start");
+releasedWatchdogOwner.owner.pause();
+releasedWatchdogOwner.owner.release();
+assert.equal(releasedWatchdogNative.calls.stop, 1, "release 应立即安全 stop");
+releasedWatchdogScheduler.advance(25);
+assert.equal(releasedWatchdogNative.calls.stop, 1, "release 必须清理 watchdog，不能重复 stop");
+
+const terminalWatchdogNative = createNativeRecorder();
+const terminalWatchdogScheduler = createFakeScheduler();
+const terminalWatchdogCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => terminalWatchdogNative.manager,
+  scheduler: terminalWatchdogScheduler,
+  operationTimeoutMs: 25,
+  quietWindowMs: 10,
+});
+const terminalWatchdogOwner = terminalWatchdogCoordinator.acquire();
+terminalWatchdogOwner.owner.start(options);
+terminalWatchdogNative.emit("start");
+terminalWatchdogOwner.owner.pause();
+terminalWatchdogNative.emit("stop", { tempFilePath: "/tmp/native-stop.mp3" });
+terminalWatchdogScheduler.advance(25);
+assert.equal(terminalWatchdogNative.calls.stop, 0, "原生 terminal 必须清理 watchdog，不能补发 stop");
+
+const errorWatchdogNative = createNativeRecorder();
+const errorWatchdogScheduler = createFakeScheduler();
+const errorWatchdogCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => errorWatchdogNative.manager,
+  scheduler: errorWatchdogScheduler,
+  operationTimeoutMs: 25,
+});
+const errorWatchdogOwner = errorWatchdogCoordinator.acquire();
+errorWatchdogOwner.owner.start(options);
+errorWatchdogNative.emit("start");
+errorWatchdogOwner.owner.pause();
+errorWatchdogNative.emit("pause");
+errorWatchdogOwner.owner.resume();
+errorWatchdogNative.emit("error", { errMsg: "resume failed" });
+errorWatchdogScheduler.advance(25);
+assert.equal(errorWatchdogNative.calls.stop, 0, "原生 error 必须清理 watchdog，不能补发 stop");
+
 const eventNative = createNativeRecorder();
 const eventScheduler = createFakeScheduler();
 const eventCoordinator = createRecorderCoordinator({ getRecorderManager: () => eventNative.manager, scheduler: eventScheduler, quietWindowMs: 10 });
