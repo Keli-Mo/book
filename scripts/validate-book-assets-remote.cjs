@@ -23,8 +23,8 @@ const CONFIG_LIMITS = Object.freeze({
 });
 const RETRYABLE_CATEGORIES = new Set(["server-error", "timeout", "network-error"]);
 
-const loadTypeScriptConstantFile = (filename) => {
-  const source = fs.readFileSync(path.join(constantsRoot, filename), "utf8");
+const loadTypeScriptFile = (sourcePath) => {
+  const source = fs.readFileSync(sourcePath, "utf8");
   const output = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -40,16 +40,26 @@ const loadTypeScriptConstantFile = (filename) => {
   return loadedModule.exports;
 };
 
-const loadBookAssetConstants = () => ({
-  concatImages: loadTypeScriptConstantFile("images.ts").concatImages,
-  allAudioList: loadTypeScriptConstantFile("audioList.ts").allAudioList,
-  bookIds: BOOK_IDS,
-});
+const loadTypeScriptConstantFile = (filename) =>
+  loadTypeScriptFile(path.join(constantsRoot, filename));
+
+const loadBookAssetConstants = () => {
+  const { BOOKS, BOOK_SERIES } = loadTypeScriptFile(
+    path.join(projectRoot, "src/features/bookLibrary/bookCatalog.ts"),
+  );
+  return {
+    concatImages: loadTypeScriptConstantFile("images.ts").concatImages,
+    allAudioList: loadTypeScriptConstantFile("audioList.ts").allAudioList,
+    bookIds: BOOK_IDS,
+    bookCovers: BOOKS.map(({ id, cover }) => ({ bookId: id, url: cover })),
+    seriesCovers: BOOK_SERIES.map(({ id, cover }) => ({ seriesId: id, url: cover })),
+  };
+};
 
 const sourceSortKey = (source) =>
   [
-    String(source.bookId).padStart(3, "0"),
-    source.type === "image" ? "0" : "1",
+    String(source.bookId ?? source.seriesId).padStart(3, "0"),
+    source.type === "cover" ? "0" : source.type === "series-cover" ? "1" : source.type === "image" ? "2" : "3",
     String(source.pageNumber ?? -1).padStart(5, "0"),
     String(source.imageIndex ?? source.trackIndex ?? -1).padStart(5, "0"),
   ].join("|");
@@ -57,7 +67,13 @@ const sourceSortKey = (source) =>
 const sortSources = (sources) =>
   [...sources].sort((left, right) => sourceSortKey(left).localeCompare(sourceSortKey(right)));
 
-const collectBookAssets = ({ concatImages, allAudioList, bookIds = BOOK_IDS }) => {
+const collectBookAssets = ({
+  concatImages,
+  allAudioList,
+  bookIds = BOOK_IDS,
+  bookCovers = [],
+  seriesCovers = [],
+}) => {
   const byUrl = new Map();
   const addSource = (url, source) => {
     if (!byUrl.has(url)) byUrl.set(url, { url, sources: [] });
@@ -88,6 +104,14 @@ const collectBookAssets = ({ concatImages, allAudioList, bookIds = BOOK_IDS }) =
       });
     }
   }
+
+  // 书架与系列卡会直接显示这些 URL；必须与教材内页一起做远端可用性检查。
+  bookCovers.forEach(({ bookId, url }) => {
+    addSource(url, { bookId: String(bookId), type: "cover" });
+  });
+  seriesCovers.forEach(({ seriesId, url }) => {
+    addSource(url, { seriesId: String(seriesId), type: "series-cover" });
+  });
 
   return [...byUrl.values()].map((asset) => ({
     ...asset,
@@ -143,7 +167,9 @@ const requestAssetOnce = async (asset, options) => {
     timedOut = true;
     controller.abort(new Error("远端素材请求超时"));
   }, options.timeoutMs);
-  const sourceTypes = new Set(asset.sources.map(({ type }) => type));
+  const sourceTypes = new Set(
+    asset.sources.map(({ type }) => (type === "audio" ? "audio" : "image")),
+  );
   const accept =
     sourceTypes.size !== 1 ? "*/*" : sourceTypes.has("image") ? "image/*" : "audio/*";
 
@@ -227,7 +253,7 @@ const failureSortKey = (failure) => `${failure.category}|${String(failure.url)}`
 const summarizeResults = (assets, results) => {
   const uniqueAssets = mergeDuplicateAssets(assets);
   const uniqueImages = uniqueAssets.filter((asset) =>
-    asset.sources.some(({ type }) => type === "image"),
+    asset.sources.some(({ type }) => type !== "audio"),
   ).length;
   const uniqueAudio = uniqueAssets.filter((asset) =>
     asset.sources.some(({ type }) => type === "audio"),
@@ -269,10 +295,13 @@ const sanitizeUrlForReport = (rawUrl) => {
   }
 };
 
-const formatSource = (source) =>
-  source.type === "image"
+const formatSource = (source) => {
+  if (source.type === "cover") return `教材 ${source.bookId} 书架封面`;
+  if (source.type === "series-cover") return `系列 ${source.seriesId} 首页封面`;
+  return source.type === "image"
     ? `教材 ${source.bookId} 图片索引 ${source.imageIndex}`
     : `教材 ${source.bookId} 第 ${source.pageNumber} 页音频索引 ${source.trackIndex}`;
+};
 
 const formatReport = (report) => {
   const { counts } = report;

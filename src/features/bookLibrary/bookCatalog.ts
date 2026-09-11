@@ -84,7 +84,7 @@ export const BOOKS: BookCatalogItem[] = [
     level: "B1 · PET",
     kind: "学生用书",
     cover: cover(
-      "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/%E5%89%91%E6%A1%A5PET%E7%BB%BC%E5%90%88%E6%95%99%E7%A8%8B%E5%AD%A6%E7%94%A8%E4%B9%A6B1.png",
+      "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/%E5%89%91%E6%A1%A5PET%E7%BB%BC%E5%90%88%E6%95%99%E7%A8%8B%E5%AD%A6%E7%94%9F%E7%94%A8%E4%B9%A6B1.png",
     ),
     available: true,
   },
@@ -106,7 +106,7 @@ export const BOOKS: BookCatalogItem[] = [
     level: "A2 · KET",
     kind: "学生用书",
     cover: cover(
-      "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/%E5%89%91%E6%A1%A5KET%E7%BB%BC%E5%90%88%E6%95%99%E7%A8%8B%E5%AD%A6%E7%94%A8%E4%B9%A6A2.png",
+      "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/%E5%89%91%E6%A1%A5KET%E7%BB%BC%E5%90%88%E6%95%99%E7%A8%8B%E5%AD%A6%E7%94%9F%E7%94%A8%E4%B9%A6A2.png",
     ),
     available: true,
   },
