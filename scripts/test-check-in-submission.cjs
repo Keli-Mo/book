@@ -67,8 +67,12 @@ function harness(overrides = {}) {
   const values = new Map();
   const store = {
     async update(requestId, patch) { calls.push(["update", requestId, plain(patch)]); const current = values.get(requestId); if (!current) return null; const next = { ...current, ...patch }; values.set(requestId, next); return next; },
-    async markUploaded(requestId, cloudFileId) {
+    markUploaded(requestId, cloudFileId) {
       calls.push(["markUploaded", requestId, cloudFileId]);
+      const plan = controls.markUploadedPlans?.shift();
+      if (plan?.throw) throw plan.throw;
+      if (plan?.reject) return Promise.reject(plan.reject);
+      if (plan?.promise) return plan.promise;
       if (controls.markUploadedResult === null) return null;
       const current = values.get(requestId); if (!current) return null;
       const next = { ...current, cloudFileId, status: "uploaded" }; values.set(requestId, next); return next;
@@ -83,9 +87,10 @@ function harness(overrides = {}) {
     startPreparedCheckInUpload: (filePath, prepared) => {
       calls.push(["upload", filePath, plain(prepared)]);
       const plan = controls.uploadPlans.shift() || { result: "cloud://test.bucket/checkins/fresh.mp3" };
+      if (plan.throw) throw plan.throw;
       const task = {
         aborted: false,
-        onProgressUpdate(listener) { task.progressListener = listener; },
+        onProgressUpdate(listener) { task.progressListener = listener; if (plan.progressError) throw plan.progressError; },
         abort() { task.aborted = true; calls.push(["abort"]); },
       };
       const result = plan.promise || (plan.error ? Promise.reject(plan.error) : Promise.resolve(plan.result));
@@ -140,9 +145,10 @@ test("重启恢复已有 cloudFileId 跳过上传并直接 commit", async () => 
 });
 
 test("callback UploadTask 进度归一化，成功先持久 fileID 再 creating/commit", async () => {
-  const h = harness(); const handle = h.submit(item());
+  const uploadResult = deferred(); const h = harness({ uploadPlans: [{ promise: uploadResult.promise }] }); const handle = h.submit(item());
   await flush();
   h.uploads[0].task.progressListener({ progress: -10 }); h.uploads[0].task.progressListener({ progress: 140 });
+  uploadResult.resolve("cloud://test.bucket/checkins/fresh.mp3");
   const result = await handle.promise;
   assert.equal(result.state, "committed");
   assert.deepEqual(h.progresses, [
@@ -214,6 +220,74 @@ test("complete 本地清理失败仍返回云端成功 cleanupPending，冲突/�
     assert.equal(result.state, "failed"); assert.equal(h.uploads.length, 1); assert.equal(h.calls.filter(call => call[0] === "prepare")[0][1].requestId, item().requestId);
     assert.equal(h.calls.filter(call => call[0] === "update").some(call => call[2].cloudFileId === ""), false);
   }
+});
+
+test("upload 已成功进入 markUploaded 门闩后不可取消，且仍只提交一次", async () => {
+  const gate = deferred(); const h = harness({ markUploadedPlans: [{ promise: gate.promise }] });
+  const handle = h.submit(item()); await flush(); await flush();
+  assert.equal(h.calls.at(-1)[0], "markUploaded");
+  assert.equal(handle.cancel(), false, "fileID 已返回后进入持久化门闩，不得谎称取消成功");
+  gate.resolve({ ...item(), cloudFileId: "cloud://test.bucket/checkins/fresh.mp3", status: "uploaded" });
+  const result = await handle.promise;
+  assert.equal(result.state, "committed");
+  assert.equal(h.calls.filter(call => call[0] === "commit").length, 1);
+  assert.equal(h.calls.filter(call => call[0] === "complete").length, 1);
+});
+
+test("markUploaded 的 null、同步 throw 与异步 reject 均不触发上传重试", async () => {
+  for (const [plan, expected] of [
+    [{ markUploadedResult: null }, "PENDING_PERSIST_FAILED"],
+    [{ markUploadedPlans: [{ throw: networkError }] }, networkError],
+    [{ markUploadedPlans: [{ reject: networkError }] }, networkError],
+  ]) {
+    const h = harness(plan); const handle = h.submit(item()); await flush();
+    assert.deepEqual(h.scheduler.delays(), [], "持久化错误不得进入上传退避");
+    const result = await handle.promise;
+    assert.equal(result.state, "failed");
+    if (typeof expected === "string") assert.equal(result.error.code, expected);
+    else assert.strictEqual(result.error, expected, "原始持久化错误必须保留");
+    assert.equal(h.calls.filter(call => call[0] === "upload").length, 1);
+    assert.equal(h.calls.some(call => call[0] === "commit"), false);
+  }
+});
+
+test("同步 start throw 走上传重试；进度订阅 throw 不丢 result 或泄漏 rejection", async () => {
+  const retry = harness({ uploadPlans: [{ throw: networkError }, { result: "cloud://test.bucket/checkins/ok.mp3" }] });
+  const handle = retry.submit(item()); await flush(); assert.deepEqual(retry.scheduler.delays(), [1000]);
+  retry.scheduler.advance(1000); await flush(); assert.equal((await handle.promise).state, "committed");
+  assert.equal(retry.calls.filter(call => call[0] === "upload").length, 2);
+
+  const unhandled = []; const listener = error => unhandled.push(error); process.on("unhandledRejection", listener);
+  try {
+    const resolved = harness({ uploadPlans: [{ progressError: new Error("progress unavailable"), result: "cloud://test.bucket/checkins/ok.mp3" }] });
+    assert.equal((await resolved.submit(item()).promise).state, "committed");
+    const rejected = harness({ uploadPlans: [{ progressError: new Error("progress unavailable"), error: networkError }, { result: "cloud://test.bucket/checkins/ok.mp3" }] });
+    const pending = rejected.submit(item()); await flush(); assert.deepEqual(rejected.scheduler.delays(), [1000]);
+    rejected.scheduler.advance(1000); await flush(); assert.equal((await pending.promise).state, "committed");
+    await flush(); assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
+});
+
+test("非法与迟到的 UploadTask progress 保持不确定，不能污染新尝试、取消或完成后的页面", async () => {
+  const firstResult = deferred(), secondResult = deferred();
+  const h = harness({ uploadPlans: [{ promise: firstResult.promise }, { promise: secondResult.promise }] });
+  const handle = h.submit(item()); await flush(); const first = h.uploads[0].task;
+  first.progressListener({ progress: undefined }); first.progressListener({ progress: Number.NaN }); first.progressListener({ progress: "30" });
+  assert.deepEqual(h.progresses.slice(-3), Array.from({ length: 3 }, () => ({ requestId: item().requestId, percent: null, uncertain: true })));
+  firstResult.reject(networkError); await flush(); h.scheduler.advance(1000); await flush(); const second = h.uploads[1].task;
+  const countBeforeStale = h.progresses.length; first.progressListener({ progress: 33 });
+  assert.equal(h.progresses.length, countBeforeStale, "旧 attempt 事件不得写入当前 UI");
+  second.progressListener({ progress: 120 }); assert.deepEqual(h.progresses.at(-1), { requestId: item().requestId, percent: 100, uncertain: false });
+  secondResult.resolve("cloud://test.bucket/checkins/ok.mp3");
+  assert.equal((await handle.promise).state, "committed"); const terminalCount = h.progresses.length;
+  second.progressListener({ progress: 40 }); assert.equal(h.progresses.length, terminalCount, "完成后迟到事件必须静默");
+
+  const waiting = deferred(); const cancelled = harness({ uploadPlans: [{ promise: waiting.promise }] });
+  const cancelledHandle = cancelled.submit(item()); await flush(); const task = cancelled.uploads[0].task;
+  assert.equal(cancelledHandle.cancel(), true); await cancelledHandle.promise; const cancelCount = cancelled.progresses.length;
+  task.progressListener({ progress: 50 }); assert.equal(cancelled.progresses.length, cancelCount, "取消后迟到事件必须静默");
 });
 
 (async () => {

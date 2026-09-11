@@ -75,7 +75,7 @@ export type CheckInSubmissionCoordinatorAdapters = {
 };
 
 type SubmitOptions = { onProgress?: (progress: SubmissionProgress) => void };
-type Phase = "idle" | "uploading" | "backoff" | "committing" | "done";
+type Phase = "idle" | "uploading" | "backoff" | "persisting" | "committing" | "done";
 const RETRY_DELAYS_MS = [1000, 3000];
 
 const createError = (code: string, message: string) =>
@@ -103,8 +103,8 @@ const isRepairableRecordingError = (error: unknown) => {
 };
 
 const normalizeProgress = (value: unknown) => {
-  const number = typeof value === "number" && Number.isFinite(value) ? value : 0;
-  return Math.min(100, Math.max(0, Math.round(number)));
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.min(100, Math.max(0, Math.round(value)));
 };
 
 /**
@@ -125,6 +125,8 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
     let timer: unknown;
     let rejectCancellation: ((reason: unknown) => void) | undefined;
     let rejectBackoff: ((reason: unknown) => void) | undefined;
+    let nextUploadAttempt = 0;
+    let activeUploadAttempt = 0;
     const cancelledError = createError("UPLOAD_CANCELLED", "用户取消了录音上传");
 
     const emitProgress = (percent: number | null, uncertain: boolean) => {
@@ -155,28 +157,47 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
     const runUpload = async (prepared: PreparedUpload): Promise<string> => {
       for (let attempt = 0; ; attempt += 1) {
         phase = "uploading";
+        const attemptToken = ++nextUploadAttempt;
+        activeUploadAttempt = attemptToken;
         emitProgress(null, true);
-        const upload = adapters.startPreparedCheckInUpload(pending.localPath, prepared);
-        activeTask = upload.task;
-        if (upload.task?.onProgressUpdate) {
-          upload.task.onProgressUpdate((event) => emitProgress(normalizeProgress(event?.progress), false));
-        }
-        const cancelledPromise = new Promise<never>((_resolve, reject) => {
-          rejectCancellation = reject;
-        });
         try {
-          const cloudFileId = await Promise.race([upload.result, cancelledPromise]);
+          // start 的同步异常和 result reject 都是上传阶段；其余持久化步骤在循环外，不能重传文件。
+          const upload = adapters.startPreparedCheckInUpload(pending.localPath, prepared);
+          activeTask = upload.task;
+          // 先把原生 result 转为永不 reject 的 outcome，再尝试可选的进度订阅；订阅 throw 不能遗留 rejection。
+          const result = upload.result.then(
+            (value) => ({ ok: true as const, value }),
+            (error) => ({ ok: false as const, error }),
+          );
+          try {
+            upload.task?.onProgressUpdate?.((event) => {
+              if (cancelled || phase !== "uploading" || activeUploadAttempt !== attemptToken) return;
+              const percent = normalizeProgress(event?.progress);
+              emitProgress(percent, percent === null);
+            });
+          } catch (_error) {
+            // 进度是可选能力：保持不确定即可，仍必须消费同一个 upload result。
+            emitProgress(null, true);
+          }
+          const cancelledPromise = new Promise<never>((_resolve, reject) => {
+            rejectCancellation = reject;
+          });
+          const outcome = await Promise.race([result, cancelledPromise]);
           rejectCancellation = undefined;
           activeTask = undefined;
+          activeUploadAttempt = 0;
+          if (!outcome.ok) throw outcome.error;
+          // result 已经成功后立刻离开可取消区；markUploaded gate 不能返回“取消成功”后继续 commit。
+          phase = "persisting";
+          const cloudFileId = outcome.value;
           if (typeof cloudFileId !== "string" || !cloudFileId) {
             throw createError("UPLOAD_FILE_ID_EMPTY", "上传未返回云文件编号");
           }
-          const uploaded = await adapters.pendingStore.markUploaded(pending.requestId, cloudFileId);
-          if (!uploaded) throw createError("PENDING_PERSIST_FAILED", "录音上传结果未能保存，不能提交打卡");
           return cloudFileId;
         } catch (error) {
           rejectCancellation = undefined;
           activeTask = undefined;
+          activeUploadAttempt = 0;
           if (cancelled) throw cancelledError;
           if (!isRetryableUploadError(error) || attempt >= RETRY_DELAYS_MS.length) throw error;
           phase = "backoff";
@@ -222,7 +243,12 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
         let cloudFileId = pending.cloudFileId;
         let repaired = false;
         while (true) {
-          if (!cloudFileId) cloudFileId = await runUpload(prepared);
+          if (!cloudFileId) {
+            cloudFileId = await runUpload(prepared);
+            // 仅在上传 result 已成功后持久化 fileID；此处错误不得回到 runUpload 的网络重试循环。
+            const uploaded = await adapters.pendingStore.markUploaded(pending.requestId, cloudFileId);
+            if (!uploaded) throw createError("PENDING_PERSIST_FAILED", "录音上传结果未能保存，不能提交打卡");
+          }
           phase = "committing";
           const creating = await adapters.pendingStore.update(pending.requestId, { status: "creating" as PendingCheckInStatus });
           if (!creating) throw createError("PENDING_PERSIST_FAILED", "无法保存打卡创建状态");
@@ -259,6 +285,7 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
       cancel: () => {
         if (cancelled || (phase !== "uploading" && phase !== "backoff")) return false;
         cancelled = true;
+        activeUploadAttempt = 0;
         if (timer !== undefined) {
           adapters.scheduler.clearTimeout(timer);
           timer = undefined;
