@@ -41,6 +41,7 @@
     "test:pending-check-in": "node scripts/test-pending-check-in.cjs",
     "test:pending-check-in-runtime": "node scripts/test-pending-check-in-runtime.cjs",
     "test:check-in-submission": "node scripts/test-check-in-submission.cjs",
+    "test:check-in-submission-runtime": "node scripts/test-check-in-submission-runtime.cjs",
     "test:recorder-coordinator": "node scripts/test-recorder-coordinator.cjs",
     "test:audio-playback": "node scripts/test-audio-playback.cjs",
     "test:device-layout": "node scripts/test-device-layout.cjs",
