@@ -11,7 +11,7 @@ const constantsRoot = path.join(
 );
 const BOOK_IDS = Array.from({ length: 23 }, (_, index) => String(index + 3));
 const EXPECTED_PRACTICE_COUNTS = [
-  100, 96, 96, 96, 54, 12, 67, 14, 85, 64, 56, 39, 99, 99, 90, 90, 93, 24,
+  100, 96, 96, 96, 54, 12, 67, 14, 84, 64, 56, 39, 99, 99, 90, 90, 93, 24,
   24, 24, 24, 24, 24,
 ];
 const COVER_WHITELIST = {
@@ -104,6 +104,48 @@ const assertHttpsUrl = (url, message) => {
 const { concatImages } = loadTypeScriptConstants("images.ts");
 const { allAudioList } = loadTypeScriptConstants("audioList.ts");
 const { catalogLists } = loadTypeScriptConstants("catalogList.ts");
+
+// 聚合三处素材断言，确保 RED 同时呈现全部已核实业务错误。
+const materialRepairFailures = [];
+const materialRepair = (name, check) => {
+  try {
+    check();
+  } catch (error) {
+    materialRepairFailures.push(`${name}: ${error.message}`);
+  }
+};
+materialRepair("教材 11 第 10 页使用真实 0.10 文件名", () => {
+  const url = allAudioList["11"][10][4].url;
+  assert.equal(url.endsWith("/ow2e_sb1_ame_0.10.mp3"), true);
+  assert.equal(url.includes("/ow2e_sb1_ame_1.0.mp3"), false);
+});
+materialRepair("教材 12 第 34 页第 2 段保留文件名空格编码", () => {
+  const url = allAudioList["12"][34][1].url;
+  assert.equal(url.endsWith("/ow2e_wb1_ame_3.3%20.mp3"), true);
+  assert.equal(new URL(url).pathname.endsWith("/ow2e_wb1_ame_3.3%20.mp3"), true);
+});
+materialRepair("教材 11 移除官方不存在的伪轨 5.15", () => {
+  assert.equal(Object.hasOwn(allAudioList["11"], "91"), false, "第 91 页错误热点必须完整删除");
+  assert.deepEqual(
+    allAudioList["11"][89].map(({ url }) => path.basename(new URL(url).pathname)),
+    ["ow2e_sb1_ame_5.11.mp3", "ow2e_sb1_ame_5.12.mp3"],
+    "第 89 页只能保留官方存在的 5.11、5.12，不得偷移 5.15",
+  );
+  const allAudioUrls = Object.values(allAudioList).flatMap((audioByPage) =>
+    Object.values(audioByPage).flatMap((tracks) => tracks.map(({ url }) => url)),
+  );
+  assert.equal(
+    allAudioUrls.some((url) => url.endsWith("/ow2e_sb1_ame_5.15.mp3")),
+    false,
+    "全部教材不得引用官方不存在的伪轨 5.15",
+  );
+});
+assert.equal(
+  materialRepairFailures.length,
+  0,
+  `${materialRepairFailures.length}/3 项教材素材修正未满足：\n${materialRepairFailures.join("\n")}`,
+);
+
 const emptyPagePlaceholders = BOOK_IDS.flatMap((bookId) => {
   const imagePages = new Set(concatImages[bookId].map(parseImagePageNumber));
   return Object.entries(allAudioList[bookId])
@@ -119,8 +161,8 @@ assert.deepEqual(emptyPagePlaceholders, [
 
 assert.equal(
   EXPECTED_PRACTICE_COUNTS.reduce((sum, count) => sum + count, 0),
-  1394,
-  "23 本教材的训练页总数应为 1,394",
+  1393,
+  "移除官方不存在的伪轨后，23 本教材的训练页总数应为 1,393",
 );
 assert.deepEqual(
   Object.keys(concatImages).filter((bookId) => Number(bookId) >= 3),
@@ -208,23 +250,23 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
     }
   }
 
-  assert.equal(bookPracticeCount, EXPECTED_PRACTICE_COUNTS[index], `教材 ${bookId} 训练页数应保持不变`);
+  assert.equal(bookPracticeCount, EXPECTED_PRACTICE_COUNTS[index], `教材 ${bookId} 训练页数应符合修正后契约`);
   practiceCount += bookPracticeCount;
 }
 
-assert.equal(practiceCount, 1394, "全教材训练页数应为 1,394");
-assert.equal(audioSegmentCount, 2082, "全教材音频段数应为 2,082");
+assert.equal(practiceCount, 1393, "移除官方不存在的伪轨后，全教材训练页数应为 1,393");
+assert.equal(audioSegmentCount, 2081, "移除官方不存在的伪轨后，全教材音频段数应为 2,081");
 assert.deepEqual(
   coordinateCounts,
-  { pixel: 594, Cambridge: 258, Percentage: 1230 },
-  "三类热点坐标的数量应保持不变",
+  { pixel: 594, Cambridge: 258, Percentage: 1229 },
+  "移除官方不存在的伪轨后，三类热点坐标数量应符合权威统计",
 );
 
 const validationReport = validateBookData({ log: false });
 assert.equal(validationReport.books.length, 23, "校验器应逐书输出 23 本教材报告");
 assert.equal(validationReport.imageCount, 4056, "校验器应汇总 4,056 张图片");
-assert.equal(validationReport.audioSegmentCount, 2082, "校验器应汇总 2,082 段音频");
-assert.equal(validationReport.practicePageCount, 1394, "校验器应汇总 1,394 个训练页");
+assert.equal(validationReport.audioSegmentCount, 2081, "校验器应汇总移除伪轨后的 2,081 段音频");
+assert.equal(validationReport.practicePageCount, 1393, "校验器应汇总移除伪轨后的 1,393 个训练页");
 
 const {
   DEFAULT_BOOK_ID,
@@ -237,7 +279,7 @@ assert.equal(buildBookPracticeBundle("not-a-book"), null, "未知教材应返回
 
 const expectedBundles = [
   ["3", 100],
-  ["11", 85],
+  ["11", 84],
   ["22", 24],
   ["25", 24],
 ];
@@ -483,8 +525,8 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
     }
   });
 }
-assert.equal(builtPracticeCount, 1394, "构建器应生成 1,394 个训练页");
-assert.equal(builtTrackCount, 2082, "生产构建结果必须包含 2,082 段音频");
+assert.equal(builtPracticeCount, 1393, "构建器应生成移除伪轨后的 1,393 个训练页");
+assert.equal(builtTrackCount, 2081, "生产构建结果必须包含移除伪轨后的 2,081 段音频");
 assert.equal(regressionFailures.length, 0, `${regressionFailures.length}/${regressionCount} 项回归失败：\n${regressionFailures.join("\n")}`);
 
-console.log(`教材训练数据契约测试通过：23 本教材、1,394 个训练页、2,082 段音频逐项匹配；${regressionCount} 项回归通过（含 ${invalidDataCases.length} 类坏数据与必填 bookId 类型契约）。`);
+console.log(`教材训练数据契约测试通过：23 本教材、1,393 个训练页、2,081 段音频逐项匹配；${regressionCount} 项回归通过（含 ${invalidDataCases.length} 类坏数据与必填 bookId 类型契约）。`);

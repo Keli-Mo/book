@@ -59,17 +59,22 @@ const testCollection = () => {
 const testRealConstantCollection = () => {
   const assets = collectBookAssets(loadBookAssetConstants());
   const sources = assets.flatMap((asset) => asset.sources);
-  assert.equal(assets.length, 6_085);
+  assert.equal(assets.length, 6_084, "移除官方不存在的伪轨后，远端唯一素材应为 6,084");
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type === "image")).length,
     4_056,
   );
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type === "audio")).length,
-    2_029,
+    2_028,
+    "移除官方不存在的伪轨后，音频唯一 URL 应为 2,028",
   );
   assert.equal(sources.filter((source) => source.type === "image").length, 4_056);
-  assert.equal(sources.filter((source) => source.type === "audio").length, 2_082);
+  assert.equal(
+    sources.filter((source) => source.type === "audio").length,
+    2_081,
+    "移除官方不存在的伪轨后，音频来源数应为 2,081",
+  );
   assert.deepEqual(
     [...new Set(sources.map(({ bookId }) => bookId))],
     Array.from({ length: 23 }, (_, index) => String(index + 3)),
