@@ -82,6 +82,21 @@ test("结构化服务错误 code/message 保留且旧服务导出兼容", async 
   for (const name of ["getCheckInDetail", "listMyCheckIns", "removeCheckIn", "uploadCheckInRecording", "removeUploadedRecording"])
     assert.equal(typeof h.api[name], "function");
 });
+test("可读协议错误保留 Error.code，码优先级稳定且不丢 0", async () => {
+  const h = harness();
+  const error = Object.assign(new Error("同一请求对应另一录音"), { code: "REQUEST_ID_CONFLICT" });
+  const readable = h.api.getReadableCloudError(error);
+  assert.match(readable, /REQUEST_ID_CONFLICT/); assert.match(readable, /同一请求对应另一录音/);
+  h.controls.response = { ok: false, code: "INVALID_FILE_ID", message: "录音路径不匹配" };
+  await assert.rejects(h.api.prepareCheckIn(input), e => /INVALID_FILE_ID/.test(h.api.getReadableCloudError(e)));
+  for (const message of ["协议调用失败", "uploadFile:fail"]) {
+    for (const fields of [{ errCode: 0, errno: 2, code: 3 }, { errno: 0, code: 3 }, { code: 0 }]) {
+      const text = h.api.getReadableCloudError(Object.assign(new Error(message), fields));
+      assert.match(text, /错误码 0/); assert.match(text, new RegExp(message));
+      assert.doesNotMatch(text, /错误码 [23]/);
+    }
+  }
+});
 (async () => { let failures = 0; for (const { name, run } of cases) {
   try { await run(); console.log(`PASS ${name}`); } catch (e) { failures++; console.error(`FAIL ${name}: ${e.message}`); }
 } assert.equal(failures, 0, `${failures}/${cases.length} 项服务契约失败`);

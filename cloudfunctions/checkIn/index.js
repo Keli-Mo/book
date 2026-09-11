@@ -125,7 +125,8 @@ const commitCheckIn = async (event, openId, envId) => {
   }
   // 文件检查在事务外完成；仅 URL 或客户端“上传成功”声明不足以证明文件有效。
   const downloaded = await cloud.downloadFile({ fileID: recordingFileId });
-  if (downloaded.statusCode !== 200 || !Buffer.isBuffer(downloaded.fileContent) ||
+  // Node SDK 成功结果可能仅含 fileContent；有 HTTP 状态时仍拒绝非 200。
+  if ((downloaded.statusCode !== undefined && downloaded.statusCode !== 200) || !Buffer.isBuffer(downloaded.fileContent) ||
       downloaded.fileContent.length !== binding.payload.fileSizeBytes ||
       digest("sha1", downloaded.fileContent) !== binding.payload.contentSha1) {
     reject("RECORDING_FILE_MISMATCH", "录音文件不存在、大小或内容摘要不一致");
@@ -204,11 +205,20 @@ const getDetail = async (event, openId) => {
 
 const listMine = async (openId) => {
   const result = await checkIns
-    .where({ _openid: openId, status: db.command.nin(["deletePending", "deleted"]) })
+    .where({ _openid: openId })
     .orderBy("createdAt", "desc")
-    .limit(50)
+    .limit(100)
     .get();
-  return success(result.data.map(toPublicSummary));
+  // 复用既有 owner/时间查询，不为墓碑引入新的非等值复合索引。
+  return success(result.data.filter(record => record.status !== "deletePending" && record.status !== "deleted")
+    .slice(0, 50).map(toPublicSummary));
+};
+
+const isStorageFileAbsent = (result) => {
+  // wx-server-sdk 4.0.2 把 STORAGE_FILE_NONEXIST 映射为 -503003；未知码不可借文案放行。
+  const code = result?.errCode ?? result?.code ?? result?.status;
+  if (code !== undefined) return code === -503003 || code === "STORAGE_FILE_NONEXIST";
+  return /^(?:deleteFile:fail\s+)?storage file not exists$/.test(result?.errMsg || "");
 };
 
 const removeCheckIn = async (event, openId) => {
@@ -231,10 +241,15 @@ const removeCheckIn = async (event, openId) => {
       }
     });
   }
-  const removed = await cloud.deleteFile({ fileList: [record.recordingFileId] });
-  const fileResult = removed.fileList?.find(file => file.fileID === record.recordingFileId);
-  if (!fileResult || fileResult.status !== 0) {
-    reject("FILE_DELETE_FAILED", fileResult?.errMsg || "云录音删除未完成，请重试");
+  try {
+    const removed = await cloud.deleteFile({ fileList: [record.recordingFileId] });
+    const fileResult = removed.fileList?.find(file => file.fileID === record.recordingFileId);
+    if (!fileResult || (fileResult.status !== 0 && !isStorageFileAbsent(fileResult))) {
+      reject("FILE_DELETE_FAILED", fileResult?.errMsg || "云录音删除未完成，请重试");
+    }
+  } catch (error) {
+    // 每次只删除这一文件：已删后最终写墓碑失败，重试收到明确不存在也可继续收敛。
+    if (!isStorageFileAbsent(error)) throw error;
   }
   if (record.requestId) {
     await runTransaction(async transaction => {

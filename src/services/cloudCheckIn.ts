@@ -170,6 +170,7 @@ export const getReadableCloudError = (error: unknown) => {
       ? (error as {
           errCode?: string | number;
           errno?: string | number;
+          code?: string | number;
           errMsg?: string;
           message?: string;
         })
@@ -180,7 +181,9 @@ export const getReadableCloudError = (error: unknown) => {
     cloudError?.errMsg ||
     cloudError?.message ||
     String(error || "");
-  const errorCode = cloudError?.errCode ?? cloudError?.errno;
+  // 保持原生错误码优先级，再接服务端协议 code；0 也是有效码。
+  const errorCode = cloudError?.errCode ?? cloudError?.errno ?? cloudError?.code;
+  const codeText = errorCode === undefined ? "" : `（错误码 ${errorCode}）`;
 
   if (/FunctionName|FUNCTION_NOT_FOUND|云函数不存在|-501000/i.test(message)) {
     return "云函数尚未部署，请先在微信开发者工具中上传并部署 checkIn 云函数";
@@ -189,9 +192,8 @@ export const getReadableCloudError = (error: unknown) => {
     return "云数据库尚未创建 checkins 集合，请先按部署说明完成初始化";
   }
   if (/storage|uploadFile|file/i.test(message)) {
-    const codeText = errorCode === undefined ? "" : `（错误码 ${errorCode}）`;
     return `录音上传失败${codeText}\n${message}`;
   }
 
-  return message || "操作失败，请稍后重试";
+  return `${message || "操作失败，请稍后重试"}${codeText}`;
 };

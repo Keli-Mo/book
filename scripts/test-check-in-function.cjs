@@ -16,7 +16,8 @@ const plain = value => JSON.parse(JSON.stringify(value));
 function harness() {
   const records = new Map(), versions = new Map(), files = new Map();
   const metrics = { writes: 0, deletes: 0, downloads: 0, attempts: 0, conflicts: 0 };
-  const controls = { owner: "owner-openid", readError: null, downloadError: null, deleteStatus: 0, forcedConflicts: 0 };
+  const controls = { owner: "owner-openid", readError: null, downloadError: null, downloadStatus: 200,
+    deleteStatus: 0, missingDeleteResult: null, deleteError: null, finalizeError: null, ownerOnlyQuery: false, forcedConflicts: 0 };
   let throwOnNotFound = true;
   const put = (id, data) => { records.set(id, structuredClone({ ...data, _id: id })); versions.set(id, (versions.get(id) || 0) + 1); metrics.writes++; };
   const collection = tx => ({
@@ -31,12 +32,14 @@ function harness() {
       },
       async set({ data }) {
         assert.equal(typeof data, "object", "微信 SDK set 使用 { data }");
+        if (data.status === "deleted" && controls.finalizeError) throw controls.finalizeError;
         if (tx) tx.writes.set(id, structuredClone(data)); else put(id, data);
         return { _id: id, stats: { updated: 1 }, errMsg: "document.set:ok" };
       },
       async remove() { records.delete(id); versions.set(id, (versions.get(id) || 0) + 1); metrics.writes++; },
     }; },
     where(condition) {
+      if (controls.ownerOnlyQuery) assert.deepEqual(Object.keys(condition), ["_openid"], "不能新增 status 复合索引依赖");
       let limit = Infinity;
       return { orderBy() { return this; }, limit(n) { limit = n; return this; }, async get() {
         if (controls.readError) throw controls.readError;
@@ -76,10 +79,13 @@ function harness() {
       metrics.downloads++;
       if (controls.downloadError) throw controls.downloadError;
       if (!files.has(fileID)) throw Object.assign(new Error("file not uploaded"), { code: "FILE_NOT_FOUND" });
-      return { fileContent: files.get(fileID), statusCode: 200 };
+      return { fileContent: files.get(fileID), ...(controls.downloadStatus === undefined ? {} : { statusCode: controls.downloadStatus }) };
     },
     async getTempFileURL({ fileList }) { return { fileList: fileList.map(fileID => ({ fileID, status: 0, tempFileURL: `https://example.test/${encodeURIComponent(fileID)}` })) }; },
-    async deleteFile({ fileList }) { metrics.deletes++; return { fileList: fileList.map(fileID => {
+    async deleteFile({ fileList }) { metrics.deletes++;
+      if (controls.deleteError) throw controls.deleteError;
+      return { fileList: fileList.map(fileID => {
+      if (!files.has(fileID) && controls.missingDeleteResult) return { fileID, ...controls.missingDeleteResult };
       if (controls.deleteStatus === 0) files.delete(fileID);
       return { fileID, status: controls.deleteStatus, errMsg: controls.deleteStatus ? "storage denied" : "ok" };
     }) }; },
@@ -166,6 +172,68 @@ test("数据库网络失败不是缺文档，下载错误原文保留", async ()
   const p = await h.prepare(), recordingFileId = h.upload(p); h.controls.downloadError = { code: "ETIMEDOUT", message: "storage timeout" };
   const f = await h.call("commit", { ...input(), recordingFileId }); assert.equal(f.code, "ETIMEDOUT"); assert.equal(f.message, "storage timeout");
   assert.equal(h.metrics.deletes + h.metrics.writes, 0); assert.equal(h.files.size, 1);
+});
+test("Node SDK 下载仅 fileContent 成功，显式非 200 仍拒绝", async () => {
+  for (const status of [undefined, 200, 403, 503]) {
+    const h = harness(), p = await h.prepare(); h.controls.downloadStatus = status;
+    const result = await h.call("commit", { ...input(), recordingFileId: h.upload(p) });
+    assert.equal(result.ok, status === undefined || status === 200, `statusCode=${status}`);
+    assert.equal(h.records.size, result.ok ? 1 : 0);
+    assert.equal(h.metrics.deletes, 0);
+  }
+});
+test("删文件后最终事务失败，再收到明确不存在仍能收敛墓碑", async () => {
+  for (const finalizeError of [{ code: "ECONNRESET", message: "finalize network failed" },
+    { code: "DATABASE_TRANSACTION_CONFLICT", message: "[ResourceUnavailable.TransactionConflict]" }]) {
+    for (const missing of [{ status: -503003, errMsg: "storage file not exists" },
+      { thrown: { errCode: -503003, errMsg: "storage file not exists" } },
+      { status: "STORAGE_FILE_NONEXIST" }, { errMsg: "storage file not exists" }]) {
+      const h = harness(), p = await h.prepare(), event = { ...input(), recordingFileId: h.upload(p) };
+      assert.equal((await h.call("commit", event)).ok, true);
+      h.controls.finalizeError = finalizeError;
+      const failed = await h.call("remove", { id: p.id });
+      assert.equal(failed.ok, false); assert.equal(failed.code, finalizeError.code);
+      assert.equal(h.files.size, 0, "首次删除确实成功，不能用尚存文件冒充恢复场景");
+      assert.equal(h.records.get(p.id).status, "deletePending");
+      assert.equal(h.metrics.deletes, 1);
+      assert.equal(h.metrics.attempts, finalizeError.code === "ECONNRESET" ? 3 : 5);
+      assert.equal((await h.call("commit", event)).code, "REQUEST_DELETED");
+      h.controls.finalizeError = null;
+      h.controls.missingDeleteResult = missing;
+      h.controls.deleteError = missing.thrown || null;
+      assert.equal((await h.call("remove", { id: p.id })).ok, true, JSON.stringify(missing));
+      assert.equal(h.records.get(p.id).status, "deleted"); assert.equal(h.metrics.deletes, 2);
+      assert.equal((await h.call("commit", event)).code, "REQUEST_DELETED");
+      assert.equal((await h.call("detail", { id: p.id })).ok, false);
+      assert.deepEqual(plain((await h.call("listMine")).data), []);
+    }
+  }
+});
+test("删除权限、超时、泛化未找到与未知错误不能伪装完成", async () => {
+  for (const error of [{ status: -503002, errMsg: "storage permission denied" },
+    { status: 404, errMsg: "environment not found" }, { status: -1, errMsg: "storage file not exists" },
+    { errMsg: "file not found or permission denied" }, { errCode: "ETIMEDOUT", errMsg: "storage timeout" }]) {
+    const h = harness(), p = await h.prepare(), event = { ...input(), recordingFileId: h.upload(p) };
+    assert.equal((await h.call("commit", event)).ok, true);
+    h.files.clear(); h.controls.missingDeleteResult = error;
+    assert.equal((await h.call("remove", { id: p.id })).ok, false);
+    assert.equal(h.records.get(p.id).status, "deletePending");
+    assert.equal((await h.call("commit", event)).code, "REQUEST_DELETED");
+    h.controls.deleteError = error;
+    assert.equal((await h.call("remove", { id: p.id })).ok, false);
+    assert.equal(h.records.get(p.id).status, "deletePending");
+  }
+});
+test("列表复用 owner/时间查询，服务端隐藏墓碑并保留 50 条旧记录", async () => {
+  const h = harness(); h.controls.ownerOnlyQuery = true;
+  for (let i = 0; i < 85; i++) {
+    h.records.set(`row-${i}`, { ...input(), _id: `row-${i}`, _openid: "owner-openid", createdAt: String(i).padStart(3, "0"),
+      ...(i >= 60 ? { status: i % 2 ? "deleted" : "deletePending" } : {}) });
+  }
+  h.records.set("active", { ...input(), _id: "active", _openid: "owner-openid", status: "active", createdAt: "100" });
+  h.records.set("foreign", { ...input(), _id: "foreign", _openid: "other", createdAt: "101" });
+  const listed = await h.call("listMine"); assert.equal(listed.ok, true, listed.message);
+  assert.deepEqual(plain(listed.data.map(record => record.id)), ["active", ...Array.from({ length: 49 }, (_, i) => `row-${59-i}`)]);
 });
 test("事务冲突有限重试且无重复下载/中间写入", async () => {
   const h = harness(), p = await h.prepare(), event = { ...input(), recordingFileId: h.upload(p) }; h.controls.forcedConflicts = 2;
