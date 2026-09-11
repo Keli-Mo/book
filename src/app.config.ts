@@ -15,7 +15,7 @@ export default defineAppConfig({
   },
   permission: {
     "scope.record": {
-      desc: "用于录制并回听你的英语跟读，确认打卡后才会上传云端",
+      desc: "用于录制并回听你的英语跟读，点击分享后才会上传云端",
     },
   },
   entryPagePath: "pages/Home/Home",

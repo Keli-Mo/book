@@ -51,7 +51,12 @@
     "test:book-catalog": "node scripts/test-book-catalog.cjs",
     "test:book-library-pages": "node scripts/test-book-library-pages.cjs",
     "test:home-navigation": "node scripts/test-home-navigation.cjs",
-    "test:ui-refinements": "node scripts/test-ui-refinements.cjs"
+    "test:ui-refinements": "node scripts/test-ui-refinements.cjs",
+    "test:recording-library-view": "node scripts/test-recording-library-view.cjs",
+    "test:local-recording-pages": "node scripts/test-local-recording-pages.cjs",
+    "test:check-in-detail-runtime": "node scripts/test-check-in-detail-runtime.cjs",
+    "test:local-share-lifecycle": "node scripts/test-local-share-lifecycle.cjs",
+    "test:share-expiry-cleanup": "node scripts/test-share-expiry-cleanup.cjs"
   },
   "browserslist": {
     "development": [
