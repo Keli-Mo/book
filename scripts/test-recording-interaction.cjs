@@ -70,6 +70,7 @@ const {
   handleInterruptionBegin,
   handleInterruptionEnd,
   requestRecorderAction,
+  requestRecorderTeardown,
   resetRecordingMachine,
   restoreRecordedMachine,
   resolveRecordingCapabilities,
@@ -514,6 +515,26 @@ assert.equal(
   }).state,
   "starting",
   "starting 阶段的意外 onStop 不能伪造有效录音"
+);
+
+const startingTeardown = requestRecorderTeardown(startingStop.machine);
+assert.equal(startingTeardown.machine.state, "stopping", "页面卸载必须能终止尚未确认 start 的录音");
+assert.equal(startingTeardown.command.type, "stop");
+assert.equal(
+  resolveRecorderCallback(startingTeardown.machine, {
+    type: "stop",
+    sessionId: startingTeardown.command.sessionId,
+    operationSeq: startingTeardown.command.operationSeq,
+  }).state,
+  "recorded",
+  "页面卸载主动发出的 stop 回调必须能保存录音",
+);
+assert.equal(
+  requestRecorderTeardown(
+    resolveRecordingCapabilities(createRecordingMachine(), completeCapabilities),
+  ).command,
+  null,
+  "空闲状态卸载不能凭空调用 recorder.stop",
 );
 
 let activeNativeErrorMachine = resolveRecordingCapabilities(

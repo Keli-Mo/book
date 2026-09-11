@@ -185,6 +185,29 @@ export const requestRecorderAction = (
   return noCommand(machine);
 };
 
+/**
+ * 页面卸载时允许覆盖尚未确认的 start/pause/resume，统一收敛到一次 stop。
+ * 普通交互仍必须走 requestRecorderAction，避免绕开稳定状态约束。
+ */
+export const requestRecorderTeardown = (
+  machine: RecordingMachine,
+): RecordingActionResult => {
+  if (!machine.mounted || machine.state === "stopping") return noCommand(machine);
+  if (
+    machine.state !== "starting" &&
+    machine.state !== "recording" &&
+    machine.state !== "paused"
+  ) {
+    return noCommand(machine);
+  }
+
+  return issueCommand(machine, "stop", "stopping", {
+    pauseReason: "background",
+    needsManualResume: false,
+    clockFrozen: true,
+  });
+};
+
 const callbackMatchesPendingAction = (
   machine: RecordingMachine,
   callback: RecorderCallback,
