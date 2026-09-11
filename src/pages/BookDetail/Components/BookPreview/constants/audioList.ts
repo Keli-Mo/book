@@ -5822,7 +5822,7 @@ const audioList11 = {
         {
         offset: ["36%", "59%"],
         url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_L1_Studentbook-%E9%9F%B3%E9%A2%91/ow2e_sb1_ame_'
-        +'1.0.mp3',
+        +'0.10.mp3',
         flag: "Percentage",
       }
     ],
@@ -6316,14 +6316,7 @@ const audioList11 = {
         flag: "Percentage",
       }
     ],
-    91: [
-        {
-        offset: ["45%", "73%"],
-        url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_L1_Studentbook-%E9%9F%B3%E9%A2%91/ow2e_sb1_ame_'
-        +'5.15.mp3',
-        flag: "Percentage",
-      }
-    ],
+    // 官方完整 141 轨仅到 5.14，第 91 页不添加不存在的 5.15。
     //Unit 6
     98: [
         {
@@ -6978,7 +6971,7 @@ const audioList12 = {
         {
         offset: ["31%", "71%"],
         url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_L1_Workbook-%E9%9F%B3%E9%A2%91/ow2e_wb1_ame_'
-		+'3.3.mp3',
+		+'3.3%20.mp3',
         flag: "Percentage",
       }
     ],
