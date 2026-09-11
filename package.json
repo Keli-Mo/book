@@ -34,6 +34,7 @@
     "test:book-practice": "node scripts/test-book-practice.cjs",
     "test:practice-book-route": "node scripts/test-practice-book-route.cjs",
     "test:check-in": "node scripts/test-check-in-function.cjs",
+    "test:cloud-check-in-service": "node scripts/test-cloud-check-in-service.cjs",
     "test:practice-directory": "node scripts/test-practice-directory.cjs",
     "test:practice-directory-component": "node scripts/test-practice-directory-component.cjs",
     "test:recording-interaction": "node scripts/test-recording-interaction.cjs",
