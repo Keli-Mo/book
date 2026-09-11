@@ -28,7 +28,11 @@ const fallbackScheduler: RecorderScheduler = {
   clearTimeout(handle) { const clear = (globalThis as unknown as { clearTimeout?: (id: unknown) => void }).clearTimeout; clear?.(handle); },
 };
 
-/** RecorderManager 没有 off API；同一实例的成功绑定记账后绝不重复注册。 */
+/**
+ * RecorderManager 没有 off API；同一实例的成功绑定记账后绝不重复注册。
+ * 仅保证最后一个 terminal 后连续静默 quietWindowMs 内的隔离；窗口外原生无 session ID，
+ * 协调器无法绝对区分无限迟到旧 terminal 与新会话真实 terminal。
+ */
 export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = {}): RecorderCoordinator => {
   let native: RecorderNativeManager | null = null;
   let pendingNative: RecorderNativeManager | null = null;
@@ -60,7 +64,7 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
   const beginDraining = () => { clearPending(); drainGeneration += 1; phase = "draining"; if (quietTimer !== null) scheduler.clearTimeout(quietTimer); quietTimer = null; };
   const consumeTerminal = (key: "onStop" | "onError", value: unknown) => {
     clearPending();
-    // 无 session id：drain 和静默窗内的一切 terminal 都归旧代次，绝不贴给等待 owner。
+    // 无 session id：仅 drain/连续静默窗内的一切 terminal 可归旧代次，绝不贴给等待 owner。
     if (phase === "draining") { beginQuiet(); return; }
     if (phase === "idle") return;
     notify(key, value);
@@ -105,7 +109,13 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
         if (phase === "draining") return { ok: true, phase: "draining" };
         if (phase === "stopping") { beginDraining(); return { ok: true, phase: "draining" }; }
         beginDraining();
-        try { manager.stop(); return { ok: true, phase: "draining" }; } catch (error) { return { ok: false, reason: "native-error", phase, error }; }
+        const revision = drainGeneration;
+        try { manager.stop(); return { ok: true, phase: "draining" }; } catch (error) {
+          // 纯同步 throw 表示没有终止回调、也没有 quiet 出口，可安全解除本次未入队的 drain。
+          // 若 stop 已同步触发 terminal，则 quietTimer/revision 已代表该终止，绝不能覆盖它。
+          if (drainGeneration === revision && quietTimer === null) phase = "idle";
+          return { ok: false, reason: "native-error", phase, error };
+        }
       },
       subscribe(listener) { if (!current(state)) return { ok: false, reason: "released" }; state.listeners.add(listener); return { ok: true, unsubscribe: () => state.listeners.delete(listener) }; },
     };

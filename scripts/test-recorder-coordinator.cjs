@@ -278,7 +278,16 @@ quietScheduler.advance(9);
 assert.equal(quietNew.owner.start(options).reason, "busy", "迟到 terminal 必须重置静默窗口");
 quietScheduler.advance(1);
 assert.equal(quietNew.owner.start(options).ok, true);
-assert.deepEqual(quietEvents, [], "旧代次 terminal 绝不能通知或改变新 owner");
+assert.deepEqual(quietEvents, [], "quiet 窗口内旧 terminal 不得通知或改变等待 owner");
+
+const pureThrowScheduler = createFakeScheduler();
+const pureThrowNative = createNativeRecorder({ stop() { throw new Error("stop did not enqueue"); } });
+const pureThrowCoordinator = createRecorderCoordinator({ getRecorderManager: () => pureThrowNative.manager, scheduler: pureThrowScheduler, quietWindowMs: 10 });
+const pureThrowOwner = pureThrowCoordinator.acquire();
+pureThrowOwner.owner.start(options); pureThrowNative.emit("start");
+assert.equal(pureThrowOwner.owner.release().reason, "native-error");
+const afterPureThrow = pureThrowCoordinator.acquire();
+assert.equal(afterPureThrow.owner.start(options).ok, true, "纯同步 stop throw 不得留下永久 draining");
 
 const thrown = new Error("native start exploded");
 const throwingNative = createNativeRecorder({ start() { throw thrown; } });
