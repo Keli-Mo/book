@@ -7,6 +7,7 @@ const ts = require("typescript");
 
 const sourceRoot = path.resolve(__dirname, "../src");
 const sourcePath = path.join(sourceRoot, "features/layout/deviceLayout.ts");
+const hookSourcePath = path.join(sourceRoot, "hooks/useDeviceLayout.ts");
 const moduleCache = new Map();
 
 const isInsideSourceRoot = (candidate) =>
@@ -40,7 +41,7 @@ const resolveTypeScriptDependency = (request, importerPath) => {
   assert.ok(dependencyPath, `TypeScript 相对依赖必须存在：${request}`);
   return dependencyPath;
 };
-const loadTypeScriptModule = (modulePath) => {
+const loadTypeScriptModule = (modulePath, injectedModules = {}) => {
   const absolutePath = path.resolve(modulePath);
   assert.equal(
     isInsideSourceRoot(absolutePath),
@@ -59,8 +60,15 @@ const loadTypeScriptModule = (modulePath) => {
   });
   const moduleContainer = { exports: {} };
   moduleCache.set(absolutePath, moduleContainer);
-  const localRequire = (request) =>
-    loadTypeScriptModule(resolveTypeScriptDependency(request, absolutePath));
+  const localRequire = (request) => {
+    if (Object.prototype.hasOwnProperty.call(injectedModules, request)) {
+      return injectedModules[request];
+    }
+    return loadTypeScriptModule(
+      resolveTypeScriptDependency(request, absolutePath),
+      injectedModules,
+    );
+  };
 
   vm.runInNewContext(
     compiled.outputText,
@@ -408,6 +416,157 @@ for (const [scenario, input, expected] of invalidDimensionCases) {
   assertProfile(scenario, input, expected);
 }
 
+const createHookHarness = (windowInfoReader) => {
+  const stateUpdates = [];
+  const effects = [];
+  const resizeCallbacks = [];
+  const removedCallbacks = [];
+  let initialState;
+
+  const reactMock = {
+    useState(initializer) {
+      assert.equal(typeof initializer, "function", "Hook 初始布局必须使用 lazy initializer");
+      initialState = initializer();
+      return [initialState, (nextState) => stateUpdates.push(nextState)];
+    },
+    useEffect(effect, dependencies) {
+      assert.equal(Array.isArray(dependencies), true, "窗口订阅 effect 必须声明依赖数组");
+      assert.equal(dependencies.length, 0, "窗口订阅 effect 不得依赖布局 state");
+      effects.push({ cleanup: effect(), dependencies });
+    },
+  };
+  const taroMock = {
+    getWindowInfo: windowInfoReader,
+    onWindowResize(callback) {
+      resizeCallbacks.push(callback);
+    },
+    offWindowResize(callback) {
+      removedCallbacks.push(callback);
+    },
+  };
+  moduleCache.delete(hookSourcePath);
+  const { useDeviceLayout } = loadTypeScriptModule(hookSourcePath, {
+    react: reactMock,
+    "@tarojs/taro": { __esModule: true, default: taroMock },
+  });
+
+  assert.equal(typeof useDeviceLayout, "function", "设备布局 Hook 应导出 useDeviceLayout");
+  // 测试注入 React mock 后直接执行 Hook，不进入真实组件渲染。
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const returnedState = useDeviceLayout();
+  return {
+    effects,
+    initialState,
+    removedCallbacks,
+    resizeCallbacks,
+    returnedState,
+    stateUpdates,
+  };
+};
+
+let windowInfoReadCount = 0;
+const hookHarness = createHookHarness(() => {
+  windowInfoReadCount += 1;
+  if (windowInfoReadCount === 1) {
+    return {
+      windowWidth: 390,
+      windowHeight: 844,
+      screenWidth: 390,
+      screenHeight: 844,
+      statusBarHeight: 47,
+      safeArea: { top: 47, bottom: 810 },
+    };
+  }
+  return {
+    windowWidth: 768,
+    windowHeight: 1024,
+    screenWidth: 1024,
+    screenHeight: 768,
+    statusBarHeight: 24,
+    safeArea: { top: 24, bottom: 734 },
+    deviceType: "pad",
+  };
+});
+
+assert.deepEqual(
+  normalize(hookHarness.returnedState),
+  {
+    isPad: false,
+    orientation: "portrait",
+    isSplit: false,
+    contentMaxWidth: null,
+    statusBarHeight: 47,
+    safeAreaBottom: 34,
+    windowWidth: 390,
+    windowHeight: 844,
+  },
+  "Hook 应 lazy 读取当前窗口并返回有限窗口尺寸与布局 profile",
+);
+assert.equal(windowInfoReadCount, 1, "Hook 初始化只能读取一次窗口信息");
+assert.equal(hookHarness.resizeCallbacks.length, 1, "Hook 只能注册一个窗口 resize 回调");
+assert.equal(hookHarness.effects.length, 1, "Hook 只能创建一个窗口订阅 effect");
+
+const resizeCallback = hookHarness.resizeCallbacks[0];
+resizeCallback({ size: { windowWidth: 960, windowHeight: 600 } });
+assert.equal(windowInfoReadCount, 2, "resize 时必须重新读取完整窗口信息");
+assert.equal(hookHarness.stateUpdates.length, 1, "一次 resize 只能更新一次布局 state");
+assert.deepEqual(
+  normalize(hookHarness.stateUpdates[0]),
+  {
+    isPad: true,
+    orientation: "landscape",
+    isSplit: true,
+    contentMaxWidth: 1280,
+    statusBarHeight: 24,
+    safeAreaBottom: 34,
+    windowWidth: 960,
+    windowHeight: 600,
+  },
+  "resize 应以事件窗口尺寸覆盖读取值，同时保留新的 screen 与 safeArea",
+);
+assert.equal(
+  hookHarness.resizeCallbacks.length,
+  1,
+  "resize 更新 state 后不得重复注册窗口监听",
+);
+
+assert.equal(typeof hookHarness.effects[0].cleanup, "function", "effect 必须返回清理函数");
+hookHarness.effects[0].cleanup();
+assert.deepEqual(
+  hookHarness.removedCallbacks,
+  [resizeCallback],
+  "cleanup 必须把注册时的同一个回调引用交给 offWindowResize",
+);
+
+const failedReadHarness = createHookHarness(() => {
+  throw new Error("window info unavailable");
+});
+assert.deepEqual(
+  normalize(failedReadHarness.returnedState),
+  {
+    isPad: false,
+    orientation: "portrait",
+    isSplit: false,
+    contentMaxWidth: null,
+    statusBarHeight: 20,
+    safeAreaBottom: 0,
+    windowWidth: 0,
+    windowHeight: 0,
+  },
+  "窗口信息读取失败时应安全降级为有限的手机单栏结果",
+);
+for (const key of [
+  "statusBarHeight",
+  "safeAreaBottom",
+  "windowWidth",
+  "windowHeight",
+]) {
+  assert.ok(
+    Number.isFinite(failedReadHarness.returnedState[key]),
+    `读取失败时 ${key} 必须是有限数`,
+  );
+}
+
 console.log(
-  "设备布局测试通过：手机、iPad、Android Pad、分屏、安全区与非法尺寸契约均正确。",
+  "设备布局测试通过：纯函数、窗口订阅、清理与安全降级契约均正确。",
 );

@@ -142,6 +142,25 @@ assertHotspot(
   { left: 5, top: 90 },
   10,
 );
+for (const [scenario, hitRadiusPx] of [
+  ["负半径", -1],
+  ["NaN 半径", Number.NaN],
+]) {
+  assertHotspot(
+    `${scenario}应回退默认 22px`,
+    { left: 0, top: 100 },
+    { width: 320, height: 480 },
+    { left: defaultBounds.left, top: defaultBounds.bottom },
+    hitRadiusPx,
+  );
+}
+assertHotspot(
+  "零半径允许热点中心覆盖完整百分比范围",
+  { left: 0, top: 100 },
+  { width: 320, height: 480 },
+  { left: 0, top: 100 },
+  0,
+);
 assertHotspot(
   "默认半径同时大于图片宽高一半时稳定居中",
   { left: 0, top: 100 },

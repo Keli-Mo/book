@@ -218,6 +218,81 @@ assert.deepEqual(
   { statusBarHeight: 24, navigationHeight: 44, capsuleReserve: 104 },
   "应适配 Android 不同状态栏高度",
 );
+
+const normalize = (value) => JSON.parse(JSON.stringify(value));
+const assertNavigationFallback = (
+  scenario,
+  windowWidth,
+  statusBarHeight,
+  menuButton,
+  expectedStatusBarHeight = 20,
+) => {
+  const actual = normalize(
+    calculateHomeNavigationMetrics(windowWidth, statusBarHeight, menuButton),
+  );
+  assert.deepEqual(
+    actual,
+    {
+      statusBarHeight: expectedStatusBarHeight,
+      navigationHeight: 44,
+      capsuleReserve: 96,
+    },
+    `${scenario}：无效导航输入必须得到稳定回退`,
+  );
+  for (const key of ["statusBarHeight", "navigationHeight", "capsuleReserve"]) {
+    assert.ok(Number.isFinite(actual[key]), `${scenario}：${key} 必须是有限数`);
+  }
+};
+
+const validMenuButton = {
+  top: 51,
+  bottom: 83,
+  left: 294,
+  right: 381,
+  width: 87,
+  height: 32,
+};
+assertNavigationFallback("胶囊缺失", 390, 47, undefined, 47);
+
+for (const [name, invalidValue] of [
+  ["NaN", Number.NaN],
+  ["正 Infinity", Number.POSITIVE_INFINITY],
+  ["负 Infinity", Number.NEGATIVE_INFINITY],
+  ["负数", -1],
+  ["零", 0],
+]) {
+  for (const field of ["top", "bottom", "left", "right", "width", "height"]) {
+    assertNavigationFallback(
+      `胶囊 ${field} 为${name}`,
+      390,
+      47,
+      { ...validMenuButton, [field]: invalidValue },
+      47,
+    );
+  }
+}
+
+for (const [scenario, menuButton] of [
+  ["胶囊垂直几何次序相等", { ...validMenuButton, bottom: validMenuButton.top }],
+  ["胶囊垂直几何次序反向", { ...validMenuButton, bottom: validMenuButton.top - 1 }],
+  ["胶囊顶部越过状态栏", { ...validMenuButton, top: 46 }],
+  ["胶囊水平几何次序相等", { ...validMenuButton, right: validMenuButton.left }],
+  ["胶囊水平几何次序反向", { ...validMenuButton, right: validMenuButton.left - 1 }],
+  ["胶囊右侧越过窗口", { ...validMenuButton, right: 391 }],
+]) {
+  assertNavigationFallback(scenario, 390, 47, menuButton, 47);
+}
+
+for (const [name, invalidValue] of [
+  ["NaN", Number.NaN],
+  ["Infinity", Number.POSITIVE_INFINITY],
+  ["负数", -1],
+  ["零", 0],
+]) {
+  assertNavigationFallback(`windowWidth 为${name}`, invalidValue, 47, validMenuButton, 47);
+  assertNavigationFallback(`statusBarHeight 为${name}`, 390, invalidValue, validMenuButton);
+}
+
 assertHomeDefaultEntry(home);
 assertEmptyCheckInDefaultEntry(myCheckIns);
 
