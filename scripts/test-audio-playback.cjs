@@ -291,7 +291,7 @@ async function testBookPlaybackLifecycle() {
   await directory.props.onSelect(1);
   assert.ok(firstModelAudio.events.includes("destroy"), "换训练应通过现有控制器销毁旧示范音频");
   tree = page.render();
-  page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200 });
+  await page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200 });
   tree = page.render();
   elements(tree).find((node) => node.type === "Button" && textOf(node) === "回听录音").props.onClick();
   const recording = page.audios.find((audio) => audio.src === "/tmp/recording.mp3");
