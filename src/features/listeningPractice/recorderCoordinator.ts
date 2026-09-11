@@ -8,8 +8,10 @@ export type RecorderNativeManager = {
 export type RecordingCapabilities = { canRecord: boolean; canPause: boolean; canResume: boolean; canInterrupt: boolean };
 export type RecorderCoordinatorPhase = "idle" | "starting" | "recording" | "paused" | "stopping" | "draining";
 export type RecorderOwnerListener = {
-  onStart?: () => void; onPause?: () => void; onResume?: () => void; onStop?: (result: RecorderNativeStopResult) => void;
-  onError?: (error: unknown) => void; onInterruptionBegin?: () => void; onInterruptionEnd?: () => void;
+  onStart?: () => void; onPause?: () => void; onResume?: () => void;
+  onStop?: (result: RecorderNativeStopResult) => void | Promise<void>;
+  onError?: (error: unknown) => void | Promise<void>;
+  onInterruptionBegin?: () => void; onInterruptionEnd?: () => void;
 };
 export type RecorderTerminalEvent =
   | { type: "stop"; result: RecorderNativeStopResult }
@@ -141,31 +143,56 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
       finish();
     }
   };
+  const createActiveTerminalSink = (key: "onStop" | "onError"): RecorderTerminalSink | null => {
+    if (!owner || owner.released) return null;
+    const callbacks = [...owner.listeners]
+      .map((listener) => listener[key] as ((value: unknown) => void | Promise<void>) | undefined)
+      .filter((callback): callback is (value: unknown) => void | Promise<void> => Boolean(callback));
+    if (callbacks.length === 0) return null;
+
+    return (event) => {
+      const value = event.type === "stop" ? event.result : event.error;
+      const pending: Promise<void>[] = [];
+      callbacks.forEach((callback) => {
+        try {
+          const outcome = callback(value);
+          if (outcome && typeof outcome.then === "function") {
+            // 每个 listener 独立吞掉失败，并等待其余落盘完成，避免一个拒绝让其它保存任务提前失去保护。
+            pending.push(Promise.resolve(outcome).then(() => undefined, () => undefined));
+          }
+        } catch (_error) { /* 同步 listener 失败不能阻断其它订阅或 draining 收口。 */ }
+      });
+      return pending.length > 0 ? Promise.all(pending).then(() => undefined) : undefined;
+    };
+  };
   const consumeTerminal = (key: "onStop" | "onError", value: unknown) => {
     clearPending();
+    const event: RecorderTerminalEvent = key === "onStop"
+      ? { type: "stop", result: value as RecorderNativeStopResult }
+      : { type: "error", error: value };
     // 无 session id：仅 drain/连续静默窗内的一切 terminal 可归旧代次，绝不贴给等待 owner。
     if (phase === "draining") {
-      settleDetachedTerminal(
-        key === "onStop"
-          ? { type: "stop", result: value as RecorderNativeStopResult }
-          : { type: "error", error: value },
-      );
+      settleDetachedTerminal(event);
       return;
     }
     if (phase === "idle") return;
-    notify(key, value);
-    beginDraining();
-    beginQuiet();
+    // 正常页面的异步 onStop/onError 与卸载后的 terminalSink 共用同一套 draining 保护。
+    beginDraining(createActiveTerminalSink(key));
+    settleDetachedTerminal(event);
   };
-  const armOperationWatchdog = (expected: "pause" | "resume", manager: RecorderNativeManager) => {
+  const armOperationWatchdog = (expected: "pause" | "resume" | "system-pause", manager: RecorderNativeManager) => {
     clearOperationWatchdog();
     const generation = operationGeneration;
     operationTimer = scheduler.setTimeout(() => {
       if (generation !== operationGeneration) return;
       operationTimer = null;
-      const stillPending = expected === "pause" ? pausePending && phase === "paused" : resumePending && phase === "recording";
+      const stillPending = expected === "pause"
+        ? pausePending && phase === "paused"
+        : expected === "resume"
+          ? resumePending && phase === "recording"
+          : systemPausePending && ["starting", "recording", "paused"].includes(phase);
       if (!stillPending) return;
-      // 原生 pause/resume 偶尔不回调；超时后强制 stop，让 onStop 仍有机会保存录音，避免页面永久卡住。
+      // 原生 pause/resume/系统中断偶尔不回调；超时后强制 stop，让 onStop 仍有机会保存录音，避免后台持续录音。
       clearPending();
       phase = "stopping";
       try { manager.stop(); } catch (error) { consumeTerminal("onError", error); }
@@ -188,7 +215,12 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
     if (!core) return null;
     const pause = add("pause", () => { if ((phase !== "paused" && phase !== "recording" && phase !== "starting") || (!pausePending && !systemPausePending)) return; clearPending(); phase = "paused"; notify("onPause"); });
     const resume = add("resume", () => { if (phase !== "recording" || !resumePending) return; clearPending(); notify("onResume"); });
-    const begin = add("interruptionBegin", () => { if (capabilities?.canInterrupt && (phase === "recording" || phase === "starting" || phase === "paused")) { systemPausePending = true; notify("onInterruptionBegin"); } });
+    const begin = add("interruptionBegin", () => {
+      if (!capabilities?.canInterrupt || !["recording", "starting", "paused"].includes(phase)) return;
+      systemPausePending = true;
+      notify("onInterruptionBegin");
+      if (systemPausePending) armOperationWatchdog("system-pause", candidate!);
+    });
     const end = add("interruptionEnd", () => { if (phase !== "idle" && phase !== "draining") notify("onInterruptionEnd"); });
     capabilities = { canRecord: true, canPause: typeof candidate.pause === "function" && pause, canResume: typeof candidate.resume === "function" && resume, canInterrupt: pause && begin && end };
     native = candidate; pendingNative = null;
@@ -226,7 +258,18 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
       subscribe(listener) { if (!current(state)) return { ok: false, reason: "released" }; state.listeners.add(listener); return { ok: true, unsubscribe: () => state.listeners.delete(listener) }; },
     };
   };
-  return { acquire() { const ready = ensure(); if (!ready) return { ok: false, reason: "unavailable" }; if (owner && !owner.released) return { ok: false, reason: "busy", phase }; const state: Owner = { token: Symbol("recorder-owner"), released: false, listeners: new Set() }; owner = state; return { ok: true, owner: makeOwner(state, ready.manager, ready.caps), capabilities: ready.caps }; }, getPhase: () => phase };
+  return {
+    acquire() {
+      const ready = ensure();
+      if (!ready) return { ok: false, reason: "unavailable" };
+      // draining 期间不创建“等待 owner”，让页面统一按 busy 契约重试，避免按钮看似可用却无法开始。
+      if (phase === "draining" || (owner && !owner.released)) return { ok: false, reason: "busy", phase };
+      const state: Owner = { token: Symbol("recorder-owner"), released: false, listeners: new Set() };
+      owner = state;
+      return { ok: true, owner: makeOwner(state, ready.manager, ready.caps), capabilities: ready.caps };
+    },
+    getPhase: () => phase,
+  };
 };
 let singleton: RecorderCoordinator | null = null;
 export const getRecorderCoordinator = () => (singleton ??= createRecorderCoordinator());

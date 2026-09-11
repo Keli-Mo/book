@@ -194,6 +194,39 @@ assert.equal(confirmedNative.calls.stop, 0, "及时 onResume 必须取消 watchd
 confirmedOwner.owner.stop();
 assert.equal(confirmedNative.calls.stop, 1, "确认成功后只允许用户 stop 一次");
 
+const interruptionWatchdogNative = createNativeRecorder();
+const interruptionWatchdogScheduler = createFakeScheduler();
+const interruptionWatchdogCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => interruptionWatchdogNative.manager,
+  scheduler: interruptionWatchdogScheduler,
+  operationTimeoutMs: 25,
+});
+const interruptionWatchdogOwner = interruptionWatchdogCoordinator.acquire();
+interruptionWatchdogOwner.owner.start(options);
+interruptionWatchdogNative.emit("start");
+interruptionWatchdogNative.emit("interruptionBegin");
+interruptionWatchdogScheduler.advance(24);
+assert.equal(interruptionWatchdogNative.calls.stop, 0, "系统中断确认窗口内不得提前 stop");
+interruptionWatchdogScheduler.advance(1);
+assert.equal(interruptionWatchdogNative.calls.stop, 1, "系统中断未返回 pause/stop/error 时必须安全 stop");
+assert.equal(interruptionWatchdogCoordinator.getPhase(), "stopping");
+
+const interruptionConfirmedNative = createNativeRecorder();
+const interruptionConfirmedScheduler = createFakeScheduler();
+const interruptionConfirmedCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => interruptionConfirmedNative.manager,
+  scheduler: interruptionConfirmedScheduler,
+  operationTimeoutMs: 25,
+});
+const interruptionConfirmedOwner = interruptionConfirmedCoordinator.acquire();
+interruptionConfirmedOwner.owner.start(options);
+interruptionConfirmedNative.emit("start");
+interruptionConfirmedNative.emit("interruptionBegin");
+interruptionConfirmedScheduler.advance(24);
+interruptionConfirmedNative.emit("pause");
+interruptionConfirmedScheduler.advance(100);
+assert.equal(interruptionConfirmedNative.calls.stop, 0, "系统中断及时 onPause 必须取消 watchdog");
+
 const releasedWatchdogNative = createNativeRecorder();
 const releasedWatchdogScheduler = createFakeScheduler();
 const releasedWatchdogCoordinator = createRecorderCoordinator({
@@ -291,16 +324,19 @@ drainingNative.emit("start");
 assert.deepEqual(plain(oldOwner.owner.release()), { ok: true, phase: "draining" });
 assert.equal(drainingNative.calls.stop, 1, "释放活动 owner 只能 stop 一次");
 assert.equal(oldOwner.owner.release().ok, false, "重复 release 必须无效");
-const newOwner = drainingCoordinator.acquire();
-assert.equal(newOwner.ok, true);
-assert.deepEqual(plain(newOwner.owner.start(options)), { ok: false, reason: "busy", phase: "draining" });
-const newStops = [];
-newOwner.owner.subscribe({ onStop(result) { newStops.push(result); } });
+assert.deepEqual(
+  plain(drainingCoordinator.acquire()),
+  { ok: false, reason: "busy", phase: "draining" },
+  "draining 时 acquire 必须直接返回 busy，页面才能按同一契约自动重试",
+);
 const staleStop = { duration: 12.5, fileSize: 1, tempFilePath: "/tmp/stale.mp3" };
 drainingNative.emit("stop", staleStop);
 assert.deepEqual(oldStops, [], "release 后旧 owner 不得接收回调");
-assert.deepEqual(newStops, [], "旧 session stop 不得发给新页面");
 drainingScheduler.advance(10);
+const newOwner = drainingCoordinator.acquire();
+assert.equal(newOwner.ok, true);
+const newStops = [];
+newOwner.owner.subscribe({ onStop(result) { newStops.push(result); } });
 assert.deepEqual(plain(newOwner.owner.start(options)), { ok: true });
 drainingNative.emit("start");
 newOwner.owner.stop();
@@ -318,14 +354,11 @@ const drainErrorOld = drainErrorCoordinator.acquire();
 drainErrorOld.owner.start(options);
 drainErrorNative.emit("start");
 drainErrorOld.owner.release();
-const drainErrorNew = drainErrorCoordinator.acquire();
-const drainErrors = [];
-drainErrorNew.owner.subscribe({ onError(error) { drainErrors.push(error); } });
-assert.equal(drainErrorNew.owner.start(options).reason, "busy");
+assert.equal(drainErrorCoordinator.acquire().reason, "busy");
 const staleError = { errMsg: "old session stopped" };
 drainErrorNative.emit("error", staleError);
-assert.deepEqual(drainErrors, [], "draining 的旧 error 不得发给新 owner");
 drainErrorScheduler.advance(10);
+const drainErrorNew = drainErrorCoordinator.acquire();
 assert.equal(drainErrorNew.owner.start(options).ok, true, "旧 error 消费后应允许新 session 启动");
 
 const missingNative = createNativeRecorder({ missing: ["pause", "resume", "onInterruptionBegin", "onInterruptionEnd"] });
@@ -390,21 +423,17 @@ quietNative.emit("start");
 quietOld.owner.stop();
 quietOld.owner.release();
 assert.equal(quietCoordinator.getPhase(), "draining", "release while stopping 必须真进入 draining");
-const waitingOwner = quietCoordinator.acquire();
-waitingOwner.owner.release();
-assert.equal(quietNative.calls.stop, 1, "等待 drain 的 owner release 不得重复 stop");
-const quietNew = quietCoordinator.acquire();
-const quietEvents = [];
-quietNew.owner.subscribe({ onStop(value) { quietEvents.push(value); }, onError(value) { quietEvents.push(value); } });
+assert.equal(quietCoordinator.acquire().reason, "busy", "drain 未完成时不得创建等待 owner");
+assert.equal(quietNative.calls.stop, 1, "busy acquire 不得重复 stop");
 quietNative.emit("stop", { id: "old-stop" });
-assert.equal(quietNew.owner.start(options).reason, "busy", "旧 terminal 后静默窗口内不得启动");
+assert.equal(quietCoordinator.acquire().reason, "busy", "旧 terminal 后静默窗口内不得取得 owner");
 quietScheduler.advance(5);
 quietNative.emit("error", { id: "old-late-error" });
 quietScheduler.advance(9);
-assert.equal(quietNew.owner.start(options).reason, "busy", "迟到 terminal 必须重置静默窗口");
+assert.equal(quietCoordinator.acquire().reason, "busy", "迟到 terminal 必须重置静默窗口");
 quietScheduler.advance(1);
+const quietNew = quietCoordinator.acquire();
 assert.equal(quietNew.owner.start(options).ok, true);
-assert.deepEqual(quietEvents, [], "quiet 窗口内旧 terminal 不得通知或改变等待 owner");
 
 const pureThrowScheduler = createFakeScheduler();
 const pureThrowNative = createNativeRecorder({ stop() { throw new Error("stop did not enqueue"); } });
@@ -433,13 +462,14 @@ const boundaryEvents = [];
 boundaryOwner.owner.subscribe({ onPause() { boundaryEvents.push("pause"); }, onStop(value) { boundaryEvents.push(value); } });
 boundaryOwner.owner.start(options); boundaryNative.emit("start"); boundaryOwner.owner.pause();
 boundaryOwner.owner.release();
-const boundaryWaiting = boundary.acquire();
+assert.equal(boundary.acquire().reason, "busy");
 boundaryNative.emit("pause");
 assert.equal(boundary.getPhase(), "draining", "旧 pause 确认不能突破 draining");
 assert.deepEqual(boundaryEvents, [], "release 后旧确认不能再通知");
 boundaryNative.emit("stop", { id: "old" });
-assert.equal(boundaryWaiting.owner.start(options).reason, "busy");
+assert.equal(boundary.acquire().reason, "busy");
 boundaryScheduler.advance(10);
+const boundaryWaiting = boundary.acquire();
 assert.equal(boundaryWaiting.owner.start(options).ok, true);
 boundaryNative.emit("start"); boundaryWaiting.owner.stop();
 const normalStop = { id: "normal" }; boundaryNative.emit("stop", normalStop);
@@ -466,9 +496,7 @@ assert.deepEqual(
   "stopping owner 卸载后应把唯一 terminal 消费器托管给协调器",
 );
 assert.equal(detachedNative.calls.stop, 1, "已经 stopping 的 release 不得重复 stop");
-const detachedWaiting = detachedCoordinator.acquire();
-assert.equal(detachedWaiting.ok, true, "旧页面卸载后新页面应能先取得等待 owner");
-assert.equal(detachedWaiting.owner.start(options).reason, "busy", "旧 terminal 未收口前不能启动新录音");
+assert.equal(detachedCoordinator.acquire().reason, "busy", "旧 terminal 未收口前不能取得新 owner");
 detachedScheduler.advance(9000);
 const delayedDetachedStop = { duration: 9000, fileSize: 99, tempFilePath: "/tmp/delayed.mp3" };
 detachedNative.emit("stop", delayedDetachedStop);
@@ -477,8 +505,9 @@ assert.deepEqual(
   [{ type: "stop", result: delayedDetachedStop }],
   "页面卸载超过旧 8 秒窗口后，迟到的有效 stop 仍必须交给托管 sink",
 );
-assert.equal(detachedWaiting.owner.start(options).reason, "busy", "terminal 后静默窗口结束前仍不能启动");
+assert.equal(detachedCoordinator.acquire().reason, "busy", "terminal 后静默窗口结束前仍不能取得 owner");
 detachedScheduler.advance(10);
+const detachedWaiting = detachedCoordinator.acquire();
 assert.equal(detachedWaiting.owner.start(options).ok, true, "托管 sink 完成后应允许等待页面开始录音");
 
 let synchronousNative;
@@ -513,10 +542,10 @@ const timeoutOld = timeoutCoordinator.acquire();
 timeoutOld.owner.start(options);
 timeoutNative.emit("start");
 timeoutOld.owner.release({ terminalSink: () => { throw new Error("terminal 不应到达"); } });
-const timeoutWaiting = timeoutCoordinator.acquire();
 timeoutScheduler.advance(29);
-assert.equal(timeoutWaiting.owner.start(options).reason, "busy", "drain 总超时前必须继续隔离旧会话");
+assert.equal(timeoutCoordinator.acquire().reason, "busy", "drain 总超时前必须继续隔离旧会话");
 timeoutScheduler.advance(1);
+const timeoutWaiting = timeoutCoordinator.acquire();
 assert.equal(timeoutWaiting.owner.start(options).ok, true, "terminal 永不返回时 drain watchdog 必须解除永久 busy");
 
 async function testAsyncDetachedSink() {
@@ -535,16 +564,87 @@ async function testAsyncDetachedSink() {
   asyncOld.owner.release({
     terminalSink: () => new Promise((resolve) => { resolveSink = resolve; }),
   });
-  const asyncWaiting = asyncCoordinator.acquire();
+  assert.equal(asyncCoordinator.acquire().reason, "busy");
   asyncNative.emit("stop", { duration: 2, fileSize: 2, tempFilePath: "/tmp/async.mp3" });
   asyncScheduler.advance(29);
-  assert.equal(asyncWaiting.owner.start(options).reason, "busy", "异步持久化完成前必须保持 draining");
+  assert.equal(asyncCoordinator.acquire().reason, "busy", "异步持久化完成前必须保持 draining");
   resolveSink();
   await Promise.resolve();
   await Promise.resolve();
-  assert.equal(asyncWaiting.owner.start(options).reason, "busy", "异步 sink 完成后仍须经过 quiet window");
+  assert.equal(asyncCoordinator.acquire().reason, "busy", "异步 sink 完成后仍须经过 quiet window");
   asyncScheduler.advance(10);
+  const asyncWaiting = asyncCoordinator.acquire();
   assert.equal(asyncWaiting.owner.start(options).ok, true, "异步 sink 完成并静默后应允许新录音");
+
+  const activeNative = createNativeRecorder();
+  const activeScheduler = createFakeScheduler();
+  const activeCoordinator = createRecorderCoordinator({
+    getRecorderManager: () => activeNative.manager,
+    scheduler: activeScheduler,
+    quietWindowMs: 10,
+    drainTimeoutMs: 30,
+  });
+  const activeOwner = activeCoordinator.acquire();
+  let resolveActiveListener;
+  activeOwner.owner.subscribe({
+    onStop() { return new Promise((resolve) => { resolveActiveListener = resolve; }); },
+  });
+  activeOwner.owner.start(options);
+  activeNative.emit("start");
+  activeOwner.owner.stop();
+  activeNative.emit("stop", { duration: 4, fileSize: 4, tempFilePath: "/tmp/active.mp3" });
+  activeScheduler.advance(29);
+  assert.equal(activeOwner.owner.start(options).reason, "busy", "活跃 owner 的异步 onStop 完成前不得开始下一次录音");
+  resolveActiveListener();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(activeOwner.owner.start(options).reason, "busy", "活跃异步 listener 完成后仍须经过静默窗口");
+  activeScheduler.advance(10);
+  assert.equal(activeOwner.owner.start(options).ok, true, "活跃异步 onStop 完成并静默后应解锁");
+
+  const rejectedNative = createNativeRecorder();
+  const rejectedScheduler = createFakeScheduler();
+  const rejectedCoordinator = createRecorderCoordinator({
+    getRecorderManager: () => rejectedNative.manager,
+    scheduler: rejectedScheduler,
+    quietWindowMs: 10,
+    drainTimeoutMs: 30,
+  });
+  const rejectedOwner = rejectedCoordinator.acquire();
+  let rejectActiveListener;
+  rejectedOwner.owner.subscribe({
+    onError() { return new Promise((_resolve, reject) => { rejectActiveListener = reject; }); },
+  });
+  rejectedOwner.owner.start(options);
+  rejectedNative.emit("start");
+  rejectedNative.emit("error", { errMsg: "native failed" });
+  rejectActiveListener(new Error("持久化失败"));
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(rejectedOwner.owner.start(options).reason, "busy", "异步 onError 拒绝后仍须经过静默窗口");
+  rejectedScheduler.advance(10);
+  assert.equal(rejectedOwner.owner.start(options).ok, true, "异步 onError 拒绝也必须安全收口并解锁");
+
+  const activeStalledNative = createNativeRecorder();
+  const activeStalledScheduler = createFakeScheduler();
+  const activeStalledCoordinator = createRecorderCoordinator({
+    getRecorderManager: () => activeStalledNative.manager,
+    scheduler: activeStalledScheduler,
+    quietWindowMs: 10,
+    drainTimeoutMs: 30,
+  });
+  const activeStalledOwner = activeStalledCoordinator.acquire();
+  activeStalledOwner.owner.subscribe({ onStop() { return new Promise(() => {}); } });
+  activeStalledOwner.owner.start(options);
+  activeStalledNative.emit("start");
+  activeStalledOwner.owner.stop();
+  activeStalledNative.emit("stop", { duration: 5, fileSize: 5, tempFilePath: "/tmp/active-stalled.mp3" });
+  activeStalledScheduler.advance(29);
+  assert.equal(activeStalledOwner.owner.start(options).reason, "busy", "活跃异步 listener 超时前必须保持 draining");
+  activeStalledScheduler.advance(1);
+  assert.equal(activeStalledOwner.owner.start(options).ok, true, "活跃异步 listener 永不结束时 watchdog 必须解锁");
 
   const stalledNative = createNativeRecorder();
   const stalledScheduler = createFakeScheduler();
@@ -558,11 +658,11 @@ async function testAsyncDetachedSink() {
   stalledOld.owner.start(options);
   stalledNative.emit("start");
   stalledOld.owner.release({ terminalSink: () => new Promise(() => {}) });
-  const stalledWaiting = stalledCoordinator.acquire();
   stalledNative.emit("stop", { duration: 3, fileSize: 3, tempFilePath: "/tmp/stalled.mp3" });
   stalledScheduler.advance(29);
-  assert.equal(stalledWaiting.owner.start(options).reason, "busy");
+  assert.equal(stalledCoordinator.acquire().reason, "busy");
   stalledScheduler.advance(1);
+  const stalledWaiting = stalledCoordinator.acquire();
   assert.equal(stalledWaiting.owner.start(options).ok, true, "sink 永不结束时第二段 watchdog 也必须解锁");
 }
 
