@@ -76,6 +76,7 @@ const createNativeRecorder = (overrides = {}) => {
 };
 
 const options = { sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: "mp3" };
+const plain = (value) => JSON.parse(JSON.stringify(value));
 
 const native = createNativeRecorder();
 const { createRecorderCoordinator, getRecorderCoordinator } = loadCoordinator();
@@ -88,19 +89,21 @@ assert.equal(first.ok, true);
 assert.deepEqual(native.listenerCounts, {
   start: 1, pause: 1, resume: 1, stop: 1, error: 1, interruptionBegin: 1, interruptionEnd: 1,
 }, "每种原生事件只能注册一次");
-assert.deepEqual(first.owner.start(options), { ok: true });
+assert.deepEqual(plain(first.owner.start(options)), { ok: true });
 assert.deepEqual(native.calls.start, [options], "调用方录音参数必须透明传递");
+assert.equal(first.owner.start(options).ok, false, "快速重复 start 必须无效");
+assert.equal(native.calls.start.length, 1);
 native.emit("start");
 assert.equal(coordinator.getPhase(), "recording");
-assert.deepEqual(first.owner.pause(), { ok: true });
+assert.deepEqual(plain(first.owner.pause()), { ok: true });
 assert.equal(native.calls.pause, 1);
 assert.equal(first.owner.pause().ok, false, "快速重复 pause 必须无效");
 native.emit("pause");
-assert.deepEqual(first.owner.resume(), { ok: true });
+assert.deepEqual(plain(first.owner.resume()), { ok: true });
 assert.equal(native.calls.resume, 1);
 assert.equal(first.owner.resume().ok, false, "快速重复 resume 必须无效");
 native.emit("resume");
-assert.deepEqual(first.owner.stop(), { ok: true });
+assert.deepEqual(plain(first.owner.stop()), { ok: true });
 assert.equal(first.owner.stop().ok, false, "快速重复 stop 必须无效");
 assert.equal(native.calls.stop, 1);
 const firstStop = { duration: 1234.5, fileSize: 4567, tempFilePath: "/tmp/first.mp3" };
@@ -127,6 +130,8 @@ assert.equal(eventNative.calls.resume, 0, "中断结束只能通知，不能自�
 const nativeError = { errMsg: "native error", errno: 9 };
 eventNative.emit("error", nativeError);
 assert.equal(seen.error, nativeError, "必须保留底层 error 原对象");
+assert.equal(eventOwner.owner.start(options).ok, true, "错误后应可由当前 owner 重新开始");
+eventNative.emit("start");
 eventOwner.owner.stop();
 const rawStop = { duration: 99.9, fileSize: 2, tempFilePath: "/tmp/raw.mp3" };
 eventNative.emit("stop", rawStop);
@@ -141,19 +146,19 @@ const oldStops = [];
 oldOwner.owner.subscribe({ onStop(result) { oldStops.push(result); } });
 oldOwner.owner.start(options);
 drainingNative.emit("start");
-assert.deepEqual(oldOwner.owner.release(), { ok: true, phase: "draining" });
+assert.deepEqual(plain(oldOwner.owner.release()), { ok: true, phase: "draining" });
 assert.equal(drainingNative.calls.stop, 1, "释放活动 owner 只能 stop 一次");
 assert.equal(oldOwner.owner.release().ok, false, "重复 release 必须无效");
 const newOwner = drainingCoordinator.acquire();
 assert.equal(newOwner.ok, true);
-assert.deepEqual(newOwner.owner.start(options), { ok: false, reason: "busy", phase: "draining" });
+assert.deepEqual(plain(newOwner.owner.start(options)), { ok: false, reason: "busy", phase: "draining" });
 const newStops = [];
 newOwner.owner.subscribe({ onStop(result) { newStops.push(result); } });
 const staleStop = { duration: 12.5, fileSize: 1, tempFilePath: "/tmp/stale.mp3" };
 drainingNative.emit("stop", staleStop);
 assert.deepEqual(oldStops, [], "release 后旧 owner 不得接收回调");
 assert.deepEqual(newStops, [], "旧 session stop 不得发给新页面");
-assert.deepEqual(newOwner.owner.start(options), { ok: true });
+assert.deepEqual(plain(newOwner.owner.start(options)), { ok: true });
 drainingNative.emit("start");
 newOwner.owner.stop();
 const newStop = { duration: 22.5, fileSize: 3, tempFilePath: "/tmp/new.mp3" };
@@ -162,17 +167,32 @@ assert.deepEqual(newStops, [newStop]);
 assert.equal(newOwner.owner.subscribe({}).ok, true, "当前 owner 应可订阅");
 assert.equal(oldOwner.owner.subscribe({}).ok, false, "release 后不可重新订阅旧 owner");
 
+const drainErrorNative = createNativeRecorder();
+const drainErrorCoordinator = createRecorderCoordinator({ getRecorderManager: () => drainErrorNative.manager });
+const drainErrorOld = drainErrorCoordinator.acquire();
+drainErrorOld.owner.start(options);
+drainErrorNative.emit("start");
+drainErrorOld.owner.release();
+const drainErrorNew = drainErrorCoordinator.acquire();
+const drainErrors = [];
+drainErrorNew.owner.subscribe({ onError(error) { drainErrors.push(error); } });
+assert.equal(drainErrorNew.owner.start(options).reason, "busy");
+const staleError = { errMsg: "old session stopped" };
+drainErrorNative.emit("error", staleError);
+assert.deepEqual(drainErrors, [], "draining 的旧 error 不得发给新 owner");
+assert.equal(drainErrorNew.owner.start(options).ok, true, "旧 error 消费后应允许新 session 启动");
+
 const missingNative = createNativeRecorder({ missing: ["pause", "resume", "onInterruptionBegin", "onInterruptionEnd"] });
 const missingCoordinator = createRecorderCoordinator({ getRecorderManager: () => missingNative.manager });
 const missingOwner = missingCoordinator.acquire();
 assert.equal(missingOwner.ok, true, "缺少可选能力不能崩溃");
 missingOwner.owner.start(options);
 missingNative.emit("start");
-assert.deepEqual(missingOwner.owner.pause(), { ok: false, reason: "unsupported", capability: "pause" });
-assert.deepEqual(missingOwner.owner.resume(), { ok: false, reason: "unsupported", capability: "resume" });
+assert.deepEqual(plain(missingOwner.owner.pause()), { ok: false, reason: "unsupported", capability: "pause" });
+assert.deepEqual(plain(missingOwner.owner.resume()), { ok: false, reason: "unsupported", capability: "resume" });
 
 const unavailable = createRecorderCoordinator({ getRecorderManager: () => undefined });
-assert.deepEqual(unavailable.acquire(), { ok: false, reason: "unavailable" });
+assert.deepEqual(plain(unavailable.acquire()), { ok: false, reason: "unavailable" });
 
 const thrown = new Error("native start exploded");
 const throwingNative = createNativeRecorder({ start() { throw thrown; } });
@@ -188,6 +208,6 @@ const lazyRuntime = {};
 const lazyExports = loadCoordinator(lazyRuntime);
 assert.equal(Object.keys(lazyRuntime).length, 0, "模块导入时不得读取或创建 wx");
 const singleton = lazyExports.getRecorderCoordinator();
-assert.deepEqual(singleton.acquire(), { ok: false, reason: "unavailable" }, "H5/测试环境必须安全降级");
+assert.deepEqual(plain(singleton.acquire()), { ok: false, reason: "unavailable" }, "H5/测试环境必须安全降级");
 
 console.log("录音协调器测试通过：全局事件、所有权、draining 与安全降级契约正确。");
