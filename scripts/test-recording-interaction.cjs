@@ -32,6 +32,7 @@ vm.runInNewContext(compiled.outputText, {
 const {
   getRecordingErrorMessage,
   getPracticeSwitchPolicy,
+  parseNativeRecordingResult,
   getRecordingElapsedMs,
   pauseRecordingTimeline,
   resumeRecordingTimeline,
@@ -88,6 +89,30 @@ assert.equal(getPracticeSwitchPolicy("recording"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("paused"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("recorded"), "confirm-discard");
 assert.equal(getPracticeSwitchPolicy("uploading"), "block-uploading");
+
+assert.deepEqual(
+  JSON.parse(JSON.stringify(parseNativeRecordingResult({
+    tempFilePath: "wxfile://tmp/record.mp3",
+    duration: 1234.5,
+    fileSize: 4096,
+  }))),
+  {
+    ok: true,
+    tempFilePath: "wxfile://tmp/record.mp3",
+    durationMs: 1234.5,
+    fileSizeBytes: 4096,
+  },
+  "录音只使用原生返回的路径、时长和大小",
+);
+for (const [result, reason] of [
+  [{ duration: 1000, fileSize: 10 }, "missing-path"],
+  [{ tempFilePath: "x", duration: 0, fileSize: 10 }, "invalid-duration"],
+  [{ tempFilePath: "x", duration: 499.9, fileSize: 10 }, "too-short"],
+  [{ tempFilePath: "x", duration: 1000, fileSize: 0 }, "invalid-size"],
+  [{ tempFilePath: "x", duration: 1000, fileSize: 1.5 }, "invalid-size"],
+]) {
+  assert.equal(parseNativeRecordingResult(result).reason, reason);
+}
 
 const readyForRestore = resolveRecordingCapabilities(
   createRecordingMachine(),

@@ -7,6 +7,52 @@ export interface RecordingTimeline {
   activeSinceMs: number | null;
 }
 
+export type ParsedNativeRecordingResult =
+  | {
+      ok: true;
+      tempFilePath: string;
+      durationMs: number;
+      fileSizeBytes: number;
+    }
+  | {
+      ok: false;
+      reason: "missing-path" | "invalid-duration" | "too-short" | "invalid-size";
+      message: string;
+    };
+
+/** 不用页面计时器猜测文件元数据，打卡仅接受 RecorderManager 的原生停止结果。 */
+export const parseNativeRecordingResult = (
+  result: unknown,
+): ParsedNativeRecordingResult => {
+  const native = result as {
+    tempFilePath?: unknown;
+    duration?: unknown;
+    fileSize?: unknown;
+  };
+  if (typeof native?.tempFilePath !== "string" || !native.tempFilePath.trim()) {
+    return { ok: false, reason: "missing-path", message: "录音文件未生成，请重新录制" };
+  }
+  if (typeof native.duration !== "number" || !Number.isFinite(native.duration) || native.duration <= 0) {
+    return { ok: false, reason: "invalid-duration", message: "微信未返回有效录音时长，请重新录制" };
+  }
+  if (native.duration < 500) {
+    return { ok: false, reason: "too-short", message: "录音时间太短，请重新录制" };
+  }
+  if (
+    typeof native.fileSize !== "number" ||
+    !Number.isSafeInteger(native.fileSize) ||
+    native.fileSize <= 0
+  ) {
+    return { ok: false, reason: "invalid-size", message: "录音文件为空，请重新录制" };
+  }
+  return {
+    ok: true,
+    tempFilePath: native.tempFilePath,
+    durationMs: native.duration,
+    fileSizeBytes: native.fileSize,
+  };
+};
+
 /** 保留微信原始错误；未知录音失败不能一律归因为麦克风权限。 */
 export const getRecordingErrorMessage = (error: unknown): string => {
   const details =
