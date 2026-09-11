@@ -24,7 +24,7 @@ export type SubmissionResult =
 
 export type CheckInSubmissionHandle = {
   promise: Promise<SubmissionResult>;
-  /** 只有上传中或退避期允许取消，避免把已发出的 commit 伪装为可取消。 */
+  /** 准备、上传或退避期允许取消；进入持久化/commit 后不可再伪装取消。 */
   cancel(): boolean;
 };
 
@@ -75,7 +75,7 @@ export type CheckInSubmissionCoordinatorAdapters = {
 };
 
 type SubmitOptions = { onProgress?: (progress: SubmissionProgress) => void };
-type Phase = "idle" | "uploading" | "backoff" | "persisting" | "committing" | "done";
+type Phase = "idle" | "preparing" | "uploading" | "backoff" | "persisting" | "committing" | "done";
 const RETRY_DELAYS_MS = [1000, 3000];
 
 const createError = (code: string, message: string) =>
@@ -99,7 +99,7 @@ const isRetryableUploadError = (error: unknown) => {
 
 const isRepairableRecordingError = (error: unknown) => {
   const code = String(errorCode(error) ?? "").toUpperCase();
-  return code === "RECORDING_FILE_MISMATCH" || code === "FILE_NOT_FOUND" || code === "STORAGE_FILE_NONEXIST";
+  return code === "RECORDING_FILE_MISMATCH" || code === "FILE_NOT_FOUND" || code === "STORAGE_FILE_NONEXIST" || code === "-503003";
 };
 
 const normalizeProgress = (value: unknown) => {
@@ -226,7 +226,9 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
 
     const promise = (async (): Promise<SubmissionResult> => {
       try {
+        phase = "preparing";
         const recording = await adapters.getRecordingInfo(pending.localPath);
+        if (cancelled) throw cancelledError;
         if (recording.fileSizeBytes !== pending.fileSizeBytes) {
           throw createError("RECORDING_SIZE_MISMATCH", "实际录音大小与停止录音时保存的大小不一致");
         }
@@ -241,6 +243,8 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
           phase = "done";
           return { state: "committed", id: prepared.id, shareToken: prepared.shareToken, cleanupPending: !cleaned };
         }
+        // prepare 可能已在云端确认成功；只在明确需要上传时兑现此前的离页取消。
+        if (cancelled) throw cancelledError;
 
         let cloudFileId = pending.cloudFileId;
         let repaired = false;
@@ -285,7 +289,7 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
     const handle: CheckInSubmissionHandle = {
       promise,
       cancel: () => {
-        if (cancelled || (phase !== "uploading" && phase !== "backoff")) return false;
+        if (cancelled || (phase !== "preparing" && phase !== "uploading" && phase !== "backoff")) return false;
         cancelled = true;
         activeUploadAttempt = 0;
         if (timer !== undefined) {

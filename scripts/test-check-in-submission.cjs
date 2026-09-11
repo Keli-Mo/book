@@ -82,8 +82,8 @@ function harness(overrides = {}) {
   };
   const api = {
     pendingStore: store,
-    getRecordingInfo: async filePath => { calls.push(["info", filePath]); if (controls.infoError) throw controls.infoError; return controls.recordingInfo; },
-    prepareCheckIn: async input => { calls.push(["prepare", plain(input)]); if (controls.prepareError) throw controls.prepareError; return controls.prepared; },
+    getRecordingInfo: async filePath => { calls.push(["info", filePath]); if (controls.infoError) throw controls.infoError; if (controls.infoPromise) return controls.infoPromise; return controls.recordingInfo; },
+    prepareCheckIn: async input => { calls.push(["prepare", plain(input)]); if (controls.prepareError) throw controls.prepareError; if (controls.preparePromise) return controls.preparePromise; return controls.prepared; },
     startPreparedCheckInUpload: (filePath, prepared) => {
       calls.push(["upload", filePath, plain(prepared)]);
       const plan = controls.uploadPlans.shift() || { result: "cloud://test.bucket/checkins/fresh.mp3" };
@@ -134,6 +134,37 @@ test("prepare 已提交时只完成本地项，不上传也不 commit", async ()
   const h = harness({ prepared: { state: "committed", id: "done", shareToken: "stable" } });
   const result = await h.submit(item()).promise;
   assert.deepEqual(plain(result), { state: "committed", id: "done", shareToken: "stable", cleanupPending: false });
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "complete"]);
+});
+
+test("指纹阶段离页可取消，返回后不得继续 prepare 或上传", async () => {
+  const info = deferred(); const h = harness({ infoPromise: info.promise });
+  const handle = h.submit(item());
+  assert.equal(handle.cancel(), true);
+  info.resolve({ fileSizeBytes: 1800, contentSha1: "a".repeat(40) });
+  const result = await handle.promise;
+  assert.equal(result.state, "cancelled");
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "markFailed"]);
+  assert.equal(h.values.get(item().requestId).localPath, item().localPath, "取消后必须保留本地录音");
+});
+
+test("prepare 阶段离页可取消，upload-required 返回后不得启动后续链路", async () => {
+  const prepare = deferred(); const h = harness({ preparePromise: prepare.promise });
+  const handle = h.submit(item()); await flush();
+  assert.equal(handle.cancel(), true);
+  prepare.resolve({ state: "upload-required", id: "server-id", cloudPath: "checkins/owner/request-hash.mp3" });
+  const result = await handle.promise;
+  assert.equal(result.state, "cancelled");
+  assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "markFailed"]);
+  assert.equal(h.values.get(item().requestId).localPath, item().localPath, "取消后必须保留本地录音");
+});
+
+test("prepare 阶段虽已请求取消，服务端若已提交仍如实报告 committed", async () => {
+  const prepare = deferred(); const h = harness({ preparePromise: prepare.promise });
+  const handle = h.submit(item()); await flush();
+  assert.equal(handle.cancel(), true);
+  prepare.resolve({ state: "committed", id: "done", shareToken: "stable" });
+  assert.deepEqual(plain(await handle.promise), { state: "committed", id: "done", shareToken: "stable", cleanupPending: false });
   assert.deepEqual(h.calls.map(call => call[0]), ["info", "prepare", "complete"]);
 });
 
@@ -223,6 +254,23 @@ test("commit 不确定保留 fileID；重启复用，明确文件不匹配只修
   assert.deepEqual(h.calls.filter(call => call[0] === "update").map(call => call[2]), [
     { status: "creating" }, { cloudFileId: "", status: "local" }, { status: "creating" },
   ]);
+});
+
+test("缺失的旧云录音会清空 fileID，并且只重传一次", async () => {
+  for (const missing of [
+    Object.assign(new Error("微信云存储文件不存在"), { errCode: -503003 }),
+    Object.assign(new Error("FILE_NOT_FOUND"), { code: "FILE_NOT_FOUND" }),
+    Object.assign(new Error("STORAGE_FILE_NONEXIST"), { code: "STORAGE_FILE_NONEXIST" }),
+  ]) {
+    const h = harness({ commitPlans: [missing, { id: "server-id", shareToken: "token" }] });
+    const result = await h.submit(item({ cloudFileId: "cloud://test.bucket/checkins/missing.mp3", status: "failed" })).promise;
+    assert.equal(result.state, "committed");
+    assert.equal(h.uploads.length, 1, `${missing.errCode ?? missing.code} 只能触发一次重传`);
+    assert.equal(h.calls.filter(call => call[0] === "commit").length, 2);
+    assert.deepEqual(h.calls.filter(call => call[0] === "update").map(call => call[2]), [
+      { status: "creating" }, { cloudFileId: "", status: "local" }, { status: "creating" },
+    ]);
+  }
 });
 
 test("complete 本地清理失败仍返回云端成功 cleanupPending，冲突/删除不换 requestId", async () => {
