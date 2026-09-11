@@ -12,6 +12,11 @@ const success = (data) => ({ ok: true, data });
 const failure = (message, code = "CHECK_IN_ERROR") => ({ ok: false, code, message });
 const reject = (code, message) => { throw Object.assign(new Error(message), { code }); };
 const digest = (algorithm, value) => crypto.createHash(algorithm).update(value).digest("hex");
+const SHARE_LIFETIME_MS = 30 * 86400000;
+const PENDING_LIFETIME_MS = 86400000;
+const isExpired = record => record.shareVersion === 2 &&
+  ((Number.isFinite(record.expiresAtMs) && record.expiresAtMs <= Date.now()) ||
+   (record.status === "pending" && record.pendingExpiresAtMs <= Date.now()));
 
 const requireText = (value, fieldName, maxLength) => {
   if (typeof value !== "string" || !value.trim()) {
@@ -64,27 +69,45 @@ const bindRequest = (event, openId) => {
     contentSha1: event.contentSha1.toLowerCase(),
   };
   const payloadDigest = digest("sha256", JSON.stringify(payload));
-  return { requestId, payload, payloadDigest, openId,
+  return { requestId, payload, payloadDigest, openId, shareVersion: event.shareVersion === 2 ? 2 : 1,
     id: digest("sha256", `${openId}:${requestId}`),
-    // prepare 不落库；摘要进入路径，避免两个不同载荷先上传时互相覆盖。
-    cloudPath: `checkins/${digest("sha256", openId)}/${requestId}-${payloadDigest}.mp3`,
+    // 新分享独立存储前缀，清理和生命周期规则不会覆盖旧录音或教材。
+    cloudPath: `${event.shareVersion === 2 ? "expiring-shares-v2" : "checkins"}/${digest("sha256", openId)}/${requestId}-${payloadDigest}.mp3`,
   };
 };
 
 const readExisting = (record, binding) => {
   if (!record) return null;
   if (record._openid !== binding.openId) reject("FORBIDDEN", "不能访问其他用户的请求");
+  if ((record.shareVersion === 2 ? 2 : 1) !== binding.shareVersion) reject("REQUEST_ID_CONFLICT", "请求编号已用于其他分享协议");
+  if (isExpired(record)) reject("SHARE_EXPIRED", "分享已过期，请重新分享");
   if (record.status === "deletePending" || record.status === "deleted") {
     reject("REQUEST_DELETED", "该请求已删除，不能重新提交");
   }
   if (record.payloadDigest !== binding.payloadDigest) {
     reject("REQUEST_ID_CONFLICT", "同一请求编号已经对应另一份录音或训练内容");
   }
-  return { id: record._id, shareToken: record.shareToken };
+  if (record.shareVersion === 2 && record.status === "pending") return null;
+  if (record.shareVersion === 2 && record.status !== "active") reject("SHARE_EXPIRED", "分享已失效");
+  return { id: record._id, shareToken: record.shareToken,
+    ...(record.shareVersion === 2 ? { expiresAtMs: record.expiresAtMs } : {}) };
 };
 
 const prepareCheckIn = async (event, openId) => {
   const binding = bindRequest(event, openId);
+  if (binding.shareVersion === 2) {
+    return success(await runTransaction(async transaction => {
+      const doc = transaction.collection("checkins").doc(binding.id);
+      const record = (await doc.get()).data;
+      const existing = readExisting(record, binding);
+      if (existing) return { state: "committed", ...existing };
+      if (!record) await doc.set({ data: { ...binding.payload, _openid: openId,
+        requestId: binding.requestId, payloadDigest: binding.payloadDigest, cloudPath: binding.cloudPath,
+        shareVersion: 2, status: "pending", pendingExpiresAtMs: Date.now() + PENDING_LIFETIME_MS,
+        createdAt: db.serverDate() } });
+      return { state: "upload-required", id: binding.id, cloudPath: binding.cloudPath };
+    }));
+  }
   const existing = readExisting((await checkIns.doc(binding.id).get()).data, binding);
   return success(existing
     ? { state: "committed", ...existing }
@@ -117,6 +140,7 @@ const validateFileId = (fileId, binding, envId) => {
 const commitCheckIn = async (event, openId, envId) => {
   const binding = bindRequest(event, openId);
   const previous = (await checkIns.doc(binding.id).get()).data;
+  if (binding.shareVersion === 2 && !previous) reject("SHARE_NOT_PREPARED", "请先预留分享上传");
   const existing = readExisting(previous, binding);
   const recordingFileId = validateFileId(event.recordingFileId, binding, envId);
   if (existing) {
@@ -136,8 +160,16 @@ const commitCheckIn = async (event, openId, envId) => {
     shareToken: crypto.randomBytes(16).toString("hex"), createdAt: db.serverDate() };
   return success(await runTransaction(async transaction => {
     const doc = transaction.collection("checkins").doc(binding.id);
-    const current = readExisting((await doc.get()).data, binding);
+    const currentRecord = (await doc.get()).data;
+    const current = readExisting(currentRecord, binding);
     if (current) return current;
+    if (binding.shareVersion === 2) {
+      if (!currentRecord || currentRecord.status !== "pending") reject("SHARE_NOT_PREPARED", "分享预留不存在");
+      const expiresAtMs = Date.now() + SHARE_LIFETIME_MS;
+      await doc.set({ data: { ...record, shareVersion: 2, cloudPath: binding.cloudPath,
+        pendingExpiresAtMs: currentRecord.pendingExpiresAtMs, expiresAtMs } });
+      return { id: binding.id, shareToken: record.shareToken, expiresAtMs };
+    }
     await doc.set({ data: record });
     return { id: binding.id, shareToken: record.shareToken };
   }));
@@ -155,6 +187,7 @@ const toPublicSummary = (record) => ({
   imageUrl: record.imageUrl,
   durationMs: record.durationMs,
   createdAt: record.createdAt,
+  ...(record.shareVersion === 2 ? { expiresAtMs: record.expiresAtMs } : {}),
 });
 
 const createCheckIn = async (event, openId) => {
@@ -180,6 +213,10 @@ const getDetail = async (event, openId) => {
   const id = requireText(event.id, "打卡编号", 100);
   const result = await checkIns.doc(id).get();
   const record = result.data;
+  if (record?.shareVersion === 2 && (isExpired(record) || record.status === "deletePending" || record.status === "deleted")) {
+    return failure("分享已过期或失效", "SHARE_EXPIRED");
+  }
+  if (record?.shareVersion === 2 && record.status !== "active") return failure("分享尚未完成", "NOT_FOUND");
   if (!record || record.status === "deletePending" || record.status === "deleted") {
     return failure("打卡记录不存在或已被删除", "NOT_FOUND");
   }
@@ -190,8 +227,11 @@ const getDetail = async (event, openId) => {
     return failure("分享链接无效或已经失效");
   }
 
+  // Node SDK 的 maxAge 单位为秒；不足一秒时不再签发，避免向上取整越过期限。
+  const maxAge = record.shareVersion === 2 ? Math.min(300, Math.floor((record.expiresAtMs - Date.now()) / 1000)) : null;
+  if (maxAge !== null && !(maxAge > 0)) return failure("分享已过期", "SHARE_EXPIRED");
   const fileResult = await cloud.getTempFileURL({
-    fileList: [record.recordingFileId],
+    fileList: [maxAge === null ? record.recordingFileId : { fileID: record.recordingFileId, maxAge }],
   });
   const recordingUrl = fileResult.fileList?.[0]?.tempFileURL;
   if (!recordingUrl) return failure("录音文件不存在或已失效");
@@ -204,14 +244,17 @@ const getDetail = async (event, openId) => {
 };
 
 const listMine = async (openId) => {
-  const result = await checkIns
-    .where({ _openid: openId })
-    .orderBy("createdAt", "desc")
-    .limit(100)
-    .get();
-  // 复用既有 owner/时间查询，不为墓碑引入新的非等值复合索引。
-  return success(result.data.filter(record => record.status !== "deletePending" && record.status !== "deleted")
-    .slice(0, 50).map(toPublicSummary));
+  const visible = [];
+  // 墓碑永久保留，不能把固定前100条当成全部历史；按页读到50条有效记录或真正末页。
+  for (let offset = 0; visible.length < 50; offset += 100) {
+    let query = checkIns.where({ _openid: openId }).orderBy("createdAt", "desc");
+    if (offset) query = query.skip(offset);
+    const result = await query.limit(100).get();
+    visible.push(...result.data.filter(record => record.status !== "deletePending" && record.status !== "deleted" &&
+      !(record.shareVersion === 2 && (record.status !== "active" || isExpired(record)))));
+    if (result.data.length < 100) break;
+  }
+  return success(visible.slice(0, 50).map(toPublicSummary));
 };
 
 const isStorageFileAbsent = (result) => {

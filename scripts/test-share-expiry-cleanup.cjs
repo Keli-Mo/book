@@ -1,0 +1,151 @@
+/* eslint-disable import/no-commonjs */
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+const root = path.join(__dirname, "../cloudfunctions/cleanupExpiredShares");
+const source = fs.existsSync(path.join(root, "index.js")) ? fs.readFileSync(path.join(root, "index.js"), "utf8") : "exports.main = async () => ({ ok: true });";
+const NOW = 1800000000000;
+const prefix = "cloud://test.bucket/";
+const idFor = i => i.toString(16).padStart(64, "0");
+const row = (i, patch = {}) => {
+  const cloudPath = `expiring-shares-v2/${"a".repeat(64)}/${i.toString(16).padStart(32, "0")}-${"b".repeat(64)}.mp3`;
+  return { _id: idFor(i), shareVersion: 2, status: "active", cloudPath,
+    recordingFileId: prefix + cloudPath, expiresAtMs: NOW - 1, ...patch };
+};
+function harness(initial = [row(1)]) {
+  const records = new Map(initial.map(r => [r._id, structuredClone(r)])), state = new Map(), versions = new Map();
+  const files = new Set(initial.map(r => r.recordingFileId).filter(Boolean));
+  const metrics = { writes: 0, deletes: 0, queries: 0, conflicts: 0 };
+  const env = { SHARE_CLEANUP_ENABLED: "true", SHARE_STORAGE_FILE_ID_PREFIX: prefix };
+  const controls = { context: { SOURCE: "wx_trigger", ENV: "test" }, deleteError: null,
+    deleteStatus: 0, missingStatus: -503003, finalizeError: null, beforeMark: null };
+  const readMap = (name, tx) => tx ? tx[name] : name === "checkins" ? records : state;
+  const write = (name, id, data) => { readMap(name).set(id, { ...structuredClone(data), _id: id });
+    const key = `${name}/${id}`; versions.set(key, (versions.get(key) || 0) + 1); metrics.writes++; };
+  const collection = (name, tx) => ({
+    doc(id) { return {
+      async get() { if (tx) tx.reads.set(`${name}/${id}`, tx.versions.get(`${name}/${id}`) || 0);
+        return { data: structuredClone(readMap(name, tx).get(id) || null) }; },
+      async set({ data }) {
+        if (name === "checkins" && data.status === "deleted" && controls.finalizeError) throw controls.finalizeError;
+        if (tx) tx.writes.push({ name, id, data: structuredClone(data) }); else write(name, id, data);
+      },
+    }; },
+    where(condition) { let size = 50;
+      return { orderBy(key, direction) { assert.equal(key, "_id"); assert.equal(direction, "asc"); return this; },
+        limit(n) { assert.ok(n <= 50); size = n; return this; }, async get() { metrics.queries++;
+          const data = [...readMap(name).values()].filter(r => Object.entries(condition).every(([key, val]) =>
+            val && typeof val === "object" && "gt" in val ? r[key] > val.gt : r[key] === val))
+            .sort((a, b) => a._id.localeCompare(b._id)).slice(0, size).map(r => structuredClone(r));
+          if (controls.beforeMark) { const callback = controls.beforeMark; controls.beforeMark = null; callback(); }
+          return { data };
+        } };
+    },
+  });
+  const db = { collection: name => collection(name), command: { gt: value => ({ gt: value }) },
+    async runTransaction(operation) {
+      const tx = { checkins: structuredClone(records), shareCleanupState: structuredClone(state), versions: new Map(versions), reads: new Map(), writes: [] };
+      const result = await operation({ collection: name => collection(name, tx) });
+      if ([...tx.reads].some(([key, version]) => (versions.get(key) || 0) !== version)) {
+        metrics.conflicts++; throw Object.assign(new Error("conflict"), { code: "DATABASE_TRANSACTION_CONFLICT" });
+      }
+      for (const w of tx.writes) write(w.name, w.id, w.data);
+      return result;
+    },
+  };
+  const cloud = { init() {}, DYNAMIC_CURRENT_ENV: "dynamic", database: () => db, getWXContext: () => controls.context,
+    async deleteFile({ fileList }) {
+      metrics.deletes++;
+      for (const fileID of fileList) {
+        const record = [...records.values()].find(r => prefix + r.cloudPath === fileID);
+        assert.ok(record && ["deletePending", "deleted"].includes(record.status), "必须先失效再删文件");
+      }
+      if (controls.deleteError) throw controls.deleteError;
+      return { fileList: fileList.map(fileID => {
+        const status = files.has(fileID) ? controls.deleteStatus : controls.missingStatus;
+        if (status === 0) files.delete(fileID);
+        return { fileID, status };
+      }) };
+    },
+  };
+  const mod = { exports: {} };
+  vm.runInNewContext(source, { exports: mod.exports, module: mod, process: { env }, Date: class extends Date { static now() { return NOW; } },
+    console: { info() {}, error() {} }, require: name => name === "wx-server-sdk" ? cloud : require(path.join(root, name)) });
+  return { call: (event = {}) => mod.exports.main(event), records, state, files, metrics, controls, env };
+}
+const cases = [];
+const test = (name, run) => cases.push({ name, run });
+test("默认dryrun，事件不能启用删除", async () => {
+  const h = harness(); delete h.env.SHARE_CLEANUP_ENABLED;
+  const result = await h.call({ enabled: true, dryRun: false });
+  assert.equal(result.dryRun, true); assert.equal(result.candidates, 1);
+  assert.equal(h.metrics.deletes + h.metrics.writes, 0);
+});
+test("只信SDK定时来源，拒绝客户端、调用链及伪造timer", async () => {
+  for (const context of [{ SOURCE: "wx_client" }, { SOURCE: "wx_client,scf" }, { SOURCE: "wx_devtools" }, {},
+    { SOURCE: "timer" }, { SOURCE: "wx_trigger", OPENID: "owner" }]) {
+    const h = harness(); h.controls.context = { ENV: "test", ...context };
+    const r = await h.call({ Type: "Timer", SOURCE: "wx_trigger" });
+    assert.equal(r.code, "FORBIDDEN"); assert.equal(h.metrics.deletes + h.metrics.writes + h.metrics.queries, 0);
+  }
+});
+test("未配置或错误可信前缀阻断删除，不构造猜测bucket", async () => {
+  for (const value of [undefined, "cloud://foreign.bucket/", "cloud://test.bucket/checkins/", "cloud://test.bucket/../", "https://test/"]) {
+    const h = harness([row(1, { status: "pending", recordingFileId: undefined, expiresAtMs: undefined, pendingExpiresAtMs: NOW - 1 })]);
+    h.env.SHARE_STORAGE_FILE_ID_PREFIX = value;
+    const r = await h.call(); assert.equal(r.dryRun, true); assert.equal(r.code, "STORAGE_PREFIX_REQUIRED");
+    assert.equal(h.metrics.deletes + h.metrics.writes, 0);
+  }
+});
+test("只清理新版到期记录，错误路径和旧无期限记录留存", async () => {
+  const initial = [row(1), row(2, { shareVersion: undefined }), row(3, { expiresAtMs: undefined }),
+    row(4, { expiresAtMs: NOW + 1 }), row(5, { cloudPath: "checkins/legacy.mp3" }),
+    row(6, { recordingFileId: "cloud://foreign.bucket/book.mp3" }),
+    row(7, { expiresAtMs: undefined, pendingExpiresAtMs: NOW - 1 })];
+  const h = harness(initial), r = await h.call();
+  assert.equal(r.deleted, 1); assert.equal(r.failed, 2); assert.equal(h.records.get(idFor(1)).status, "deleted");
+  for (let i = 2; i <= 7; i++) assert.equal(h.records.get(idFor(i)).status, "active");
+  assert.equal(h.files.size, 6);
+});
+test("小批持久游标扫多页并回绕，旧记录不占分页", async () => {
+  const h = harness(Array.from({ length: 121 }, (_, i) => row(i + 1)));
+  let count = 0;
+  for (let i = 0; i < 3; i++) { const r = await h.call(); assert.ok(r.scanned <= 50); count += r.deleted; }
+  assert.equal(count, 121); assert.equal(h.files.size, 0); assert.equal(h.state.get("v2").cursor, "");
+});
+test("未知删除错误留引用，重试明确不存在后收敛", async () => {
+  const h = harness(); h.controls.deleteStatus = -1;
+  let r = await h.call(); assert.equal(r.failed, 1); assert.equal(h.records.get(idFor(1)).status, "deletePending");
+  assert.equal(h.records.get(idFor(1)).recordingFileId, row(1).recordingFileId);
+  h.controls.deleteStatus = 0; h.controls.finalizeError = new Error("finalize offline");
+  r = await h.call(); assert.equal(r.failed, 1); assert.equal(h.files.size, 0);
+  assert.equal(h.records.get(idFor(1)).status, "deletePending");
+  h.controls.finalizeError = null; r = await h.call(); assert.equal(r.deleted, 1);
+  assert.equal(h.records.get(idFor(1)).status, "deleted");
+});
+test("泛化404及权限未知码不能当作文件已不存在", async () => {
+  for (const error of [{ code: 404, message: "not found" }, { errCode: -503002 }, { code: "TIMEOUT" }]) {
+    const h = harness(); h.controls.deleteError = error;
+    assert.equal((await h.call()).failed, 1); assert.equal(h.records.get(idFor(1)).status, "deletePending");
+  }
+});
+test("pending未commit孤儿及墓碑后迟到上传可再次删除", async () => {
+  const r = row(1, { status: "pending", recordingFileId: undefined, expiresAtMs: undefined, pendingExpiresAtMs: NOW - 1 });
+  const h = harness([r]); h.files.add(prefix + r.cloudPath);
+  assert.equal((await h.call()).deleted, 1); assert.equal(h.files.size, 0);
+  assert.equal(h.records.get(r._id).status, "deleted"); assert.equal(h.records.get(r._id).cloudPath, r.cloudPath);
+  h.files.add(prefix + r.cloudPath); assert.equal((await h.call()).deleted, 1); assert.equal(h.files.size, 0);
+});
+test("并发清理事务冲突可重试，分页后提交胜出不误删", async () => {
+  const h = harness(); const results = await Promise.all([h.call(), h.call()]);
+  assert.ok(results.every(r => r.ok)); assert.equal(h.files.size, 0); assert.ok(h.metrics.conflicts > 0);
+  const r = row(1, { status: "pending", expiresAtMs: undefined, pendingExpiresAtMs: NOW - 1 });
+  const k = harness([r]); k.controls.beforeMark = () => Object.assign(k.records.get(r._id), { status: "active", expiresAtMs: NOW + 86400000 });
+  assert.equal((await k.call()).deleted, 0); assert.equal(k.metrics.deletes, 0);
+});
+(async () => { let failures = 0; for (const { name, run } of cases) {
+  try { await run(); console.log(`PASS ${name}`); } catch (error) { failures++; console.error(`FAIL ${name}: ${error.stack}`); }
+} assert.equal(failures, 0, `${failures}/${cases.length} 项清理测试失败`);
+console.log(`分享清理测试通过：${cases.length} 组。`);
+})().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -15,7 +15,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 function harness() {
   const records = new Map(), versions = new Map(), files = new Map();
-  const metrics = { writes: 0, deletes: 0, downloads: 0, attempts: 0, conflicts: 0 };
+  const metrics = { writes: 0, deletes: 0, downloads: 0, attempts: 0, conflicts: 0, signed: 0 };
   const controls = { owner: "owner-openid", readError: null, downloadError: null, downloadStatus: 200,
     deleteStatus: 0, missingDeleteResult: null, deleteError: null, finalizeError: null, ownerOnlyQuery: false, forcedConflicts: 0 };
   let throwOnNotFound = true;
@@ -40,12 +40,12 @@ function harness() {
     }; },
     where(condition) {
       if (controls.ownerOnlyQuery) assert.deepEqual(Object.keys(condition), ["_openid"], "不能新增 status 复合索引依赖");
-      let limit = Infinity;
-      return { orderBy() { return this; }, limit(n) { limit = n; return this; }, async get() {
+      let limit = Infinity, offset = 0;
+      return { orderBy() { return this; }, skip(n) { offset = n; return this; }, limit(n) { limit = n; return this; }, async get() {
         if (controls.readError) throw controls.readError;
         return { data: [...records.values()].filter(record => Object.entries(condition).every(([key, value]) =>
           value && value.notIn ? !value.notIn.includes(record[key]) : record[key] === value))
-          .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, limit).map(v => structuredClone(v)) };
+          .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(offset, offset + limit).map(v => structuredClone(v)) };
       } };
     },
   });
@@ -81,7 +81,10 @@ function harness() {
       if (!files.has(fileID)) throw Object.assign(new Error("file not uploaded"), { code: "FILE_NOT_FOUND" });
       return { fileContent: files.get(fileID), ...(controls.downloadStatus === undefined ? {} : { statusCode: controls.downloadStatus }) };
     },
-    async getTempFileURL({ fileList }) { return { fileList: fileList.map(fileID => ({ fileID, status: 0, tempFileURL: `https://example.test/${encodeURIComponent(fileID)}` })) }; },
+    async getTempFileURL({ fileList }) { metrics.signed++; metrics.lastSign = plain(fileList); return { fileList: fileList.map(item => {
+      const fileID = typeof item === "string" ? item : item.fileID;
+      return { fileID, status: 0, tempFileURL: `https://example.test/${encodeURIComponent(fileID)}` };
+    }) }; },
     async deleteFile({ fileList }) { metrics.deletes++;
       if (controls.deleteError) throw controls.deleteError;
       return { fileList: fileList.map(fileID => {
@@ -102,6 +105,54 @@ function harness() {
 
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
+test("新版预留持久化、并发幂等与载荷冲突", async () => {
+  const h = harness(), event = input({ shareVersion: 2 });
+  const [p, q] = await Promise.all([h.prepare(event), h.prepare(event)]);
+  assert.deepEqual(plain(p), plain(q)); assert.equal(h.records.size, 1);
+  const record = h.records.get(p.id);
+  assert.equal(record.status, "pending"); assert.equal(record.shareVersion, 2);
+  assert.ok(record.pendingExpiresAtMs > Date.now()); assert.equal(record.expiresAtMs, undefined);
+  assert.match(p.cloudPath, /^expiring-shares-v2\//);
+  assert.equal((await h.call("prepare", { ...event, bookTitle: "变化" })).code, "REQUEST_ID_CONFLICT");
+  assert.equal((await h.call("prepare", input())).code, "REQUEST_ID_CONFLICT");
+  assert.deepEqual(plain((await h.call("listMine")).data), []);
+  assert.equal((await h.call("detail", { id: p.id })).ok, false); assert.equal(h.metrics.signed, 0);
+});
+test("新版仅预留可提交、首次提交起30天且重试不续期", async () => {
+  const h = harness(), event = input({ shareVersion: 2 });
+  assert.equal((await h.call("commit", { ...event, recordingFileId: "cloud://test.bucket/x" })).code, "SHARE_NOT_PREPARED");
+  const p = await h.prepare(event), file = h.upload(p), before = Date.now();
+  const [a, b] = await Promise.all([h.call("commit", { ...event, recordingFileId: file }), h.call("commit", { ...event, recordingFileId: file })]);
+  assert.equal(a.ok, true); assert.deepEqual(plain(a), plain(b));
+  assert.ok(a.data.expiresAtMs >= before + 30 * 86400000);
+  assert.ok(a.data.expiresAtMs <= Date.now() + 30 * 86400000);
+  assert.equal((await h.prepare(event)).expiresAtMs, a.data.expiresAtMs);
+  assert.equal(h.records.get(p.id).cloudPath, p.cloudPath);
+});
+test("新版过期或墓碑永不复活，过期详情不签URL", async () => {
+  for (const status of ["pending", "active", "deletePending", "deleted"]) {
+    const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event), recordingFileId = h.upload(p);
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
+    Object.assign(h.records.get(p.id), { status, expiresAtMs: 1, pendingExpiresAtMs: 1 });
+    assert.equal((await h.call("prepare", event)).ok, false);
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, false);
+    assert.equal((await h.call("detail", { id: p.id })).code, "SHARE_EXPIRED");
+    assert.equal(h.metrics.signed, 0); assert.deepEqual(plain((await h.call("listMine")).data), []);
+  }
+});
+test("新版签名URL不超过剩余有效期且最多300秒", async () => {
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event), recordingFileId = h.upload(p);
+  assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
+  assert.equal((await h.call("detail", { id: p.id })).ok, true);
+  assert.deepEqual(h.metrics.lastSign, [{ fileID: recordingFileId, maxAge: 300 }]);
+  h.records.get(p.id).expiresAtMs = Date.now() + 2500;
+  assert.equal((await h.call("detail", { id: p.id })).ok, true);
+  assert.ok(h.metrics.lastSign[0].maxAge <= 2);
+  h.records.get(p.id).expiresAtMs = Date.now() + 500;
+  const count = h.metrics.signed;
+  assert.equal((await h.call("detail", { id: p.id })).code, "SHARE_EXPIRED");
+  assert.equal(h.metrics.signed, count);
+});
 test("prepare 只读、大小写与规范化载荷", async () => {
   const h = harness(), p = await h.prepare(input({ requestId: input().requestId.toUpperCase(), bookTitle: " CASA " }));
   assert.deepEqual(plain(p), plain(await h.prepare(input({ durationMs: 3200 }))));
@@ -234,6 +285,16 @@ test("列表复用 owner/时间查询，服务端隐藏墓碑并保留 50 条旧
   h.records.set("foreign", { ...input(), _id: "foreign", _openid: "other", createdAt: "101" });
   const listed = await h.call("listMine"); assert.equal(listed.ok, true, listed.message);
   assert.deepEqual(plain(listed.data.map(record => record.id)), ["active", ...Array.from({ length: 49 }, (_, i) => `row-${59-i}`)]);
+});
+test("超过100条新版失效记录不遮蔽较旧的历史", async () => {
+  const h = harness(); h.controls.ownerOnlyQuery = true;
+  for (let i = 0; i < 260; i++) h.records.set(`expired-${i}`, {
+    _id: `expired-${i}`, _openid: "owner-openid", shareVersion: 2,
+    status: ["active", "pending", "deleted", "deletePending"][i % 4],
+    expiresAtMs: 1, pendingExpiresAtMs: 1, createdAt: `z${String(i).padStart(3, "0")}`,
+  });
+  h.records.set("legacy", { ...input(), _id: "legacy", _openid: "owner-openid", createdAt: "a" });
+  assert.deepEqual(plain((await h.call("listMine")).data.map(r => r.id)), ["legacy"]);
 });
 test("事务冲突有限重试且无重复下载/中间写入", async () => {
   const h = harness(), p = await h.prepare(), event = { ...input(), recordingFileId: h.upload(p) }; h.controls.forcedConflicts = 2;
