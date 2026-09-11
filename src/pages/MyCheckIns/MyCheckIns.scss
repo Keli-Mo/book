@@ -215,6 +215,19 @@
   .my-check-ins-state { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
 }
 
+// 横屏刘海机型保留左右安全区，列表卡片与操作按钮保持完整勿被裁切。
+.device-layout--phone.device-layout--landscape.my-check-ins {
+  padding-left: calc(28rpx + constant(safe-area-inset-left));
+  padding-right: calc(28rpx + constant(safe-area-inset-right));
+}
+
+@supports (padding-left: env(safe-area-inset-left)) {
+  .device-layout--phone.device-layout--landscape.my-check-ins {
+    padding-left: calc(28rpx + env(safe-area-inset-left));
+    padding-right: calc(28rpx + env(safe-area-inset-right));
+  }
+}
+
 @media (max-width: 360PX) {
   .check-in-list-card {
     &__preview { width: 146rpx; flex-basis: 146rpx; padding: 8rpx; }

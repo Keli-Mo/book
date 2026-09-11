@@ -330,6 +330,44 @@ button[disabled] { opacity: 0.5; }
   flex: 1;
 }
 
+// 横屏手机仍使用底部目录，但让滚动区消费剩余高度，避免头部与 62vh 叠加溢出。
+.device-layout--phone.device-layout--landscape {
+  &.practice-page {
+    padding-left: calc(26rpx + constant(safe-area-inset-left));
+    padding-right: calc(26rpx + constant(safe-area-inset-right));
+  }
+
+  .practice-directory-sheet {
+    display: flex;
+    overflow: hidden;
+    height: 78vh;
+    max-height: 78vh;
+    flex-direction: column;
+    padding-left: calc(0PX + constant(safe-area-inset-left));
+    padding-right: calc(0PX + constant(safe-area-inset-right));
+  }
+
+  .practice-directory-scroll {
+    height: auto;
+    min-height: 0;
+    flex: 1;
+  }
+}
+
+@supports (padding-left: env(safe-area-inset-left)) {
+  .device-layout--phone.device-layout--landscape {
+    &.practice-page {
+      padding-left: calc(26rpx + env(safe-area-inset-left));
+      padding-right: calc(26rpx + env(safe-area-inset-right));
+    }
+
+    .practice-directory-sheet {
+      padding-left: calc(0PX + env(safe-area-inset-left));
+      padding-right: calc(0PX + env(safe-area-inset-right));
+    }
+  }
+}
+
 .device-layout--pad {
   &.practice-page {
     padding-top: 17PX;

@@ -81,6 +81,7 @@
 .book-search {
   display: flex;
   height: 88rpx;
+  min-height: 44PX;
   box-sizing: border-box;
   padding: 0 24rpx;
   align-items: center;
@@ -91,6 +92,7 @@
   &__input {
     min-width: 0;
     height: 88rpx;
+    min-height: 44PX;
     flex: 1;
     margin-left: 16rpx;
     color: #24362f;
@@ -108,6 +110,19 @@
     height: 52rpx;
     align-items: center;
     justify-content: center;
+  }
+}
+
+// 横屏刘海机型的书库根容器避开左右不可用区域。
+.device-layout--phone.device-layout--landscape.book-library {
+  padding-left: calc(34rpx + constant(safe-area-inset-left));
+  padding-right: calc(34rpx + constant(safe-area-inset-right));
+}
+
+@supports (padding-left: env(safe-area-inset-left)) {
+  .device-layout--phone.device-layout--landscape.book-library {
+    padding-left: calc(34rpx + env(safe-area-inset-left));
+    padding-right: calc(34rpx + env(safe-area-inset-right));
   }
 }
 

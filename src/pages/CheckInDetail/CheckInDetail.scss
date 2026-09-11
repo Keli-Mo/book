@@ -108,6 +108,19 @@
   .check-in-state { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
 }
 
+// 横屏刘海机型保留左右安全区，详情卡片与操作按钮不贴入缺口。
+.device-layout--phone.device-layout--landscape.check-in-detail {
+  padding-left: calc(30rpx + constant(safe-area-inset-left));
+  padding-right: calc(30rpx + constant(safe-area-inset-right));
+}
+
+@supports (padding-left: env(safe-area-inset-left)) {
+  .device-layout--phone.device-layout--landscape.check-in-detail {
+    padding-left: calc(30rpx + env(safe-area-inset-left));
+    padding-right: calc(30rpx + env(safe-area-inset-right));
+  }
+}
+
 .device-layout--pad {
   &.check-in-detail {
     padding-top: 21PX;

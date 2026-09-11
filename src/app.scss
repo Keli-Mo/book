@@ -21,6 +21,12 @@
   max-width: 1280PX;
 }
 
+// 横屏手机保持单栏，但限制阅读宽度，避免 rpx 随宽屏放大后教材与控件相距过远。
+.device-layout--phone.device-layout--landscape.device-layout__content,
+.device-layout--phone.device-layout--landscape .device-layout__content {
+  max-width: 680PX;
+}
+
 // 大写 PX 会跳过 Taro 的 px→rpx 转换，保证所有机型都有 44 CSS px 命中区。
 .device-touch-target {
   min-width: 44PX;

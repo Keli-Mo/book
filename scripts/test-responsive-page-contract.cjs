@@ -25,7 +25,7 @@ const pages = [
     file: "src/pages/Home/Home.tsx",
     config: "src/pages/Home/Home.config.ts",
     scss: "src/pages/Home/Home.scss",
-    safe: [[".home-tabs", 12]],
+    safe: [[".library-home", "132rpx"], [".home-tabs", 12]],
     targets: ["library-home__search", "continue-card__button", "series-section__all", "home-tabs__item"],
   },
   {
@@ -257,14 +257,31 @@ const safeArea = (styleRoot, selector, base) => {
   const declarations = exactRules(styleRoot, selector).flatMap((rule) =>
     values(rule, "padding-bottom"),
   );
-  const constant = `calc(${base}PX+constant(safe-area-inset-bottom))`;
-  const env = `calc(${base}PX+env(safe-area-inset-bottom))`;
+  const baseValue = typeof base === "number" ? `${base}PX` : base;
+  const constant = `calc(${baseValue}+constant(safe-area-inset-bottom))`;
+  const env = `calc(${baseValue}+env(safe-area-inset-bottom))`;
   const constantIndex = declarations.findIndex((value) => compact(value) === constant);
   const envIndex = declarations.findIndex((value) => compact(value) === env);
   assert.ok(
     constantIndex >= 0 && envIndex > constantIndex,
     `${selector} 缺少 constant → env 安全区`,
   );
+};
+const horizontalSafeArea = (styleRoot, selector, leftBase, rightBase = leftBase) => {
+  for (const [side, base] of [["left", leftBase], ["right", rightBase]]) {
+    const declarations = exactRules(styleRoot, selector).flatMap((rule) =>
+      values(rule, `padding-${side}`),
+    );
+    const baseValue = typeof base === "number" ? `${base}PX` : base;
+    const constant = `calc(${baseValue}+constant(safe-area-inset-${side}))`;
+    const env = `calc(${baseValue}+env(safe-area-inset-${side}))`;
+    const constantIndex = declarations.findIndex((value) => compact(value) === constant);
+    const envIndex = declarations.findIndex((value) => compact(value) === env);
+    assert.ok(
+      constantIndex >= 0 && envIndex > constantIndex,
+      `${selector} 缺少 ${side} constant → env 横屏安全区`,
+    );
+  }
 };
 const atLeast44PX = (value) => {
   const match = value.match(/^(\d+(?:\.\d+)?)PX$/);
@@ -363,6 +380,48 @@ check("共享内容、触控与窄屏操作规则存在", () => {
     assert.ok(touch.some((rule) => values(rule, property).some(atLeast44PX)));
   }
   assert.ok(ruleWith(appStyles, [".device-actions"], { "flex-wrap": "wrap" }));
+});
+
+check("横屏手机限制内容宽度并保留左右安全区", () => {
+  assert.ok(
+    ruleWith(
+      appStyles,
+      [".device-layout--phone", ".device-layout--landscape", ".device-layout__content"],
+      { "max-width": "680PX" },
+    ),
+    "844×390 横屏手机内容必须限宽并居中",
+  );
+
+  const home = pages.find((page) => page.name === "首页");
+  horizontalSafeArea(home.styles, ".device-layout--phone.device-layout--landscape .library-home__navigation", "34rpx", "30rpx");
+  horizontalSafeArea(home.styles, ".device-layout--phone.device-layout--landscape .library-home__content", "34rpx");
+  horizontalSafeArea(home.styles, ".device-layout--phone.device-layout--landscape .home-tabs", "48rpx");
+
+  for (const [name, selector, base] of [
+    ["书库", ".device-layout--phone.device-layout--landscape.book-library", "34rpx"],
+    ["训练", ".device-layout--phone.device-layout--landscape.practice-page", "26rpx"],
+    ["打卡详情", ".device-layout--phone.device-layout--landscape.check-in-detail", "30rpx"],
+    ["我的打卡", ".device-layout--phone.device-layout--landscape.my-check-ins", "28rpx"],
+  ]) {
+    horizontalSafeArea(pages.find((page) => page.name === name).styles, selector, base);
+  }
+  horizontalSafeArea(
+    practice.styles,
+    ".device-layout--phone.device-layout--landscape .practice-directory-sheet",
+    0,
+  );
+});
+
+check("320PX 书库搜索框保留 44PX 触控高度", () => {
+  const library = pages.find((page) => page.name === "书库");
+  for (const selector of [".book-search", ".book-search__input"]) {
+    assert.ok(
+      exactRules(library.styles, selector).some((rule) =>
+        values(rule, "min-height").some(atLeast44PX),
+      ),
+      `${selector} 必须显式保留 44PX 高度`,
+    );
+  }
 });
 
 check("书库和我的打卡仅在 split 下使用两列", () => {
@@ -558,6 +617,29 @@ check("训练目录在单栏贴底、split 靠右且可滚动", () => {
   );
   const scroll = byClass(directoryAst, "practice-directory-scroll", "ScrollView")[0];
   assert.ok(scroll && trueAttribute(scroll, "scrollY"));
+});
+
+check("横屏手机目录用弹性高度防止内容溢出", () => {
+  assert.ok(
+    ruleWith(
+      practice.styles,
+      [".device-layout--phone", ".device-layout--landscape", ".practice-directory-sheet"],
+      {
+        display: "flex",
+        "flex-direction": "column",
+        height: "78vh",
+        "max-height": "78vh",
+        overflow: "hidden",
+      },
+    ),
+  );
+  assert.ok(
+    ruleWith(
+      practice.styles,
+      [".device-layout--phone", ".device-layout--landscape", ".practice-directory-scroll"],
+      { height: "auto", "min-height": "0", flex: "1" },
+    ),
+  );
 });
 
 check("打卡教材快照完整显示", () => {
