@@ -17,7 +17,15 @@ const load = (file, overrides = {}, cache = new Map()) => {
   }
   const loaded = { exports: {} };
   cache.set(file, loaded.exports);
-  new Function("module", "exports", "require", "wx", compiled.get(file))(
+  new Function(
+    "module",
+    "exports",
+    "require",
+    "wx",
+    "setTimeout",
+    "clearTimeout",
+    compiled.get(file),
+  )(
     loaded, loaded.exports, (request) => {
       if (Object.hasOwn(overrides, request)) return overrides[request];
       if (request.endsWith(".scss")) return {};
@@ -28,7 +36,10 @@ const load = (file, overrides = {}, cache = new Map()) => {
         return load(target, overrides, cache);
       }
       return require(request);
-    }, overrides.wx,
+    },
+    overrides.wx,
+    overrides.__setTimeout || setTimeout,
+    overrides.__clearTimeout || clearTimeout,
   );
   return loaded.exports;
 };
@@ -42,14 +53,16 @@ const createPage = (file, params, options = {}) => {
   const frames = new Map();
   const effects = [];
   const navigations = [];
+  const navigationMethods = [];
   const audios = [];
   const recorderActions = [];
   const permissionChecks = [];
   const recorderHandlers = {};
   const savedRecordings = [];
   const submittedPending = [];
-  const pendingItems = [];
+  const pendingItems = [...(options.pendingItems || [])];
   let activeRecorder = null;
+  let acquireAttempts = 0;
   const hook = (initial) => {
     const index = slot++;
     if (!frame.slots[index]) frame.slots[index] = initial();
@@ -86,7 +99,8 @@ const createPage = (file, params, options = {}) => {
     useDidHide(callback) { frame.hide = callback; },
     useUnload(callback) { frame.unload = callback; },
     useShareAppMessage() {},
-    navigateTo: async ({ url }) => { navigations.push(url); },
+    navigateTo: async ({ url }) => { navigations.push(url); navigationMethods.push("navigateTo"); },
+    redirectTo: async ({ url }) => { navigations.push(url); navigationMethods.push("redirectTo"); },
     reLaunch: async ({ url }) => { navigations.push(url); },
     showToast() {}, showLoading() {}, hideLoading() {}, pageScrollTo() {},
     showModal: async () => ({ confirm: true }),
@@ -109,6 +123,11 @@ const createPage = (file, params, options = {}) => {
   };
   const recorderCoordinator = {
     acquire() {
+      const acquireSequence = options.acquireSequence || ["ok"];
+      const outcome = acquireSequence[Math.min(acquireAttempts, acquireSequence.length - 1)];
+      acquireAttempts += 1;
+      if (outcome === "busy") return { ok: false, reason: "busy", phase: "draining" };
+      if (outcome === "unavailable") return { ok: false, reason: "unavailable" };
       const session = { listener: null, phase: "idle", released: false };
       const succeed = (action, options) => {
         recorderActions.push(options === undefined ? { action } : { action, options });
@@ -128,7 +147,16 @@ const createPage = (file, params, options = {}) => {
       };
       session.owner = owner;
       activeRecorder = session;
-      return { ok: true, owner, capabilities: { canRecord: true, canPause: true, canResume: true, canInterrupt: true } };
+      return {
+        ok: true,
+        owner,
+        capabilities: options.recorderCapabilities || {
+          canRecord: true,
+          canPause: true,
+          canResume: true,
+          canInterrupt: true,
+        },
+      };
     },
     getPhase: () => activeRecorder?.phase || "idle",
   };
@@ -177,6 +205,8 @@ const createPage = (file, params, options = {}) => {
       dispatchRecorder(event, result);
     };
   }
+  recorderHandlers.InterruptionBegin = () => activeRecorder?.listener?.onInterruptionBegin?.();
+  recorderHandlers.InterruptionEnd = () => activeRecorder?.listener?.onInterruptionEnd?.();
   const immediate = (value) => {
     const chain = {
       then(callback) { callback(value); return chain; },
@@ -186,8 +216,8 @@ const createPage = (file, params, options = {}) => {
     return chain;
   };
   const pendingStore = {
-    ready: async () => {},
-    cleanup: async () => {},
+    ready: options.pendingReady || (async () => {}),
+    cleanup: options.pendingCleanup || (async () => {}),
     list: () => pendingItems,
     saveRecording(input) {
       savedRecordings.push(input);
@@ -236,6 +266,8 @@ const createPage = (file, params, options = {}) => {
     "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => pendingStore },
     "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => submissionCoordinator },
     wx: {},
+    __setTimeout: options.setTimeout,
+    __clearTimeout: options.clearTimeout,
     ...options.overrides,
   };
   const Component = load(file, overrides).default;
@@ -267,7 +299,13 @@ const createPage = (file, params, options = {}) => {
     return tree;
   };
   return {
-    render, navigations, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending,
+    render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending,
+    get acquireAttempts() { return acquireAttempts; },
+    stateValues() {
+      return [...frames.values()].flatMap((current) =>
+        current.slots.filter((item) => Object.hasOwn(item, "value")).map((item) => item.value),
+      );
+    },
     setRoute(next) { params = next; return render(); },
     show() { for (const current of frames.values()) current.show?.(); },
     hide() { for (const current of frames.values()) current.hide?.(); },
@@ -278,6 +316,39 @@ const elements = (node) => Array.isArray(node) ? node.flatMap(elements) : node &
 const textOf = (node) => Array.isArray(node) ? node.map(textOf).join("") : node && typeof node === "object" ? textOf(node.props?.children) : node == null || typeof node === "boolean" ? "" : String(node);
 const byClass = (tree, name) => elements(tree).find((node) => String(node.props?.className || "").split(" ").includes(name));
 const settle = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+const createFakeTimers = () => {
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map();
+  return {
+    setTimeout(callback, delay = 0) {
+      const id = nextId++;
+      timers.set(id, { callback, at: now + delay });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    advance(ms) {
+      const target = now + ms;
+      while (true) {
+        const ready = [...timers.entries()]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((left, right) => left[1].at - right[1].at || left[0] - right[0])[0];
+        if (!ready) break;
+        const [id, timer] = ready;
+        timers.delete(id);
+        now = timer.at;
+        timer.callback();
+      }
+      now = target;
+    },
+    get size() { return timers.size; },
+  };
+};
 
 async function testRoutes() {
   const practiceSource = read("src/pages/Practice/Practice.tsx");
@@ -356,8 +427,167 @@ async function testRoutes() {
         updatedAtMs: 1,
       }, "提交 coordinator 必须收到本地保存后的完整 pending 记录");
       assert.equal(page.navigations.at(-1), "/pages/CheckInDetail/CheckInDetail?id=record%261&token=token%261");
+      assert.equal(page.navigationMethods.at(-1), "redirectTo", "打卡成功必须替换训练页，确保旧页面卸载并释放录音 owner");
     }
   }
+
+  const hiddenWhileStarting = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/hidden-start.mp3" },
+  );
+  let hiddenStartingTree = hiddenWhileStarting.render();
+  hiddenStartingTree = hiddenWhileStarting.render();
+  await byClass(hiddenStartingTree, "record-button").props.onClick();
+  assert.equal(hiddenWhileStarting.recorderActions.at(-1).action, "start");
+  hiddenWhileStarting.hide();
+  assert.equal(hiddenWhileStarting.recorderActions.at(-1).action, "stop", "start 尚未确认时切后台也必须覆盖为安全 stop");
+  hiddenWhileStarting.recorderHandlers.Stop({
+    tempFilePath: "/tmp/hidden-start.mp3",
+    duration: 1700,
+    fileSize: 5000,
+  });
+  await settle();
+  assert.equal(hiddenWhileStarting.savedRecordings.length, 1, "后台收口 start 后的有效 Stop 仍必须保存到本地队列");
+
+  const hiddenWhileResuming = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+  );
+  let hiddenResumeTree = hiddenWhileResuming.render();
+  hiddenResumeTree = hiddenWhileResuming.render();
+  await byClass(hiddenResumeTree, "record-button").props.onClick();
+  hiddenWhileResuming.recorderHandlers.Start();
+  hiddenResumeTree = hiddenWhileResuming.render();
+  byClass(hiddenResumeTree, "record-button--pause").props.onClick();
+  hiddenWhileResuming.recorderHandlers.Pause();
+  hiddenResumeTree = hiddenWhileResuming.render();
+  byClass(hiddenResumeTree, "record-button--resume").props.onClick();
+  hiddenWhileResuming.hide();
+  hiddenWhileResuming.recorderHandlers.Resume();
+  assert.equal(hiddenWhileResuming.recorderActions.at(-1).action, "pause", "隐藏后迟到的 Resume 确认必须立即再次暂停");
+
+  const hiddenResumeWithoutPause = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { recorderCapabilities: { canRecord: true, canPause: false, canResume: true, canInterrupt: true } },
+  );
+  let noPauseTree = hiddenResumeWithoutPause.render();
+  noPauseTree = hiddenResumeWithoutPause.render();
+  await byClass(noPauseTree, "record-button").props.onClick();
+  hiddenResumeWithoutPause.recorderHandlers.Start();
+  hiddenResumeWithoutPause.recorderHandlers.InterruptionBegin();
+  hiddenResumeWithoutPause.recorderHandlers.Pause();
+  noPauseTree = hiddenResumeWithoutPause.render();
+  byClass(noPauseTree, "record-button--resume").props.onClick();
+  hiddenResumeWithoutPause.hide();
+  hiddenResumeWithoutPause.recorderHandlers.Resume();
+  assert.equal(hiddenResumeWithoutPause.recorderActions.at(-1).action, "stop", "不能暂停的设备收到后台 Resume 时必须安全停止");
+
+  const retryTimers = createFakeTimers();
+  const busyPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      acquireSequence: ["busy", "busy", "ok"],
+      setTimeout: retryTimers.setTimeout,
+      clearTimeout: retryTimers.clearTimeout,
+    },
+  );
+  let busyTree = busyPage.render();
+  busyTree = busyPage.render();
+  assert.match(textOf(busyTree), /录音设备正在收尾/, "busy 应保持检测态并解释正在收尾，不能误报设备不支持");
+  assert.equal(busyPage.acquireAttempts, 1);
+  retryTimers.advance(299);
+  assert.equal(busyPage.acquireAttempts, 1, "重试间隔未到不得频繁抢占录音器");
+  retryTimers.advance(1);
+  busyPage.render();
+  assert.equal(busyPage.acquireAttempts, 2);
+  retryTimers.advance(300);
+  busyPage.render();
+  assert.equal(busyPage.acquireAttempts, 3);
+  busyTree = busyPage.render();
+  assert.ok(byClass(busyTree, "record-button"), "旧录音器释放后应自动恢复录音入口");
+
+  const cleanupTimers = createFakeTimers();
+  const abandonedBusyPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      acquireSequence: ["busy"],
+      setTimeout: cleanupTimers.setTimeout,
+      clearTimeout: cleanupTimers.clearTimeout,
+    },
+  );
+  abandonedBusyPage.render();
+  assert.equal(cleanupTimers.size, 1);
+  abandonedBusyPage.setRoute({});
+  assert.equal(cleanupTimers.size, 0, "训练页卸载必须清除 recorder acquire 重试 timer");
+  cleanupTimers.advance(1000);
+  assert.equal(abandonedBusyPage.acquireAttempts, 1, "卸载后不得继续获取全局录音器");
+
+  const unavailablePage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { acquireSequence: ["unavailable"] },
+  );
+  unavailablePage.render();
+  assert.match(textOf(unavailablePage.render()), /暂不支持跟读录音/, "只有 unavailable 才应显示不支持录音");
+
+  const restoredContext = buildBookPracticeBundle("22").practices[0];
+  const oldPending = {
+    requestId: "oldpending0123456789abcdef01234567",
+    localPath: "/saved/old.mp3",
+    recoverable: true,
+    context: {
+      bookId: "22",
+      bookTitle: buildBookPracticeBundle("22").book.title,
+      practiceId: restoredContext.id,
+      practiceIndex: 0,
+      pageNumber: restoredContext.pageNumber,
+      sectionTitle: restoredContext.sectionTitle,
+      imageUrl: restoredContext.imageUrl,
+    },
+    durationMs: 900,
+    fileSizeBytes: 3000,
+    cloudFileId: "",
+    status: "local",
+    updatedAtMs: 1,
+  };
+  const delayedReady = deferred();
+  const readyRacePage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { pendingItems: [oldPending], pendingReady: () => delayedReady.promise },
+  );
+  let readyRaceTree = readyRacePage.render();
+  readyRaceTree = readyRacePage.render();
+  await byClass(readyRaceTree, "record-button").props.onClick();
+  delayedReady.resolve();
+  await settle();
+  assert.equal(
+    readyRacePage.stateValues().some((value) => value?.requestId === oldPending.requestId),
+    false,
+    "ready 等待期间启动新 session 后，不得把旧 pending 挂回当前页面",
+  );
+
+  const delayedCleanup = deferred();
+  const cleanupRacePage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { pendingItems: [oldPending], pendingCleanup: () => delayedCleanup.promise },
+  );
+  let cleanupRaceTree = cleanupRacePage.render();
+  cleanupRaceTree = cleanupRacePage.render();
+  await settle();
+  await byClass(cleanupRaceTree, "record-button").props.onClick();
+  delayedCleanup.resolve();
+  await settle();
+  assert.equal(
+    cleanupRacePage.stateValues().some((value) => value?.requestId === oldPending.requestId),
+    false,
+    "cleanup 等待期间启动新 session 后，旧 pending 只能留在 store",
+  );
 
   const leavingPage = createPage(
     "src/pages/Practice/Practice.tsx",

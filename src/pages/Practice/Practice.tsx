@@ -83,6 +83,7 @@ const RECORDER_OPTIONS = {
   format: "mp3" as const,
 };
 const RECORDER_TEARDOWN_TIMEOUT_MS = 8000;
+const RECORDER_ACQUIRE_RETRY_MS = 300;
 
 const recorderOperationError = (reason: string, error?: unknown) =>
   error || new Error(reason === "busy" ? "录音设备正在收尾，请稍后再试" : "当前录音操作暂不可用");
@@ -171,6 +172,8 @@ function PracticeSession({
   const [recordingMachine, setRecordingMachine] = useState<RecordingMachine>(
     () => createRecordingMachine(),
   );
+  const [recorderAcquireAttempt, setRecorderAcquireAttempt] = useState(0);
+  const [isRecorderBusy, setIsRecorderBusy] = useState(false);
   const recordingMachineRef = useRef(recordingMachine);
   const recordingState = recordingMachine.state;
   const [tempRecordingPath, setTempRecordingPath] = useState("");
@@ -382,8 +385,24 @@ function PracticeSession({
 
   useEffect(() => {
     mountedRef.current = true;
+    let acquireRetryTimer: ReturnType<typeof setTimeout> | null = null;
     const acquired = getRecorderCoordinator().acquire();
     if (!acquired.ok) {
+      if (acquired.reason === "busy") {
+        setIsRecorderBusy(true);
+        // 上一页的原生 stop 仍在静默收尾时保持 checking，低频重试而不是误报设备不支持。
+        acquireRetryTimer = setTimeout(() => {
+          acquireRetryTimer = null;
+          if (mountedRef.current) {
+            setRecorderAcquireAttempt((attempt) => attempt + 1);
+          }
+        }, RECORDER_ACQUIRE_RETRY_MS);
+        return () => {
+          mountedRef.current = false;
+          if (acquireRetryTimer !== null) clearTimeout(acquireRetryTimer);
+        };
+      }
+      setIsRecorderBusy(false);
       applyRecordingMachine(
         resolveRecordingCapabilities(recordingMachineRef.current, {
           canRecord: false,
@@ -399,6 +418,7 @@ function PracticeSession({
     }
 
     const { owner, capabilities } = acquired;
+    setIsRecorderBusy(false);
     recorderOwnerRef.current = owner;
     applyRecordingMachine(
       resolveRecordingCapabilities(recordingMachineRef.current, capabilities),
@@ -469,6 +489,15 @@ function PracticeSession({
         Date.now(),
       );
       applyRecordingMachine(next);
+
+      // resume 回调可能晚于页面隐藏；确认后立刻重新暂停，旧机型则直接安全停止。
+      if (pageHiddenRef.current) {
+        if (next.capabilities?.canPause && next.capabilities.canResume) {
+          runRecorderAction("pause", "background");
+        } else {
+          runRecorderAction("stop", "background");
+        }
+      }
     };
 
     const handleStop = (result: RecorderNativeStopResult) => {
@@ -624,6 +653,8 @@ function PracticeSession({
     clearRecordingView,
     releaseRecorderOwner,
     removeReplacementBackups,
+    recorderAcquireAttempt,
+    runRecorderAction,
   ]);
 
   useEffect(() => {
@@ -637,7 +668,18 @@ function PracticeSession({
 
     void store.ready().then(async () => {
       await store.cleanup();
-      if (!active || pendingCheckInRef.current || savingRecordingRef.current) return;
+      const current = recordingMachineRef.current;
+      const canRestorePending =
+        active &&
+        mountedRef.current &&
+        !pendingCheckInRef.current &&
+        !savingRecordingRef.current &&
+        !current.pendingAction &&
+        (current.state === "idle" ||
+          current.state === "unsupported" ||
+          current.state === "error");
+      // ready/cleanup 都可能跨过一次用户操作；恢复前必须以最新状态为准，不能覆盖新录音。
+      if (!canRestorePending) return;
       const restored = [...store.list()]
         .filter((item) =>
           item.context.bookId === bundle.book.id &&
@@ -647,12 +689,15 @@ function PracticeSession({
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0];
       if (!restored || !active) return;
 
+      const restoredMachine = restoreRecordedMachine(current);
+      if (restoredMachine === current) return;
+
       replacementPendingIdsRef.current.delete(restored.requestId);
+      applyRecordingMachine(restoredMachine);
       applyPendingCheckIn(restored);
       setTempRecordingPath(restored.localPath);
       setRecordingDurationMs(restored.durationMs);
       setRecordingElapsedMs(restored.durationMs);
-      applyRecordingMachine(restoreRecordedMachine(recordingMachineRef.current));
     }).catch(() => {
       // 本地缓存读取失败不阻断教材与示范音频，用户仍可重新录制。
     });
@@ -696,6 +741,29 @@ function PracticeSession({
     submissionHandleRef.current?.cancel();
 
     const current = recordingMachineRef.current;
+    if (current.state === "starting") {
+      // start 已交给微信但尚未确认时也可能已经占用麦克风，切后台必须覆盖为 stop。
+      const owner = recorderOwnerRef.current;
+      const teardown = requestRecorderTeardown(current);
+      if (owner && teardown.command) {
+        applyRecordingMachine(teardown.machine);
+        const stopped = owner.stop();
+        if (!stopped.ok) {
+          applyRecordingMachine(
+            resolveRecorderCallback(teardown.machine, {
+              type: "error",
+              sessionId: teardown.command.sessionId,
+              operationSeq: teardown.command.operationSeq,
+              error: recorderOperationError(
+                stopped.reason,
+                "error" in stopped ? stopped.error : undefined,
+              ),
+            }),
+          );
+        }
+      }
+      return;
+    }
     if (current.state === "recording") {
       if (current.capabilities?.canPause && current.capabilities.canResume) {
         runRecorderAction("pause", "background");
@@ -951,7 +1019,8 @@ function PracticeSession({
       applyRecordingMachine(resetRecordingMachine(finished));
       Taro.showToast({ title: "打卡成功", icon: "success" });
       try {
-        await Taro.navigateTo({
+        // 打卡完成后替换训练页，旧页面卸载时即可释放全局录音 owner。
+        await Taro.redirectTo({
           url: `/pages/CheckInDetail/CheckInDetail?id=${encodeURIComponent(
             result.id,
           )}&token=${encodeURIComponent(result.shareToken)}`,
@@ -1064,7 +1133,11 @@ function PracticeSession({
 
               {recordingState === "checking" && (
                 <View className='recorder-status recorder-status--neutral'>
-                  <Text>正在检查当前设备的录音能力…</Text>
+                  <Text>
+                    {isRecorderBusy
+                      ? "录音设备正在收尾，请稍候…"
+                      : "正在检查当前设备的录音能力…"}
+                  </Text>
                 </View>
               )}
 
