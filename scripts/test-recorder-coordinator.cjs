@@ -97,7 +97,8 @@ const { createRecorderCoordinator, getRecorderCoordinator } = loadCoordinator();
 assert.equal(typeof createRecorderCoordinator, "function");
 assert.equal(typeof getRecorderCoordinator, "function");
 
-const coordinator = createRecorderCoordinator({ getRecorderManager: () => native.manager });
+const primaryScheduler = createFakeScheduler();
+const coordinator = createRecorderCoordinator({ getRecorderManager: () => native.manager, scheduler: primaryScheduler, quietWindowMs: 10 });
 const first = coordinator.acquire();
 assert.equal(first.ok, true);
 assert.deepEqual(plain(first.capabilities), { canRecord: true, canPause: true, canResume: true, canInterrupt: true });
@@ -123,10 +124,13 @@ assert.equal(first.owner.stop().ok, false, "快速重复 stop 必须无效");
 assert.equal(native.calls.stop, 1);
 const firstStop = { duration: 1234.5, fileSize: 4567, tempFilePath: "/tmp/first.mp3" };
 native.emit("stop", firstStop);
+assert.equal(coordinator.getPhase(), "draining");
+primaryScheduler.advance(10);
 assert.equal(coordinator.getPhase(), "idle");
 
 const eventNative = createNativeRecorder();
-const eventCoordinator = createRecorderCoordinator({ getRecorderManager: () => eventNative.manager });
+const eventScheduler = createFakeScheduler();
+const eventCoordinator = createRecorderCoordinator({ getRecorderManager: () => eventNative.manager, scheduler: eventScheduler, quietWindowMs: 10 });
 const eventOwner = eventCoordinator.acquire();
 const seen = { interruptionBegin: 0, interruptionEnd: 0, pause: 0, error: null, stops: [] };
 const subscription = eventOwner.owner.subscribe({
@@ -149,6 +153,7 @@ assert.equal(eventCoordinator.getPhase(), "paused");
 const nativeError = { errMsg: "native error", errno: 9 };
 eventNative.emit("error", nativeError);
 assert.equal(seen.error, nativeError, "必须保留底层 error 原对象");
+eventScheduler.advance(10);
 assert.equal(eventOwner.owner.start(options).ok, true, "错误后应可由当前 owner 重新开始");
 eventNative.emit("start");
 eventOwner.owner.stop();
@@ -158,9 +163,11 @@ assert.deepEqual(seen.stops, [rawStop], "onStop 必须原样转发原生结果")
 assert.equal(seen.stops[0], rawStop, "onStop result 必须保持同一对象引用");
 assert.equal(seen.interruptionBegin, 1);
 assert.equal(seen.interruptionEnd, 1);
+eventScheduler.advance(10);
 
 const drainingNative = createNativeRecorder();
-const drainingCoordinator = createRecorderCoordinator({ getRecorderManager: () => drainingNative.manager });
+const drainingScheduler = createFakeScheduler();
+const drainingCoordinator = createRecorderCoordinator({ getRecorderManager: () => drainingNative.manager, scheduler: drainingScheduler, quietWindowMs: 10 });
 const oldOwner = drainingCoordinator.acquire();
 const oldStops = [];
 oldOwner.owner.subscribe({ onStop(result) { oldStops.push(result); } });
@@ -178,17 +185,20 @@ const staleStop = { duration: 12.5, fileSize: 1, tempFilePath: "/tmp/stale.mp3" 
 drainingNative.emit("stop", staleStop);
 assert.deepEqual(oldStops, [], "release 后旧 owner 不得接收回调");
 assert.deepEqual(newStops, [], "旧 session stop 不得发给新页面");
+drainingScheduler.advance(10);
 assert.deepEqual(plain(newOwner.owner.start(options)), { ok: true });
 drainingNative.emit("start");
 newOwner.owner.stop();
 const newStop = { duration: 22.5, fileSize: 3, tempFilePath: "/tmp/new.mp3" };
 drainingNative.emit("stop", newStop);
 assert.deepEqual(newStops, [newStop]);
+drainingScheduler.advance(10);
 assert.equal(newOwner.owner.subscribe({}).ok, true, "当前 owner 应可订阅");
 assert.equal(oldOwner.owner.subscribe({}).ok, false, "release 后不可重新订阅旧 owner");
 
 const drainErrorNative = createNativeRecorder();
-const drainErrorCoordinator = createRecorderCoordinator({ getRecorderManager: () => drainErrorNative.manager });
+const drainErrorScheduler = createFakeScheduler();
+const drainErrorCoordinator = createRecorderCoordinator({ getRecorderManager: () => drainErrorNative.manager, scheduler: drainErrorScheduler, quietWindowMs: 10 });
 const drainErrorOld = drainErrorCoordinator.acquire();
 drainErrorOld.owner.start(options);
 drainErrorNative.emit("start");
@@ -200,6 +210,7 @@ assert.equal(drainErrorNew.owner.start(options).reason, "busy");
 const staleError = { errMsg: "old session stopped" };
 drainErrorNative.emit("error", staleError);
 assert.deepEqual(drainErrors, [], "draining 的旧 error 不得发给新 owner");
+drainErrorScheduler.advance(10);
 assert.equal(drainErrorNew.owner.start(options).ok, true, "旧 error 消费后应允许新 session 启动");
 
 const missingNative = createNativeRecorder({ missing: ["pause", "resume", "onInterruptionBegin", "onInterruptionEnd"] });
