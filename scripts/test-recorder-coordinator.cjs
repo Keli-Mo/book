@@ -290,6 +290,37 @@ assert.equal(thrownResult.reason, "native-error");
 assert.equal(thrownResult.error, thrown, "同步 throw 必须以原对象结构化返回");
 assert.equal(throwingCoordinator.getPhase(), "idle");
 
+const boundaryScheduler = createFakeScheduler();
+const boundaryNative = createNativeRecorder();
+const boundary = createRecorderCoordinator({ getRecorderManager: () => boundaryNative.manager, scheduler: boundaryScheduler, quietWindowMs: 10 });
+const boundaryOwner = boundary.acquire();
+const boundaryEvents = [];
+boundaryOwner.owner.subscribe({ onPause() { boundaryEvents.push("pause"); }, onStop(value) { boundaryEvents.push(value); } });
+boundaryOwner.owner.start(options); boundaryNative.emit("start"); boundaryOwner.owner.pause();
+boundaryOwner.owner.release();
+const boundaryWaiting = boundary.acquire();
+boundaryNative.emit("pause");
+assert.equal(boundary.getPhase(), "draining", "旧 pause 确认不能突破 draining");
+assert.deepEqual(boundaryEvents, [], "release 后旧确认不能再通知");
+boundaryNative.emit("stop", { id: "old" });
+assert.equal(boundaryWaiting.owner.start(options).reason, "busy");
+boundaryScheduler.advance(10);
+assert.equal(boundaryWaiting.owner.start(options).ok, true);
+boundaryNative.emit("start"); boundaryWaiting.owner.stop();
+const normalStop = { id: "normal" }; boundaryNative.emit("stop", normalStop);
+assert.equal(boundary.getPhase(), "draining", "普通 onStop 也必须进入 quiet settle");
+assert.equal(boundaryWaiting.owner.start(options).reason, "busy");
+boundaryScheduler.advance(10); assert.equal(boundaryWaiting.owner.start(options).ok, true);
+
+const optionalNative = createNativeRecorder({ missing: ["pause"] });
+const optional = createRecorderCoordinator({ getRecorderManager: () => optionalNative.manager });
+assert.equal(optional.acquire().capabilities.canInterrupt, true, "中断不依赖手动 pause 命令");
+const noPauseCallback = createNativeRecorder({ missing: ["onPause"] });
+assert.equal(createRecorderCoordinator({ getRecorderManager: () => noPauseCallback.manager }).acquire().capabilities.canInterrupt, false);
+
+const fallback = createRecorderCoordinator({ getRecorderManager: () => createNativeRecorder().manager });
+assert.equal(fallback.acquire().ok, true, "无注入 timer 时仍安全降级，不得抛错");
+
 const lazyRuntime = {};
 const lazyExports = loadCoordinator(lazyRuntime);
 assert.equal(Object.keys(lazyRuntime).length, 0, "模块导入时不得读取或创建 wx");
