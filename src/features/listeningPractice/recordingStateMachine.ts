@@ -59,6 +59,10 @@ export interface RecordingActionResult {
   command: RecorderCommand | null;
 }
 
+export type RecordingUploadResult =
+  | { ok: true }
+  | { ok: false; error: unknown };
+
 const noCommand = (machine: RecordingMachine): RecordingActionResult => ({
   machine,
   command: null,
@@ -190,6 +194,18 @@ const callbackMatchesPendingAction = (
   callback.operationSeq === machine.operationSeq &&
   callback.type === machine.pendingAction;
 
+const canAcceptSystemStop = (
+  machine: RecordingMachine,
+  callback: RecorderCallback,
+) =>
+  callback.type === "stop" &&
+  callback.operationSeq === machine.operationSeq &&
+  (machine.state === "recording" ||
+    machine.state === "paused" ||
+    (machine.state === "starting" &&
+      machine.pendingAction === "pause" &&
+      machine.pauseReason === "interruption"));
+
 /** 只有当前会话、当前操作的原生确认才能转换到稳定状态。 */
 export const resolveRecorderCallback = (
   machine: RecordingMachine,
@@ -199,12 +215,27 @@ export const resolveRecorderCallback = (
 
   if (callback.type === "error") {
     if (callback.operationSeq !== machine.operationSeq) return machine;
+    // 已获得有效录音或正在上传时，迟到的原生诊断不能毁掉可用数据。
+    if (!machine.pendingAction && machine.state !== "recording" && machine.state !== "paused") {
+      return machine;
+    }
     return {
       ...machine,
       state: "error",
       pendingAction: null,
       clockFrozen: true,
       lastError: callback.error,
+    };
+  }
+
+  // 五分钟上限、系统打断等会直接触发 onStop，并不总有页面 stop 意图。
+  if (canAcceptSystemStop(machine, callback)) {
+    return {
+      ...machine,
+      state: "recorded",
+      pendingAction: null,
+      needsManualResume: false,
+      clockFrozen: false,
     };
   }
 
@@ -250,24 +281,61 @@ export const resolveRecorderCallback = (
   };
 };
 
-/** 中断开始先冻结时间线；有 pause 能力时等待原生 pause 确认，否则请求停止。 */
+/** 中断后微信会原生暂停；这里只建立回调屏障，不能重复调用 recorder.pause。 */
 export const handleInterruptionBegin = (
   machine: RecordingMachine,
 ): RecordingActionResult => {
-  if (
-    !machine.mounted ||
-    !machine.capabilities?.canInterrupt ||
-    machine.state !== "recording" ||
-    machine.pendingAction
-  ) {
+  if (!machine.mounted || !machine.capabilities?.canInterrupt) {
     return noCommand(machine);
   }
 
-  if (machine.capabilities?.canPause) {
-    return requestRecorderAction(machine, "pause", "interruption");
+  const waitForNativePause = (current: RecordingMachine): RecordingActionResult => ({
+    machine: {
+      ...current,
+      operationSeq: current.operationSeq + 1,
+      pendingAction: "pause",
+      pauseReason: "interruption",
+      needsManualResume: true,
+      clockFrozen: true,
+    },
+    command: null,
+  });
+
+  if (machine.state === "starting" && machine.pendingAction === "start") {
+    return waitForNativePause(machine);
   }
 
-  return requestRecorderAction(machine, "stop", "interruption");
+  if (machine.state === "recording") {
+    // 已发出的用户 pause 本身就是可等待的原生 pause，不必重复设置屏障。
+    if (machine.pendingAction === "pause") {
+      return {
+        machine: {
+          ...machine,
+          pauseReason: "interruption",
+          needsManualResume: true,
+          clockFrozen: true,
+        },
+        command: null,
+      };
+    }
+    return machine.pendingAction ? noCommand(machine) : waitForNativePause(machine);
+  }
+
+  if (machine.state === "paused") {
+    if (machine.pendingAction === "resume") return waitForNativePause(machine);
+    if (machine.pendingAction) return noCommand(machine);
+    return {
+      machine: {
+        ...machine,
+        pauseReason: "interruption",
+        needsManualResume: true,
+        clockFrozen: true,
+      },
+      command: null,
+    };
+  }
+
+  return noCommand(machine);
 };
 
 /** 中断结束绝不自动恢复，用户必须明确点击继续。 */
@@ -291,13 +359,14 @@ export const beginRecordingUpload = (machine: RecordingMachine): RecordingMachin
 
 export const finishRecordingUpload = (
   machine: RecordingMachine,
-  succeeded: boolean,
+  result: RecordingUploadResult,
 ): RecordingMachine =>
   machine.mounted && machine.state === "uploading"
     ? {
         ...machine,
-        state: succeeded ? "recorded" : "error",
-        lastError: succeeded ? null : machine.lastError,
+        // 上传失败仍保留这一份录音，用户可直接再次 beginRecordingUpload。
+        state: "recorded",
+        lastError: result.ok ? null : result.error,
       }
     : machine;
 

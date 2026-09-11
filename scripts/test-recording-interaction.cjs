@@ -108,6 +108,16 @@ assert.equal(
   getRecordingErrorMessage({ errCode: 0, message: "recorder failed" }),
   "recorder failed\n错误码：0"
 );
+assert.equal(
+  getRecordingErrorMessage({ message: "device disconnected", code: "EIO" }),
+  "device disconnected\n错误码：EIO",
+  "通用 code 也必须显示给用户，便于真机诊断"
+);
+assert.equal(
+  getRecordingErrorMessage({ message: "recorder failed", errCode: 0, errno: 1, code: "EIO" }),
+  "recorder failed\n错误码：0",
+  "errCode、errno、code 的优先级必须稳定且保留 0"
+);
 for (const error of [undefined, null, {}, { errMsg: "" }]) {
   assert.match(getRecordingErrorMessage(error), /未返回具体原因/);
   assert.doesNotMatch(getRecordingErrorMessage(error), /权限|\[object Object\]/);
@@ -223,7 +233,7 @@ assert.equal(machine.pauseReason, null);
 const interrupted = handleInterruptionBegin(machine);
 assert.equal(interrupted.machine.clockFrozen, true);
 assert.equal(interrupted.machine.pauseReason, "interruption");
-assert.equal(interrupted.command.type, "pause");
+assert.equal(interrupted.command, null, "系统中断会原生暂停，不能再次调用 recorder.pause");
 assert.equal(handleInterruptionEnd(interrupted.machine).command, null);
 assert.equal(handleInterruptionEnd(interrupted.machine).machine.needsManualResume, true);
 machine = resolveRecorderCallback(interrupted.machine, {
@@ -247,6 +257,17 @@ machine = resolveRecorderCallback(stopRequest.machine, {
   operationSeq: 5,
 });
 assert.equal(machine.state, "recorded");
+
+assert.strictEqual(
+  resolveRecorderCallback(machine, {
+    type: "error",
+    sessionId: 1,
+    operationSeq: 5,
+    error: { errMsg: "late stop error" },
+  }),
+  machine,
+  "已确认 stop 后的同序号迟到 error 不得覆盖有效录音"
+);
 
 let noPauseMachine = resolveRecordingCapabilities(
   createRecordingMachine(),
@@ -286,13 +307,23 @@ interruptWithoutPause = resolveRecorderCallback(interruptedStart.machine, {
   operationSeq: 1,
 });
 const forcedStop = handleInterruptionBegin(interruptWithoutPause);
-assert.equal(forcedStop.command.type, "stop");
+assert.equal(forcedStop.command, null, "没有手动 pause 能力时也应等待原生 onPause");
 assert.equal(forcedStop.machine.pauseReason, "interruption");
 assert.equal(forcedStop.machine.clockFrozen, true);
 
 const uploading = beginRecordingUpload(machine);
 assert.equal(uploading.state, "uploading");
-machine = finishRecordingUpload(uploading, true);
+assert.strictEqual(
+  resolveRecorderCallback(uploading, {
+    type: "error",
+    sessionId: 1,
+    operationSeq: 5,
+    error: { errMsg: "late upload error" },
+  }),
+  uploading,
+  "上传中的迟到录音 error 不得破坏上传路径"
+);
+machine = finishRecordingUpload(uploading, { ok: true });
 assert.equal(machine.state, "recorded");
 
 const nextStart = requestRecorderAction(machine, "start");
@@ -333,6 +364,253 @@ assert.equal(
   }).state,
   "starting",
   "卸载后回调不得变更状态"
+);
+
+let automaticStopMachine = resolveRecordingCapabilities(
+  createRecordingMachine(),
+  completeCapabilities
+);
+const automaticStopStart = requestRecorderAction(automaticStopMachine, "start");
+automaticStopMachine = resolveRecorderCallback(automaticStopStart.machine, {
+  type: "start",
+  sessionId: 1,
+  operationSeq: 1,
+});
+automaticStopMachine = resolveRecorderCallback(automaticStopMachine, {
+  type: "stop",
+  sessionId: 1,
+  operationSeq: 1,
+});
+assert.equal(
+  automaticStopMachine.state,
+  "recorded",
+  "录音中的五分钟自动 onStop 必须保留本轮录音"
+);
+
+let pausedAutomaticStopMachine = resolveRecordingCapabilities(
+  createRecordingMachine(),
+  completeCapabilities
+);
+const pausedAutomaticStopStart = requestRecorderAction(pausedAutomaticStopMachine, "start");
+pausedAutomaticStopMachine = resolveRecorderCallback(pausedAutomaticStopStart.machine, {
+  type: "start",
+  sessionId: 1,
+  operationSeq: 1,
+});
+const pausedAutomaticStopPause = requestRecorderAction(pausedAutomaticStopMachine, "pause");
+pausedAutomaticStopMachine = resolveRecorderCallback(pausedAutomaticStopPause.machine, {
+  type: "pause",
+  sessionId: 1,
+  operationSeq: 2,
+});
+pausedAutomaticStopMachine = resolveRecorderCallback(pausedAutomaticStopMachine, {
+  type: "stop",
+  sessionId: 1,
+  operationSeq: 2,
+});
+assert.equal(pausedAutomaticStopMachine.state, "recorded", "暂停后的系统 onStop 也必须可接收");
+
+let pendingPauseStopMachine = resolveRecordingCapabilities(
+  createRecordingMachine(),
+  completeCapabilities
+);
+const pendingPauseStopStart = requestRecorderAction(pendingPauseStopMachine, "start");
+pendingPauseStopMachine = resolveRecorderCallback(pendingPauseStopStart.machine, {
+  type: "start",
+  sessionId: 1,
+  operationSeq: 1,
+});
+const pendingPauseStop = requestRecorderAction(pendingPauseStopMachine, "pause");
+pendingPauseStopMachine = resolveRecorderCallback(pendingPauseStop.machine, {
+  type: "stop",
+  sessionId: 1,
+  operationSeq: 2,
+});
+assert.equal(pendingPauseStopMachine.state, "recorded", "pending pause 期间的系统 onStop 必须完成录音");
+
+let pendingResumeStopMachine = resolveRecordingCapabilities(
+  createRecordingMachine(),
+  completeCapabilities
+);
+const pendingResumeStopStart = requestRecorderAction(pendingResumeStopMachine, "start");
+pendingResumeStopMachine = resolveRecorderCallback(pendingResumeStopStart.machine, {
+  type: "start",
+  sessionId: 1,
+  operationSeq: 1,
+});
+const pendingResumeStopPause = requestRecorderAction(pendingResumeStopMachine, "pause");
+pendingResumeStopMachine = resolveRecorderCallback(pendingResumeStopPause.machine, {
+  type: "pause",
+  sessionId: 1,
+  operationSeq: 2,
+});
+const pendingResumeStop = requestRecorderAction(pendingResumeStopMachine, "resume");
+pendingResumeStopMachine = resolveRecorderCallback(pendingResumeStop.machine, {
+  type: "stop",
+  sessionId: 1,
+  operationSeq: 3,
+});
+assert.equal(pendingResumeStopMachine.state, "recorded", "pending resume 期间的系统 onStop 必须完成录音");
+
+const startingStop = requestRecorderAction(
+  resolveRecordingCapabilities(createRecordingMachine(), completeCapabilities),
+  "start"
+);
+assert.equal(
+  resolveRecorderCallback(startingStop.machine, {
+    type: "stop",
+    sessionId: 1,
+    operationSeq: 1,
+  }).state,
+  "starting",
+  "starting 阶段的意外 onStop 不能伪造有效录音"
+);
+
+let activeNativeErrorMachine = resolveRecordingCapabilities(
+  createRecordingMachine(),
+  completeCapabilities
+);
+const activeNativeErrorStart = requestRecorderAction(activeNativeErrorMachine, "start");
+activeNativeErrorMachine = resolveRecorderCallback(activeNativeErrorStart.machine, {
+  type: "start",
+  sessionId: 1,
+  operationSeq: 1,
+});
+activeNativeErrorMachine = resolveRecorderCallback(activeNativeErrorMachine, {
+  type: "error",
+  sessionId: 1,
+  operationSeq: 1,
+  error: { message: "system recorder failure", code: "EIO" },
+});
+assert.equal(activeNativeErrorMachine.state, "error", "活动录音无 pending 的原生错误仍必须进入 error");
+assert.deepEqual(JSON.parse(JSON.stringify(activeNativeErrorMachine.lastError)), {
+  message: "system recorder failure",
+  code: "EIO",
+});
+
+let resumeInterruptedMachine = resolveRecordingCapabilities(
+  createRecordingMachine(),
+  completeCapabilities
+);
+const resumeInterruptedStart = requestRecorderAction(resumeInterruptedMachine, "start");
+resumeInterruptedMachine = resolveRecorderCallback(resumeInterruptedStart.machine, {
+  type: "start",
+  sessionId: 1,
+  operationSeq: 1,
+});
+const resumeInterruptedPause = requestRecorderAction(resumeInterruptedMachine, "pause");
+resumeInterruptedMachine = resolveRecorderCallback(resumeInterruptedPause.machine, {
+  type: "pause",
+  sessionId: 1,
+  operationSeq: 2,
+});
+const pendingResume = requestRecorderAction(resumeInterruptedMachine, "resume");
+const interruptionDuringResume = handleInterruptionBegin(pendingResume.machine);
+assert.equal(
+  interruptionDuringResume.command,
+  null,
+  "系统中断已原生暂停，pending resume 期间不得重复执行 recorder.pause"
+);
+assert.equal(interruptionDuringResume.machine.operationSeq, 4);
+assert.equal(interruptionDuringResume.machine.pendingAction, "pause");
+assert.equal(interruptionDuringResume.machine.pauseReason, "interruption");
+assert.equal(interruptionDuringResume.machine.needsManualResume, true);
+assert.equal(interruptionDuringResume.machine.clockFrozen, true);
+const lateResume = resolveRecorderCallback(interruptionDuringResume.machine, {
+  type: "resume",
+  sessionId: 1,
+  operationSeq: 3,
+});
+assert.equal(lateResume.state, "paused", "已失效的 resume 确认不得恢复录音");
+assert.equal(lateResume.clockFrozen, true, "已失效的 resume 确认不得解冻计时");
+resumeInterruptedMachine = resolveRecorderCallback(lateResume, {
+  type: "pause",
+  sessionId: 1,
+  operationSeq: 4,
+});
+assert.equal(resumeInterruptedMachine.state, "paused");
+assert.equal(resumeInterruptedMachine.needsManualResume, true);
+assert.equal(handleInterruptionEnd(resumeInterruptedMachine).command, null);
+const manualResumeAfterInterruption = requestRecorderAction(resumeInterruptedMachine, "resume");
+assert.equal(manualResumeAfterInterruption.command.type, "resume");
+assert.equal(
+  resolveRecorderCallback(manualResumeAfterInterruption.machine, {
+    type: "resume",
+    sessionId: 1,
+    operationSeq: 5,
+  }).state,
+  "recording",
+  "只有用户新的 resume 才能恢复录音"
+);
+
+const pendingStartInterruption = handleInterruptionBegin(startingStop.machine);
+assert.equal(pendingStartInterruption.command, null);
+assert.equal(pendingStartInterruption.machine.pendingAction, "pause");
+assert.equal(pendingStartInterruption.machine.operationSeq, 2);
+assert.equal(
+  resolveRecorderCallback(pendingStartInterruption.machine, {
+    type: "start",
+    sessionId: 1,
+    operationSeq: 1,
+  }).state,
+  "starting",
+  "中断已作废 start 后的迟到 onStart 不得进入 recording"
+);
+assert.equal(
+  resolveRecorderCallback(pendingStartInterruption.machine, {
+    type: "stop",
+    sessionId: 1,
+    operationSeq: 2,
+  }).state,
+  "recorded",
+  "中断后原生直接 onStop 必须被接收"
+);
+
+let pendingPauseInterruptionMachine = resolveRecordingCapabilities(
+  createRecordingMachine(),
+  completeCapabilities
+);
+const pendingPauseInterruptionStart = requestRecorderAction(pendingPauseInterruptionMachine, "start");
+pendingPauseInterruptionMachine = resolveRecorderCallback(pendingPauseInterruptionStart.machine, {
+  type: "start",
+  sessionId: 1,
+  operationSeq: 1,
+});
+const pendingUserPause = requestRecorderAction(pendingPauseInterruptionMachine, "pause");
+const interruptionDuringPause = handleInterruptionBegin(pendingUserPause.machine);
+assert.equal(interruptionDuringPause.command, null, "已发出的用户 pause 不得在中断时重复调用");
+assert.equal(interruptionDuringPause.machine.operationSeq, 2);
+assert.equal(interruptionDuringPause.machine.pauseReason, "interruption");
+assert.equal(
+  resolveRecorderCallback(interruptionDuringPause.machine, {
+    type: "pause",
+    sessionId: 1,
+    operationSeq: 2,
+  }).needsManualResume,
+  true,
+  "pending pause 收到中断后也必须保留手动恢复标记"
+);
+
+let uploadRetryMachine = machine;
+uploadRetryMachine = beginRecordingUpload(uploadRetryMachine);
+const uploadFailure = { errMsg: "uploadFile:fail timeout", code: "ETIMEDOUT" };
+uploadRetryMachine = finishRecordingUpload(uploadRetryMachine, {
+  ok: false,
+  error: uploadFailure,
+});
+assert.equal(uploadRetryMachine.state, "recorded", "上传失败应保留录音供重试");
+assert.deepEqual(JSON.parse(JSON.stringify(uploadRetryMachine.lastError)), uploadFailure);
+const uploadRetrying = beginRecordingUpload(uploadRetryMachine);
+assert.equal(uploadRetrying.state, "uploading", "上传失败后必须可再次 beginUpload");
+assert.equal(uploadRetrying.sessionId, uploadRetryMachine.sessionId, "重试上传不能新建录音 session");
+uploadRetryMachine = finishRecordingUpload(uploadRetrying, { ok: true });
+assert.equal(uploadRetryMachine.state, "recorded");
+assert.equal(uploadRetryMachine.lastError, null, "上传成功必须清理上次失败原因");
+const disposedUploading = disposeRecordingMachine(uploadRetrying);
+assert.strictEqual(
+  finishRecordingUpload(disposedUploading, { ok: false, error: uploadFailure }),
+  disposedUploading,
+  "卸载后上传完成不得更新状态"
 );
 
 console.log("录音交互测试通过：时间线、错误、能力检测与状态机契约正确。");

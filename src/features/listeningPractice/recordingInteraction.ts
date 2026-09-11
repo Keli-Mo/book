@@ -16,13 +16,18 @@ export const getRecordingErrorMessage = (error: unknown): string => {
           message?: string;
           errCode?: string | number;
           errno?: string | number;
+          code?: string | number;
         })
       : undefined;
   const message =
-    details?.errMsg ||
-    details?.message ||
+    (typeof details?.errMsg === "string" ? details.errMsg : "") ||
+    (typeof details?.message === "string" ? details.message : "") ||
     (typeof error === "string" ? error : "");
-  const code = details?.errCode ?? details?.errno;
+  const candidateCode = details?.errCode ?? details?.errno ?? details?.code;
+  const code =
+    typeof candidateCode === "string" || typeof candidateCode === "number"
+      ? candidateCode
+      : undefined;
   const reason = message || "微信未返回具体原因，请重新进入小程序后重试。";
   return code === undefined ? reason : `${reason}\n错误码：${code}`;
 };
