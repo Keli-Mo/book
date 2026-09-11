@@ -964,6 +964,12 @@ function PracticeSession({
     const wasHidden = pageHiddenRef.current;
     pageHiddenRef.current = false;
     clearHiddenStopRetry();
+    // 重试可能在后台完成，返回时用同一录音的最新快照恢复路径和持久状态。
+    const latest = getPendingCheckInStore().list().find((item) => item.requestId === pendingCheckInRef.current?.requestId);
+    if (latest) {
+      applyPendingCheckIn(latest);
+      setTempRecordingPath(latest.localPath);
+    }
     if (wasHidden) {
       setPendingRestoreRefresh((refresh) => refresh + 1);
     }
@@ -1324,7 +1330,7 @@ function PracticeSession({
 
   const playRecording = () => {
     const audio = recordingAudioRef.current;
-    if (!audio || !tempRecordingPath) return;
+    if (!audio || !tempRecordingPath || savingRecordingRef.current) return;
 
     modelAudioControllerRef.current?.stop();
     setPlayingTrackId(null);
@@ -1336,10 +1342,41 @@ function PracticeSession({
     audio.play();
   };
 
+  const retrySaveRecording = async () => {
+    const pending = pendingCheckInRef.current;
+    if (!pending || pending.recoverable || savingRecordingRef.current || completionInFlightRef.current || practiceSwitchInFlightRef.current || pageHiddenRef.current || recordingMachineRef.current.state !== "recorded") return;
+    // 用户选择救回本段后，之前尚在等待权限的重录手势永久失效。
+    recordingStartAttemptRef.current += 1;
+    savingRecordingRef.current = true;
+    setIsSavingRecording(true);
+    const generation = ++saveGenerationRef.current;
+    stopAudioIfLoaded(recordingAudioRef.current);
+    setIsPlayingRecording(false);
+    try {
+      const result = await getPendingCheckInStore().retrySave(pending.requestId);
+      // 保存仅更新原录音；隐藏、卸载或已换录音时由下一次快照恢复接管。
+      if (!mountedRef.current || pageHiddenRef.current || generation !== saveGenerationRef.current || pendingCheckInRef.current?.requestId !== pending.requestId) return;
+      if (result) {
+        applyPendingCheckIn(result.item);
+        setTempRecordingPath(result.item.localPath);
+      }
+      Taro.showToast({ title: result?.persisted ? "录音已安全保存" : "保存失败，请重试", icon: "none" });
+    } catch (_error) {
+      if (mountedRef.current && !pageHiddenRef.current) Taro.showToast({ title: "保存失败，请重试", icon: "none" });
+    } finally {
+      if (generation === saveGenerationRef.current) {
+        savingRecordingRef.current = false;
+        if (mountedRef.current) setIsSavingRecording(false);
+      }
+    }
+  };
+
   const submitCheckIn = async () => {
     const pending = pendingCheckInRef.current;
     if (
       !pending ||
+      savingRecordingRef.current ||
+      pageHiddenRef.current ||
       completionInFlightRef.current ||
       practiceSwitchInFlightRef.current ||
       recordingState !== "recorded"
@@ -1563,10 +1600,13 @@ function PracticeSession({
                       ? "正在安全保存录音，请稍候…"
                       : pendingCheckIn?.recoverable
                         ? `已安全保存在本机（${formatDuration(recordingDurationMs)}），请回听确认。`
-                        : `已临时保存在本机（${formatDuration(recordingDurationMs)}），请尽快完成打卡。`}
+                        : `录音保存失败（${formatDuration(recordingDurationMs)}），请重试保存；关闭小程序后可能无法恢复。`}
                   </Text>
                   {!isSavingRecording && pendingCheckIn && (
                     <>
+                      {!pendingCheckIn.recoverable && (
+                        <Button className='record-actions__secondary device-touch-target' onClick={retrySaveRecording}>重试保存</Button>
+                      )}
                       <View className='record-actions device-actions'>
                         <Button
                           className='record-actions__secondary device-touch-target'

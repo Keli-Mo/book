@@ -105,6 +105,18 @@ function harness() {
 
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
+test("尚未提交的分享不能删除且无副作用", async () => {
+  const h = harness();
+  const p = await h.prepare(input({ shareVersion: 2 }));
+  const before = plain(h.records.get(p.id));
+  const writes = h.metrics.writes;
+  const result = await h.call("remove", { id: p.id });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "SHARE_NOT_COMMITTED");
+  assert.deepEqual(plain(h.records.get(p.id)), before);
+  assert.equal(h.metrics.writes, writes);
+  assert.equal(h.metrics.deletes, 0);
+});
 test("新版预留持久化、并发幂等与载荷冲突", async () => {
   const h = harness(), event = input({ shareVersion: 2 });
   const [p, q] = await Promise.all([h.prepare(event), h.prepare(event)]);

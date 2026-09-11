@@ -30,6 +30,8 @@ export default function CheckInDetail() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackPositionMs, setPlaybackPositionMs] = useState(0);
   const [sharing, setSharing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [expiryTick, setExpiryTick] = useState(0);
   const audioRef = useRef<Taro.InnerAudioContext | null>(null);
   const durationRef = useRef(0);
@@ -147,7 +149,7 @@ export default function CheckInDetail() {
 
   const toggleRecording = async () => {
     const audio = audioRef.current;
-    if (!audio || !detail || !visibleRef.current) return;
+    if (!audio || !detail || !visibleRef.current || savingRef.current) return;
     const attempt = playAttemptRef.current + 1;
     playAttemptRef.current = attempt;
     if (isPlaying) { stopAudioIfLoaded(audio); return; }
@@ -169,8 +171,27 @@ export default function CheckInDetail() {
     setPlaybackPositionMs(0); audio.src = recordingUrl; audio.play();
   };
 
+  const retrySaveRecording = async () => {
+    if (!localId || detail?.source !== "local" || detail.pending.recoverable || savingRef.current || sharing || !visibleRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    stopAudioIfLoaded(audioRef.current);
+    try {
+      const result = await pendingStore.retrySave(localId);
+      // 隐藏时仅完成本地保存，返回页面会从仓储恢复，绝不在这里启动分享。
+      if (!mountedRef.current || !visibleRef.current) return;
+      if (result) setDetail({ source: "local", pending: result.item, recordingUrl: result.item.localPath });
+      Taro.showToast({ title: result?.persisted ? "录音已安全保存" : "保存失败，请重试", icon: "none" });
+    } catch (_error) {
+      if (mountedRef.current && visibleRef.current) Taro.showToast({ title: "保存失败，请重试", icon: "none" });
+    } finally {
+      savingRef.current = false;
+      if (mountedRef.current) setSaving(false);
+    }
+  };
+
   const prepareShare = async () => {
-    if (!localId || sharing || hasValidShare) return;
+    if (!localId || sharing || savingRef.current || hasValidShare || !visibleRef.current || detail?.source !== "local" || !detail.pending.recoverable) return;
     const attempt = shareAttemptRef.current + 1;
     shareAttemptRef.current = attempt;
     setSharing(true);
@@ -229,7 +250,7 @@ export default function CheckInDetail() {
   const shareButton = hasValidShare ? (
     <Button className='check-in-actions__share device-touch-target' openType='share'>发送给朋友</Button>
   ) : detail.source === "local" ? (
-    <Button className='check-in-actions__share device-touch-target' loading={sharing} disabled={sharing} onClick={prepareShare}>
+    <Button className='check-in-actions__share device-touch-target' loading={sharing} disabled={sharing || saving || !detail.pending.recoverable} onClick={prepareShare}>
       {sharing ? "正在准备分享…" : "分享给朋友"}
     </Button>
   ) : (
@@ -260,7 +281,10 @@ export default function CheckInDetail() {
           {isPlaying ? "停止播放" : "播放本次跟读"}
         </Button>
         {detail.source === "local" && !detail.pending.recoverable && (
-          <Text className='shared-recording__privacy'>临时文件，关闭小程序后可能无法恢复</Text>
+          <View>
+            <Text className='shared-recording__privacy'>录音保存失败，请重试保存；关闭小程序后可能无法恢复</Text>
+            <Button className='shared-recording__retry device-touch-target' loading={saving} disabled={saving || sharing} onClick={retrySaveRecording}>重试保存</Button>
+          </View>
         )}
       </View>
       <View className='check-in-actions device-actions'>

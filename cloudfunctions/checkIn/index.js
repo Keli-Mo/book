@@ -271,6 +271,8 @@ const removeCheckIn = async (event, openId) => {
   if (!record) return failure("打卡记录不存在或已被删除");
   if (record._openid !== openId) return failure("只能删除自己的打卡");
   if (record.status === "deleted") return success({ id });
+  // 尚未提交的新分享没有可删除文件，也不能提前写删除墓碑。
+  if (record.status === "pending") return failure("分享尚未提交，不能删除", "SHARE_NOT_COMMITTED");
 
   if (record.requestId) {
     // 幂等记录先写墓碑，阻止删除过程中或删除后的迟到 commit 复活录音。
@@ -278,6 +280,7 @@ const removeCheckIn = async (event, openId) => {
       const doc = transaction.collection("checkins").doc(id);
       const current = (await doc.get()).data;
       if (!current || current._openid !== openId) reject("FORBIDDEN", "不能删除该打卡");
+      if (current.status === "pending") reject("SHARE_NOT_COMMITTED", "分享尚未提交，不能删除");
       if (current.status !== "deleted" && current.status !== "deletePending") {
         const { _id, ...data } = current;
         await doc.set({ data: { ...data, status: "deletePending" } });

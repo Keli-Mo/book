@@ -330,6 +330,42 @@ const createBarrier = () => {
   assert.equal(metadataFailure.item.recoverable, false);
   assert.equal(await metadataFailStore.complete(metadataFailure.item.requestId, true), false, "未持久临时项不能假装长期完成");
   assert.deepEqual(metadataFails.calls.remove, []);
+  assert.equal((await metadataFailStore.retrySave(metadataFailure.item.requestId)).persisted, false);
+  assert.equal(metadataFailStore.list()[0].localPath, "/saved/1.mp3", "持续失败仍保留可回听路径");
+  assert.equal(metadataFails.calls.save.length, 1);
+  assert.equal((await saveFailStore.retrySave(temporary.item.requestId)).persisted, false);
+  assert.equal(saveFailStore.list()[0].localPath, temporary.item.localPath);
+
+  const once = createAdapters({ storageSetBehavior: async (_items, count) => { if (count === 1) throw new Error("write failed"); } });
+  const onceStore = createPendingCheckInStore(once.adapters);
+  const onceFailed = await onceStore.saveRecording(recording());
+  const recovered = await onceStore.retrySave(onceFailed.item.requestId);
+  assert.equal(recovered.persisted, true);
+  assert.equal(recovered.item.requestId, onceFailed.item.requestId);
+  assert.equal(recovered.item.createdAtMs, onceFailed.item.createdAtMs);
+  assert.equal(once.calls.save.length, 1, "只欠索引时不得重复移动文件");
+  const recoveredRestart = createPendingCheckInStore(once.adapters);
+  await recoveredRestart.ready();
+  assert.equal(recoveredRestart.list()[0].localPath, recovered.item.localPath);
+  assert.equal(await onceStore.complete(recovered.item.requestId, true), true);
+  assert.ok(await onceStore.beginShare(recovered.item.requestId));
+
+  const stages = createAdapters({
+    saveBehavior: async (_path, count) => { if (count === 1) throw new Error("save failed"); return { savedFilePath: "/saved/stages.mp3", fileSizeBytes: 17, contentSha1: "a".repeat(40) }; },
+    storageSetBehavior: async (_items, count) => { if (count === 1) throw new Error("write failed"); },
+  });
+  const stagesStore = createPendingCheckInStore(stages.adapters);
+  const stageInitial = await stagesStore.saveRecording(recording());
+  const stageMoved = await stagesStore.retrySave(stageInitial.item.requestId);
+  assert.equal(stageMoved.persisted, false);
+  assert.equal(stageMoved.item.localPath, "/saved/stages.mp3");
+  const stageDone = await stagesStore.retrySave(stageInitial.item.requestId);
+  assert.equal(stageDone.persisted, true);
+  assert.equal(stageDone.item.fileSizeBytes, 17);
+  assert.equal(stageDone.item.contentSha1, "a".repeat(40));
+  assert.equal(stages.calls.save.length, 2, "第二阶段失败后只补索引");
+  assert.equal((await exactStore.retrySave(over.item.requestId)).persisted, false);
+  assert.equal(exactCapacity.calls.save.length, 1, "重试仍须容量保护");
 
   let readAttempts = 0;
   const readFailure = createAdapters({
@@ -344,6 +380,14 @@ const createBarrier = () => {
   assert.equal(readFailure.calls.save.length, 0, "索引未知时不得移动新录音文件");
   await readFailureStore.ready();
   assert.equal(readFailureStore.list()[0].requestId, hex(95), "后续读取成功可恢复原元数据");
+  assert.equal((await readFailureStore.retrySave(blockedSave.item.requestId)).persisted, true);
+  assert.equal(readFailure.getRecords().length, 2, "重试保存不得覆盖原索引");
+  const unreadable = createAdapters({ storageGetBehavior: () => { throw new Error("read failed"); } });
+  const unreadableStore = createPendingCheckInStore(unreadable.adapters);
+  const unreadableItem = await unreadableStore.saveRecording(recording());
+  assert.equal((await unreadableStore.retrySave(unreadableItem.item.requestId)).persisted, false);
+  assert.equal(unreadable.calls.set, 0);
+  assert.equal(unreadable.calls.save.length, 0);
 
   const duplicatePersisted = createAdapters({
     records: [pending({ requestId: hex(1) })],

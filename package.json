@@ -54,6 +54,7 @@
     "test:ui-refinements": "node scripts/test-ui-refinements.cjs",
     "test:recording-library-view": "node scripts/test-recording-library-view.cjs",
     "test:local-recording-pages": "node scripts/test-local-recording-pages.cjs",
+    "test:local-recording-retry-runtime": "node scripts/test-local-recording-retry-runtime.cjs",
     "test:check-in-detail-runtime": "node scripts/test-check-in-detail-runtime.cjs",
     "test:local-share-lifecycle": "node scripts/test-local-share-lifecycle.cjs",
     "test:share-expiry-cleanup": "node scripts/test-share-expiry-cleanup.cjs"

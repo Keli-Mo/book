@@ -177,6 +177,8 @@ const capacityMessage = (countExceeded: boolean) =>
 export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   let persistedItems: PendingCheckIn[] = [];
   const temporaryItems = new Map<string, PendingCheckIn>();
+  // 文件移动成功与索引写入成功是两个阶段；会话内牢记前者，避免重试移动失效路径。
+  const savedTemporaryIds = new Set<string>();
   let readyPromise: Promise<void> | null = null;
   let metadataReadable = false;
   let metadataDirty = false;
@@ -342,15 +344,16 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
   const saveRecordingInternal = async (
     input: SavePendingRecordingInput,
+    retryItem?: PendingCheckIn,
   ): Promise<SavePendingRecordingResult> => {
     // 先校验原生录音结果，避免为了“修复”无效数据而猜测时长或文件大小。
     validateRecordingInput(input);
     await cleanupInternal();
     if (!metadataReadable) {
-      const item = createItem(input, input.tempFilePath, false);
+      const item = retryItem || createItem(input, input.tempFilePath, false);
       return createTemporaryResult(item, "无法读取本地录音索引，请重试，现有录音不会被覆盖", "failed");
     }
-    const initialItem = createItem(input, input.tempFilePath, false);
+    const initialItem = retryItem || createItem(input, input.tempFilePath, false);
 
     const capacity = hasCapacityFor(input.fileSizeBytes);
     if (capacity.countExceeded || capacity.byteExceeded) {
@@ -361,29 +364,33 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     }
 
     let saved: SavedPendingRecordingFile;
-    try {
-      saved = await adapters.file.save(input.tempFilePath);
-    } catch (error) {
-      if (isQuotaFailure(error)) {
-        await cleanupInternal();
-        try {
-          saved = await adapters.file.save(input.tempFilePath);
-        } catch (_retryError) {
+    if (savedTemporaryIds.has(initialItem.requestId)) {
+      saved = { savedFilePath: initialItem.localPath, fileSizeBytes: initialItem.fileSizeBytes, contentSha1: initialItem.contentSha1 };
+    } else {
+      try {
+        saved = await adapters.file.save(input.tempFilePath);
+      } catch (error) {
+        if (isQuotaFailure(error)) {
+          await cleanupInternal();
+          try {
+            saved = await adapters.file.save(input.tempFilePath);
+          } catch (_retryError) {
+            return createTemporaryResult(
+              initialItem,
+              "录音无法持久保存，关闭小程序后可能无法恢复",
+            );
+          }
+        } else {
           return createTemporaryResult(
             initialItem,
             "录音无法持久保存，关闭小程序后可能无法恢复",
           );
         }
-      } else {
-        return createTemporaryResult(
-          initialItem,
-          "录音无法持久保存，关闭小程序后可能无法恢复",
-        );
       }
     }
 
     const { savedFilePath } = saved;
-    if (!isText(savedFilePath) || savedFilePath === input.tempFilePath) {
+    if (!isText(savedFilePath) || (!savedTemporaryIds.has(initialItem.requestId) && savedFilePath === input.tempFilePath)) {
       return createTemporaryResult(
         initialItem,
         "录音保存路径无效，关闭小程序后可能无法恢复",
@@ -396,11 +403,16 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       ? { fileSizeBytes: saved.fileSizeBytes, contentSha1: saved.contentSha1.toLowerCase() }
       : {};
     const item = { ...initialItem, ...actualMetadata, localPath: savedFilePath, recoverable: true };
+    // 先保存移动后的真实路径；后续索引失败也不能丢失阶段和内容基准。
+    savedTemporaryIds.add(item.requestId);
+    temporaryItems.set(item.requestId, { ...item, recoverable: false });
     const actualCapacity = hasCapacityFor(item.fileSizeBytes);
     try {
       const nextItems = [...persistedItems, item];
       await persistItems(nextItems);
       persistedItems = nextItems;
+      temporaryItems.delete(item.requestId);
+      savedTemporaryIds.delete(item.requestId);
       metadataDirty = false;
       // 已保存文件因实测修正而越限时仍保留恢复信息，后续录音按实际累计大小限制保存。
       return {
@@ -602,6 +614,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
     if (temporaryItem) {
       temporaryItems.delete(requestId);
+      savedTemporaryIds.delete(requestId);
       return true;
     }
 
@@ -615,6 +628,15 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const cleanup = () => enqueueMutation(cleanupInternal);
   const saveRecording = (input: SavePendingRecordingInput) =>
     enqueueMutation(() => saveRecordingInternal(input));
+  const retrySave = (requestId: string) => enqueueMutation(async (): Promise<SavePendingRecordingResult | null> => {
+    await ready();
+    const item = temporaryItems.get(requestId);
+    if (!item) {
+      const persisted = persistedItems.find((current) => current.requestId === requestId);
+      return persisted ? { item: freezeItem(persisted), persisted: true, message: "" } : null;
+    }
+    return saveRecordingInternal({ tempFilePath: item.localPath, context: item.context, durationMs: item.durationMs, fileSizeBytes: item.fileSizeBytes }, item);
+  });
   const update = (
     requestId: string,
     patch: Pick<Partial<PendingCheckIn>, "cloudFileId" | "status" | "fileSizeBytes" | "contentSha1">,
@@ -634,6 +656,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     list,
     cleanup,
     saveRecording,
+    retrySave,
     update,
     remove,
     markUploaded,
