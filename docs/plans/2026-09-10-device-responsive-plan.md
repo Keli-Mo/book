@@ -14,6 +14,7 @@
 - 所有主要按钮与热点命中区不小于 44 CSS px。
 - 教材页完整显示，快照使用 `aspectFit`。
 - 五页均处理底部安全区和长文本。
+- Taro 源 `.scss` 的固定 CSS 像素一律写为大写 `PX`（例如 `44PX`，编译为 `44px`）；小写 `px` 会转换为 `rpx`，不得用于固定命中区、列宽、间距或最大宽度。运行时 inline style 不经过 SCSS 单位转换，可使用 `` `${value}px` ``。
 
 ---
 
@@ -92,6 +93,7 @@ export function clampHotspotCenter(
 - [ ] 目录在手机/Pad 竖屏保持底部抽屉，在宽 Pad 横屏使用侧栏。
 - [ ] 热点拆为 44px 命中外壳和视觉内圆，图片加载/resize 后用实际盒子收敛中心。
 - [ ] CheckInDetail 改为 `aspectFit`，五页按钮/文本在 320px 和大字号下可折行。
+- [ ] 所有新增或修改的 SCSS 固定尺寸按全局约束写成 `44PX`、`480PX`、`24PX` 等大写 `PX`；动态测量值只在 JSX inline style 使用 `` `${measuredWidth}px` ``，并由契约测试检查不得把固定像素误写成小写 `px`。
 - [ ] 运行响应式、热点、导航和既有 UI 测试。
 - [ ] 提交 `feat: 适配手机与Pad横竖屏布局`。
 

@@ -11,9 +11,11 @@
 ## 全局约束
 
 - 示范音频与录音使用独立上下文并允许同时运行。
-- 系统中断结束后由用户手动恢复，不自动偷录。
+- 最低微信基础库为 2.3.0；录音固定推荐 `16000Hz`、单声道、`48000bps` MP3，五分钟约 1.8MB，实际时长和文件大小只认 `onStop` 原生 `duration/fileSize`。
+- 系统中断结束后仅提示用户手动恢复，绝不自动调用 `resume()` 或自动偷录。
 - 失败后尽量保留用户录音，禁止在结果不确定时删除云文件。
-- 待上传录音最多 3 条、保留 7 天。
+- 微信持久化本地文件总额为 10MB；待上传录音最多 3 条、合计不超过 8MiB、保留 7 天。超限时先清理过期或丢失文件项；仍超限则提示用户清理指定旧录音或联网提交，不能静默删除有效待上传录音。
+- Task 4 修改 `Practice.scss` 时，固定 CSS 像素必须写成大写 `PX`（如 `44PX` 编译为 `44px`）；小写 `px` 会转换为 `rpx`。动态运行时 inline style 可使用 `` `${value}px` ``。
 
 ---
 
@@ -60,16 +62,18 @@ export type PendingCheckIn = {
   recoverable: boolean;
   context: CheckInContext;
   durationMs: number;
+  fileSizeBytes: number;
   cloudFileId: string;
   status: "local" | "uploaded" | "creating" | "failed";
   updatedAtMs: number;
 };
 ```
 
-- [ ] 写 requestId、`saveFile` 移动路径、最多 3 条、7 天过期和清理失败测试。
+- [ ] 写 requestId、`onStop` 原生 `duration/fileSize`、`saveFile` 返回 `savedFilePath` 后立即替换临时路径、最多 3 条/合计 8MiB、7 天过期和清理失败测试。
 - [ ] 写保存失败时仍保留当前临时路径但标记不可恢复的测试。
+- [ ] 写超过队列条数或 8MiB 时先清理过期/丢失文件、仍超限则不删除有效项且返回“清理历史录音或联网提交”提示的测试。
 - [ ] 运行测试确认模块缺失失败。
-- [ ] 用注入的 storage/file adapter 实现，避免测试依赖真实微信环境。
+- [ ] 用注入的 storage/file adapter 实现，按原生 `fileSize` 记账；仅清理过期或丢失文件项，用户确认后才可删除未过期待上传录音，避免测试依赖真实微信环境。
 - [ ] 运行测试确认通过。
 - [ ] 提交 `feat: 持久保存待上传跟读录音`。
 
@@ -102,7 +106,8 @@ export type PendingCheckIn = {
 - [ ] 运行测试确认页面当前直接按字符串状态处理而失败。
 - [ ] 用 reducer 驱动 RecorderManager；注册中断回调并清理可选监听。
 - [ ] 页面隐藏冻结时间线、尝试暂停；超时进入确认态，返回后不允许误上传。
-- [ ] 有效 `onStop` 先保存本地文件和待上传元数据，再允许回听或提交。
+- [ ] 使用 `format: "mp3"`、`sampleRate: 16000`、`numberOfChannels: 1`、`encodeBitRate: 48000` 启动录音；有效 `onStop` 只使用原生 `duration/fileSize`，先保存本地文件并立即改用 `savedFilePath` 写待上传元数据，再允许回听或提交。
+- [ ] 中断结束只显示手动恢复提示；不调用 `resume()`，原生已停止时仅按有效 `onStop` 转入 `recorded`。
 - [ ] 无 pause/resume 时隐藏暂停；无 RecorderManager 时显示升级提示。
 - [ ] 运行录音、音频和业务类型测试。
 - [ ] 提交 `fix: 适配录音中断与后台生命周期`。
@@ -119,9 +124,10 @@ export type PendingCheckIn = {
 - Modify: `scripts/test-pending-check-in.cjs`
 - Modify: `scripts/test-check-in-function.cjs`
 
-- [ ] 先测试 1 秒/3 秒两次自动重试、上传进度降级、重启后 commit、删除半失败再重试。
+- [ ] 先测试微信云存储 callback 形式 `Taro.cloud.uploadFile`（底层 `wx.cloud.uploadFile`）返回的 `UploadTask` 进度订阅与 `abort()`、1 秒/3 秒两次自动重试、上传进度降级、重启后 commit、删除半失败再重试。
 - [ ] 运行测试确认旧单次上传和先删文件逻辑失败。
-- [ ] 上传同一确定性路径，先持久化 `cloudFileId` 再 commit；失败保留待上传项。
+- [ ] 使用微信云存储 callback 形式 `Taro.cloud.uploadFile`（底层 `wx.cloud.uploadFile`）获取 `UploadTask`，订阅 `onProgressUpdate` 并在用户取消时 `abort()`；所有重试复用同一 `requestId` 的确定性 `cloudPath`。
+- [ ] 上传同一确定性路径，先持久化 `cloudFileId` 再 commit；在 commit 明确成功前保留 `savedFilePath` 和待上传项，失败或响应不确定时保留并重试。
 - [ ] 页面展示上传百分比或不确定进度，并提供显式重试，不在后台自动耗流量。
 - [ ] 删除先标记 `deletePending`，再删文件和数据库；普通列表隐藏待删除记录。
 - [ ] 详情和列表兼容旧快照字段。
