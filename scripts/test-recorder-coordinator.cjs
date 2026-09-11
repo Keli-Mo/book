@@ -45,22 +45,22 @@ const createNativeRecorder = (overrides = {}) => {
   const listeners = {};
   const calls = { start: [], pause: 0, resume: 0, stop: 0 };
   const manager = {
-    onStart(listener) { listenerCounts.start += 1; listeners.start = listener; },
-    onPause(listener) { listenerCounts.pause += 1; listeners.pause = listener; },
-    onResume(listener) { listenerCounts.resume += 1; listeners.resume = listener; },
-    onStop(listener) { listenerCounts.stop += 1; listeners.stop = listener; },
-    onError(listener) { listenerCounts.error += 1; listeners.error = listener; },
+    onStart(listener) { listenerCounts.start += 1; if (overrides.onRegister) overrides.onRegister("start", listenerCounts.start); listeners.start = listener; },
+    onPause(listener) { listenerCounts.pause += 1; if (overrides.onRegister) overrides.onRegister("pause", listenerCounts.pause); listeners.pause = listener; },
+    onResume(listener) { listenerCounts.resume += 1; if (overrides.onRegister) overrides.onRegister("resume", listenerCounts.resume); listeners.resume = listener; },
+    onStop(listener) { listenerCounts.stop += 1; if (overrides.onRegister) overrides.onRegister("stop", listenerCounts.stop); listeners.stop = listener; },
+    onError(listener) { listenerCounts.error += 1; if (overrides.onRegister) overrides.onRegister("error", listenerCounts.error); listeners.error = listener; },
     onInterruptionBegin(listener) {
       listenerCounts.interruptionBegin += 1;
-      listeners.interruptionBegin = listener;
+      if (overrides.onRegister) overrides.onRegister("interruptionBegin", listenerCounts.interruptionBegin); listeners.interruptionBegin = listener;
     },
     onInterruptionEnd(listener) {
       listenerCounts.interruptionEnd += 1;
-      listeners.interruptionEnd = listener;
+      if (overrides.onRegister) overrides.onRegister("interruptionEnd", listenerCounts.interruptionEnd); listeners.interruptionEnd = listener;
     },
     start(options) {
       calls.start.push(options);
-      if (overrides.start) return overrides.start(options);
+      if (overrides.start) return overrides.start(options, listeners);
     },
     pause() { calls.pause += 1; if (overrides.pause) return overrides.pause(); },
     resume() { calls.resume += 1; if (overrides.resume) return overrides.resume(); },
@@ -76,7 +76,21 @@ const createNativeRecorder = (overrides = {}) => {
 };
 
 const options = { sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: "mp3" };
-const plain = (value) => JSON.parse(JSON.stringify(value));
+const plain = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+const createFakeScheduler = () => {
+  let now = 0;
+  let nextId = 1;
+  const tasks = new Map();
+  return {
+    setTimeout(callback, delay) { const id = nextId++; tasks.set(id, { at: now + delay, callback }); return id; },
+    clearTimeout(id) { tasks.delete(id); },
+    advance(ms) {
+      now += ms;
+      [...tasks.entries()].filter(([, task]) => task.at <= now).sort((a, b) => a[1].at - b[1].at)
+        .forEach(([id, task]) => { tasks.delete(id); task.callback(); });
+    },
+  };
+};
 
 const native = createNativeRecorder();
 const { createRecorderCoordinator, getRecorderCoordinator } = loadCoordinator();
@@ -86,6 +100,7 @@ assert.equal(typeof getRecorderCoordinator, "function");
 const coordinator = createRecorderCoordinator({ getRecorderManager: () => native.manager });
 const first = coordinator.acquire();
 assert.equal(first.ok, true);
+assert.deepEqual(plain(first.capabilities), { canRecord: true, canPause: true, canResume: true, canInterrupt: true });
 assert.deepEqual(native.listenerCounts, {
   start: 1, pause: 1, resume: 1, stop: 1, error: 1, interruptionBegin: 1, interruptionEnd: 1,
 }, "每种原生事件只能注册一次");
@@ -113,10 +128,11 @@ assert.equal(coordinator.getPhase(), "idle");
 const eventNative = createNativeRecorder();
 const eventCoordinator = createRecorderCoordinator({ getRecorderManager: () => eventNative.manager });
 const eventOwner = eventCoordinator.acquire();
-const seen = { interruptionBegin: 0, interruptionEnd: 0, error: null, stops: [] };
+const seen = { interruptionBegin: 0, interruptionEnd: 0, pause: 0, error: null, stops: [] };
 const subscription = eventOwner.owner.subscribe({
   onInterruptionBegin() { seen.interruptionBegin += 1; },
   onInterruptionEnd() { seen.interruptionEnd += 1; },
+  onPause() { seen.pause += 1; },
   onError(error) { seen.error = error; },
   onStop(result) { seen.stops.push(result); },
 });
@@ -124,9 +140,12 @@ assert.equal(subscription.ok, true);
 eventOwner.owner.start(options);
 eventNative.emit("start");
 eventNative.emit("interruptionBegin");
+eventNative.emit("pause");
 eventNative.emit("interruptionEnd");
 assert.equal(eventNative.calls.pause, 0, "中断开始只能通知，不能伪造 pause");
 assert.equal(eventNative.calls.resume, 0, "中断结束只能通知，不能自动 resume");
+assert.equal(seen.pause, 1, "系统 interruption pause 必须转发");
+assert.equal(eventCoordinator.getPhase(), "paused");
 const nativeError = { errMsg: "native error", errno: 9 };
 eventNative.emit("error", nativeError);
 assert.equal(seen.error, nativeError, "必须保留底层 error 原对象");
@@ -136,6 +155,7 @@ eventOwner.owner.stop();
 const rawStop = { duration: 99.9, fileSize: 2, tempFilePath: "/tmp/raw.mp3" };
 eventNative.emit("stop", rawStop);
 assert.deepEqual(seen.stops, [rawStop], "onStop 必须原样转发原生结果");
+assert.equal(seen.stops[0], rawStop, "onStop result 必须保持同一对象引用");
 assert.equal(seen.interruptionBegin, 1);
 assert.equal(seen.interruptionEnd, 1);
 
@@ -186,6 +206,7 @@ const missingNative = createNativeRecorder({ missing: ["pause", "resume", "onInt
 const missingCoordinator = createRecorderCoordinator({ getRecorderManager: () => missingNative.manager });
 const missingOwner = missingCoordinator.acquire();
 assert.equal(missingOwner.ok, true, "缺少可选能力不能崩溃");
+assert.deepEqual(plain(missingOwner.capabilities), { canRecord: true, canPause: false, canResume: false, canInterrupt: false });
 missingOwner.owner.start(options);
 missingNative.emit("start");
 assert.deepEqual(plain(missingOwner.owner.pause()), { ok: false, reason: "unsupported", capability: "pause" });
@@ -193,6 +214,71 @@ assert.deepEqual(plain(missingOwner.owner.resume()), { ok: false, reason: "unsup
 
 const unavailable = createRecorderCoordinator({ getRecorderManager: () => undefined });
 assert.deepEqual(plain(unavailable.acquire()), { ok: false, reason: "unavailable" });
+
+const noTerminal = createNativeRecorder({ missing: ["onStop"] });
+assert.deepEqual(
+  plain(createRecorderCoordinator({ getRecorderManager: () => noTerminal.manager }).acquire()),
+  { ok: false, reason: "unavailable" },
+  "缺核心 terminal listener 时不能发布会永久 draining 的 owner",
+);
+
+const retryNative = createNativeRecorder({
+  onRegister(name, count) {
+    if (name === "stop" && count === 1) throw new Error("temporary bind failure");
+  },
+});
+let getterCalls = 0;
+const retryCoordinator = createRecorderCoordinator({ getRecorderManager: () => {
+  getterCalls += 1;
+  if (getterCalls === 1) throw new Error("temporary getter failure");
+  return retryNative.manager;
+} });
+assert.deepEqual(plain(retryCoordinator.acquire()), { ok: false, reason: "unavailable" });
+assert.deepEqual(plain(retryCoordinator.acquire()), { ok: false, reason: "unavailable" });
+assert.equal(retryCoordinator.acquire().ok, true, "初始化失败后必须可重试");
+assert.equal(retryNative.listenerCounts.start, 1, "已成功绑定的 listener 不得重复注册");
+assert.equal(retryNative.listenerCounts.stop, 2, "失败 listener 应在重试补绑");
+
+const isolatedNative = createNativeRecorder({
+  start(_options, listeners) { listeners.start(); },
+});
+const isolatedCoordinator = createRecorderCoordinator({ getRecorderManager: () => isolatedNative.manager });
+const isolatedOwner = isolatedCoordinator.acquire();
+let secondStarts = 0;
+isolatedOwner.owner.subscribe({ onStart() { throw new Error("page listener failed"); } });
+isolatedOwner.owner.subscribe({ onStart() { secondStarts += 1; } });
+assert.equal(isolatedOwner.owner.start(options).ok, true, "listener throw 不能污染同步 native start 结果");
+assert.equal(isolatedCoordinator.getPhase(), "recording");
+assert.equal(secondStarts, 1, "后续 listener 必须继续收到同一事件");
+
+const quietScheduler = createFakeScheduler();
+const quietNative = createNativeRecorder();
+const quietCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => quietNative.manager,
+  scheduler: quietScheduler,
+  quietWindowMs: 10,
+});
+const quietOld = quietCoordinator.acquire();
+quietOld.owner.start(options);
+quietNative.emit("start");
+quietOld.owner.stop();
+quietOld.owner.release();
+assert.equal(quietCoordinator.getPhase(), "draining", "release while stopping 必须真进入 draining");
+const waitingOwner = quietCoordinator.acquire();
+waitingOwner.owner.release();
+assert.equal(quietNative.calls.stop, 1, "等待 drain 的 owner release 不得重复 stop");
+const quietNew = quietCoordinator.acquire();
+const quietEvents = [];
+quietNew.owner.subscribe({ onStop(value) { quietEvents.push(value); }, onError(value) { quietEvents.push(value); } });
+quietNative.emit("stop", { id: "old-stop" });
+assert.equal(quietNew.owner.start(options).reason, "busy", "旧 terminal 后静默窗口内不得启动");
+quietScheduler.advance(5);
+quietNative.emit("error", { id: "old-late-error" });
+quietScheduler.advance(9);
+assert.equal(quietNew.owner.start(options).reason, "busy", "迟到 terminal 必须重置静默窗口");
+quietScheduler.advance(1);
+assert.equal(quietNew.owner.start(options).ok, true);
+assert.deepEqual(quietEvents, [], "旧代次 terminal 绝不能通知或改变新 owner");
 
 const thrown = new Error("native start exploded");
 const throwingNative = createNativeRecorder({ start() { throw thrown; } });
