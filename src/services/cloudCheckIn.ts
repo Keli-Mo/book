@@ -17,6 +17,21 @@ export interface CreatedCheckIn {
   shareToken: string;
 }
 
+export type PrepareCheckInInput = Omit<CreateCheckInInput, "recordingFileId"> & {
+  requestId: string;
+  fileSizeBytes: number;
+  contentSha1: string;
+};
+
+export type PreparedCheckInUpload = {
+  state: "upload-required";
+  id: string;
+  cloudPath: string;
+};
+
+export type PreparedCheckIn = PreparedCheckInUpload | (CreatedCheckIn & { state: "committed" });
+export type CommitCheckInInput = PrepareCheckInInput & { recordingFileId: string };
+
 export interface CheckInSummary {
   id: string;
   shareToken: string;
@@ -40,6 +55,7 @@ interface CloudFunctionResponse<T> {
   ok: boolean;
   data?: T;
   message?: string;
+  code?: string | number;
 }
 
 const ensureCloudAvailable = () => {
@@ -57,13 +73,58 @@ const callCheckInFunction = async <T>(data: Record<string, unknown>) => {
   const result = response.result as CloudFunctionResponse<T> | undefined;
 
   if (!result?.ok || result.data === undefined) {
-    throw new Error(result?.message || "云端打卡服务暂时不可用");
+    throw Object.assign(new Error(result?.message || "云端打卡服务暂时不可用"), {
+      code: result?.code ?? "CHECK_IN_ERROR",
+    });
   }
 
   return result.data;
 };
 
-/** 录音只有在用户确认打卡后才上传，临时录音不会自动进入云端。 */
+/** 从 saveFile 后的实际文件获取原生内容指纹，不用时长/文件名猜测录音身份。 */
+export const getCheckInRecordingInfo = (filePath: string): Promise<{
+  fileSizeBytes: number;
+  contentSha1: string;
+}> => new Promise((resolve, reject) => {
+  wx.getFileInfo({
+    filePath,
+    digestAlgorithm: "sha1",
+    success: ({ size, digest }) => resolve({ fileSizeBytes: size, contentSha1: digest.toLowerCase() }),
+    fail: reject,
+  });
+});
+
+/** prepare 完全只读；已提交时返回既有结果，调用方应跳过再次上传。 */
+export const prepareCheckIn = (input: PrepareCheckInInput) =>
+  callCheckInFunction<PreparedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), action: "prepare" });
+
+/** 返回原生 UploadTask，进度/取消交给页面；上传结果先持久化，再由页面调用 commit。 */
+export const startPreparedCheckInUpload = (filePath: string, prepared: PreparedCheckInUpload): {
+  task: WechatMiniprogram.UploadTask | undefined;
+  result: Promise<string>;
+} => {
+  let task: WechatMiniprogram.UploadTask | undefined;
+  const result = new Promise<string>((resolve, reject) => {
+    try {
+      ensureCloudAvailable();
+      task = wx.cloud.uploadFile({
+        cloudPath: prepared.cloudPath,
+        filePath,
+        success: ({ fileID }) => resolve(fileID),
+        fail: reject,
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+  return { task, result };
+};
+
+/** commit 响应不确定时保留本地/云文件，重试复用原请求，不在本层删除或自动重试。 */
+export const commitCheckIn = (input: CommitCheckInInput) =>
+  callCheckInFunction<CreatedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), action: "commit" });
+
+/** 兼容旧页面的随机路径上传；新幂等流程使用 prepare + startPreparedCheckInUpload。 */
 export const uploadCheckInRecording = async (
   tempFilePath: string,
   practiceId: string,
@@ -76,6 +137,7 @@ export const uploadCheckInRecording = async (
   return result.fileID;
 };
 
+/** 仅兼容旧页面；新 prepare/commit 协议禁止用失败清理删除结果不确定的录音。 */
 export const removeUploadedRecording = async (fileId: string) => {
   if (!wx.cloud || !fileId) return;
   try {
@@ -85,6 +147,7 @@ export const removeUploadedRecording = async (fileId: string) => {
   }
 };
 
+/** 旧 create 不具备请求幂等性，保留供尚未迁移的页面兼容。 */
 export const createCheckIn = (input: CreateCheckInInput) =>
   callCheckInFunction<CreatedCheckIn>({ action: "create", ...input });
 

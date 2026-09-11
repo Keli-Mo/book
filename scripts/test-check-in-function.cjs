@@ -17,6 +17,7 @@ function harness() {
   const records = new Map(), versions = new Map(), files = new Map();
   const metrics = { writes: 0, deletes: 0, downloads: 0, attempts: 0, conflicts: 0 };
   const controls = { owner: "owner-openid", readError: null, downloadError: null, deleteStatus: 0, forcedConflicts: 0 };
+  let throwOnNotFound = true;
   const put = (id, data) => { records.set(id, structuredClone({ ...data, _id: id })); versions.set(id, (versions.get(id) || 0) + 1); metrics.writes++; };
   const collection = tx => ({
     async add({ data }) { const id = `legacy-${records.size}`; put(id, data); return { _id: id }; },
@@ -24,7 +25,9 @@ function harness() {
       async get() {
         if (controls.readError) throw controls.readError;
         if (tx) tx.reads.set(id, tx.versions.get(id) || 0);
-        return { data: structuredClone((tx ? tx.snapshot : records).get(id) || null), errMsg: "document.get:ok" };
+        const data = (tx ? tx.snapshot : records).get(id);
+        if (!data && throwOnNotFound) throw new Error(`document with _id ${id} does not exist`);
+        return { data: structuredClone(data || null), errMsg: "document.get:ok" };
       },
       async set({ data }) {
         assert.equal(typeof data, "object", "微信 SDK set 使用 { data }");
@@ -64,7 +67,10 @@ function harness() {
       }
     },
   };
-  const cloud = { DYNAMIC_CURRENT_ENV: "dynamic", init() {}, database: () => db,
+  const cloud = { DYNAMIC_CURRENT_ENV: "dynamic", init() {}, database: (options = {}) => {
+    throwOnNotFound = options.throwOnNotFound !== false;
+    return db;
+  },
     getWXContext: () => ({ OPENID: controls.owner, ENV: "test" }),
     async downloadFile({ fileID }) {
       metrics.downloads++;

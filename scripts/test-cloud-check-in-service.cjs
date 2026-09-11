@@ -12,11 +12,11 @@ function harness() {
   const controls = { response: { ok: true, data: { id: "id", shareToken: "token" } }, error: null, infoError: null, throwUpload: null };
   const task = { abort() { this.aborted = true; }, onProgressUpdate(callback) { this.progress = callback; } };
   const wx = {
-    getFileSystemManager: () => ({ getFileInfo(options) {
+    getFileInfo(options) {
       infoCalls.push(options);
       if (controls.infoError) options.fail(controls.infoError);
       else options.success({ size: 1000, digest: "A".repeat(40) });
-    } }),
+    },
     cloud: {
       async callFunction({ name, data }) { calls.push({ name, data }); if (controls.error) throw controls.error; return { result: controls.response }; },
       uploadFile(options) { if (controls.throwUpload) throw controls.throwUpload; uploads.push(options); return task; },
