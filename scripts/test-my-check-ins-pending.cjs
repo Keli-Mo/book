@@ -36,43 +36,27 @@ for (const required of [
 assert.match(page, /await\s+pendingStore\.ready\s*\(\s*\)/);
 assert.match(page, /await\s+pendingStore\.cleanup\s*\(\s*\)/);
 assert.match(page, /pendingStore\.list\s*\(\s*\)/);
-assert.match(page, /submissionCoordinator\.submit\s*\(/);
-assert.match(page, /onProgress\s*:/);
-assert.match(page, /\.cancel\s*\(\s*\)/);
+assert.doesNotMatch(page, /submissionCoordinator\.submit\s*\(/, "列表展示和回听不得启动上传");
+assert.match(page, /submissionCoordinator\.isSubmitting\s*\(/, "上传中的本机文件不得删除");
 assert.match(page, /pendingStore\.remove\s*\(/);
-assert.match(
-  page,
-  /errorMessage\s*&&\s*pendingRecords\.length\s*===\s*0\s*&&\s*records\.length\s*===\s*0/,
-  "云端失败时不能遮住仍可管理的本地录音",
-);
-assert.match(page, /title:\s*["']删除本地录音？["']/);
-assert.match(page, /!pending\.recoverable\s*&&\s*!progress/);
+assert.match(page, /setLocalRecords[\s\S]*?await\s+listMyCheckIns/, "本地录音必须先于云历史落屏");
+assert.match(page, /title:\s*["']删除本机录音？["']/);
 
-for (const copy of [
-  "本地待提交",
-  "提交失败",
-  "已上传待确认",
-  "继续提交",
-  "取消提交",
-  "删除本地录音",
-  "进度暂不可用",
-]) {
-  assert.ok(page.includes(copy), `待上传卡片缺少文案：${copy}`);
-}
+for (const copy of ["待上传", "已上传待确认", "继续提交"]) assert.equal(page.includes(copy), false);
+for (const copy of ["我的录音", "回听 / 分享", "临时文件"]) assert.ok(page.includes(copy));
 
 for (const field of [
-  "context.imageUrl",
-  "context.bookTitle",
-  "context.sectionTitle",
-  "context.pageNumber",
+  "context?.imageUrl",
+  "context?.bookTitle",
+  "context?.sectionTitle",
+  "context?.pageNumber",
   "durationMs",
 ]) {
   assert.ok(page.includes(field), `待上传卡片必须展示 ${field}`);
 }
 
+assert.match(page, /CheckInDetail\/CheckInDetail\?localId=/);
 assert.match(page, /CheckInDetail\/CheckInDetail\?id=/);
-assert.match(page, /my-check-ins__notice/);
-assert.match(styles, /&--pending/);
 assert.match(styles, /pending-check-in-status/);
 
-console.log("我的打卡待上传录音接线测试通过：恢复、显式提交、取消、进度与本地删除均已接入。");
+console.log("我的录音接线测试通过：本地优先、云端补充、详情与安全删除均已接入。");

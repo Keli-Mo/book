@@ -9,6 +9,17 @@
   color: #24362f;
 
   &__success { display: flex; align-items: center; flex-direction: column; padding: 22rpx 0 36rpx; }
+  &__home {
+    width: auto;
+    margin: 0;
+    padding: 0 24rpx;
+    border: 0;
+    background: transparent;
+    color: #28765e;
+    font-size: 24rpx;
+    line-height: 64rpx;
+    &::after { border: 0; }
+  }
   &__check {
     display: flex;
     align-items: center;

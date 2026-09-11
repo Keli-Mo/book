@@ -31,10 +31,8 @@ import {
   type RecordingTimeline,
 } from "@/features/listeningPractice/recordingInteraction";
 import {
-  beginRecordingUpload,
   createRecordingMachine,
   disposeRecordingMachine,
-  finishRecordingUpload,
   handleInterruptionBegin,
   handleInterruptionEnd,
   requestRecorderAction,
@@ -55,12 +53,10 @@ import {
 } from "@/features/listeningPractice/recorderCoordinator";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
 import { getPendingCheckInStore } from "@/features/listeningPractice/pendingCheckInRuntime";
-import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
 import type {
   CheckInSubmissionHandle,
   SubmissionProgress,
 } from "@/features/listeningPractice/checkInSubmissionCoordinator";
-import { getReadableCloudError } from "@/services/cloudCheckIn";
 import {
   useDeviceLayout,
   type DeviceLayoutState,
@@ -211,6 +207,7 @@ function PracticeSession({
   } | null>(null);
   const pendingCheckInRef = useRef<PendingCheckIn | null>(null);
   const submissionHandleRef = useRef<CheckInSubmissionHandle | null>(null);
+  const completionInFlightRef = useRef(false);
   const recorderUnsubscribeRef = useRef<(() => void) | null>(null);
   const recorderTerminalSinkRef = useRef<RecorderTerminalSink | null>(null);
   const mountedRef = useRef(true);
@@ -907,6 +904,7 @@ function PracticeSession({
       if (!canRestorePending) return;
       const restored = [...store.list()]
         .filter((item) =>
+          item.completedAtMs === undefined &&
           item.context.bookId === bundle.book.id &&
           item.context.practiceId === requestedContext.practice.id &&
           item.context.practiceIndex === requestedContext.practiceIndex,
@@ -1079,6 +1077,7 @@ function PracticeSession({
       !canContinuePracticeSwitch(switchRequest) ||
       savingRecordingRef.current ||
       submissionHandleRef.current ||
+      completionInFlightRef.current ||
       beforeRemoval.pendingAction ||
       beforeRemoval.state === "starting" ||
       beforeRemoval.state === "stopping" ||
@@ -1345,68 +1344,24 @@ function PracticeSession({
       recordingState !== "recorded"
     ) return;
 
-    const uploading = beginRecordingUpload(recordingMachineRef.current);
-    if (uploading === recordingMachineRef.current) return;
-    applyRecordingMachine(uploading);
-    setSubmissionProgress({
-      requestId: pending.requestId,
-      percent: null,
-      uncertain: true,
-    });
-    const handle = getCheckInSubmissionCoordinator().submit(pending, {
-      onProgress: (progress) => {
-        if (
-          mountedRef.current &&
-          pendingCheckInRef.current?.requestId === progress.requestId
-        ) {
-          setSubmissionProgress(progress);
-        }
-      },
-    });
-    submissionHandleRef.current = handle;
-    const result = await handle.promise;
-    if (submissionHandleRef.current === handle) submissionHandleRef.current = null;
-    if (!mountedRef.current) return;
-    setSubmissionProgress(null);
-
-    if (result.state === "committed") {
-      await removeReplacementBackups();
-      applyPendingCheckIn(null);
-      clearRecordingView();
-      const finished = finishRecordingUpload(recordingMachineRef.current, { ok: true });
-      applyRecordingMachine(resetRecordingMachine(finished));
-      Taro.showToast({ title: "打卡成功", icon: "success" });
-      try {
-        // 打卡完成后替换训练页，旧页面卸载时即可释放全局录音 owner。
-        await Taro.redirectTo({
-          url: `/pages/CheckInDetail/CheckInDetail?id=${encodeURIComponent(
-            result.id,
-          )}&token=${encodeURIComponent(result.shareToken)}`,
-        });
-      } catch (_navigationError) {
-        Taro.showToast({ title: "请到我的打卡中查看", icon: "none" });
-      }
+    if (!pending.recoverable) {
+      Taro.showToast({ title: "录音尚未安全保存，不能完成", icon: "none" });
       return;
     }
-
-    const refreshed = getPendingCheckInStore()
-      .list()
-      .find((item) => item.requestId === pending.requestId);
-    if (refreshed) applyPendingCheckIn(refreshed);
-    applyRecordingMachine(
-      finishRecordingUpload(recordingMachineRef.current, {
-        ok: false,
-        error: result.error,
-      }),
-    );
-    if (result.state === "cancelled") {
-      Taro.showToast({ title: "已取消上传，录音仍保存在本机", icon: "none" });
-    } else {
-      void Taro.showModal({
-        title: "打卡未完成",
-        content: getReadableCloudError(result.error),
-        showCancel: false,
+    completionInFlightRef.current = true;
+    const completed = await getPendingCheckInStore().complete(pending.requestId, true);
+    if (!completed || !mountedRef.current) {
+      completionInFlightRef.current = false;
+      Taro.showToast({ title: "保存完成状态失败，请重试", icon: "none" });
+      return;
+    }
+    Taro.showToast({ title: "已保存到我的录音", icon: "success" });
+    try {
+      await Taro.redirectTo({
+        url: `/pages/CheckInDetail/CheckInDetail?localId=${encodeURIComponent(pending.requestId)}`,
       });
+    } catch (_navigationError) {
+      Taro.showToast({ title: "请到我的录音中查看", icon: "none" });
     }
   };
 
@@ -1634,7 +1589,7 @@ function PracticeSession({
                         disabled={recordingState === "uploading"}
                         onClick={submitCheckIn}
                       >
-                        {recordingState === "uploading" ? uploadLabel : "完成本次打卡"}
+                        {recordingState === "uploading" ? uploadLabel : "完成练习"}
                       </Button>
                       {recordingState === "uploading" && (
                         <Button

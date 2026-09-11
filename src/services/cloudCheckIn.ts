@@ -39,6 +39,8 @@ export type CommitCheckInInput = PrepareCheckInInput & { recordingFileId: string
 export interface CheckInSummary {
   id: string;
   shareToken: string;
+  /** 新版分享由服务端给出期限；旧记录缺失时继续兼容。 */
+  expiresAtMs?: number;
   bookId: string;
   bookTitle: string;
   practiceId: string;

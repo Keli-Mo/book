@@ -271,7 +271,7 @@ assert.match(
 );
 assert.match(
   checkInDetail,
-  /formatPlaybackDurationLabel\(\s*isPlaying,\s*playbackPositionMs,\s*detail\.durationMs,?\s*\)/,
+  /formatPlaybackDurationLabel\(isPlaying,\s*playbackPositionMs,\s*values\.durationMs\)/,
   "分享页应使用经过行为测试的播放时长标签函数",
 );
 

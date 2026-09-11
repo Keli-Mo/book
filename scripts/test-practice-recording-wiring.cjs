@@ -15,7 +15,6 @@ for (const required of [
   "handleInterruptionBegin",
   "handleInterruptionEnd",
   "getPendingCheckInStore",
-  "getCheckInSubmissionCoordinator",
   "parseNativeRecordingResult",
   "useDidHide",
   "useUnload",
@@ -47,6 +46,9 @@ assert.match(source, /Taro\.getSetting\s*\(/, "授权前必须读取当前录音
 assert.match(source, /authSetting\s*\[\s*["']scope\.record["']\s*\]/);
 assert.match(source, /Taro\.authorize\s*\(\s*\{\s*scope:\s*["']scope\.record["']/s);
 assert.match(source, /Taro\.openSetting\s*\(/, "永久拒绝后只从用户确认弹窗进入设置");
+assert.match(source, /getPendingCheckInStore\(\)\.complete\(pending\.requestId,\s*true\)/);
+assert.match(source, /CheckInDetail\/CheckInDetail\?localId=/);
+assert.doesNotMatch(source, /getCheckInSubmissionCoordinator\(\)\.submit\(/, "完成练习不上传");
 assert.match(source, /\.release\s*\(\s*\{[\s\S]*?terminalSink\s*:/, "页面卸载必须把迟到 terminal 托管给全局协调器");
 assert.match(source, /\.cancel\s*\(\s*\)/, "页面隐藏或用户取消时必须中止尚未完成的上传");
 assert.match(
@@ -56,4 +58,4 @@ assert.match(
 );
 assert.doesNotMatch(source, /RECORDER_TEARDOWN_TIMEOUT_MS|teardownReleaseTimerRef/, "页面不得用固定 8 秒截止丢弃迟到录音");
 
-console.log("训练页录音接线测试通过：状态机、全局协调器、本地保存与幂等提交已进入生产路径。");
+console.log("训练页录音接线测试通过：状态机、切页竞态、本地完成与详情路由已进入生产路径。");

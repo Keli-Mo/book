@@ -61,6 +61,7 @@ const createPage = (file, params, options = {}) => {
   const recorderHandlers = {};
   const savedRecordings = [];
   const submittedPending = [];
+  const completedPending = [];
   const recorderReleaseCalls = [];
   const recorderTerminalOutcomes = [];
   const modalCalls = [];
@@ -131,6 +132,7 @@ const createPage = (file, params, options = {}) => {
       audio.play = () => { audio.events.push("play"); handlers.Play?.(); };
       audio.stop = () => { audio.events.push("stop"); handlers.Stop?.(); };
       audio.destroy = () => { audio.events.push("destroy"); };
+      audio.trigger = (event) => handlers[event]?.();
       audios.push(audio);
       return audio;
     },
@@ -292,6 +294,13 @@ const createPage = (file, params, options = {}) => {
       pendingItems.splice(index, 1);
       return true;
     },
+    async complete(requestId, committed) {
+      completedPending.push({ requestId, committed });
+      const index = pendingItems.findIndex((current) => current.requestId === requestId);
+      if (index < 0 || !committed) return false;
+      pendingItems[index] = { ...pendingItems[index], completedAtMs: 2 };
+      return true;
+    },
   };
   const submissionCoordinator = {
     submit(pending) {
@@ -350,7 +359,7 @@ const createPage = (file, params, options = {}) => {
     return tree;
   };
   const page = {
-    render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending,
+    render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending, completedPending,
     modalCalls,
     recorderReleaseCalls, recorderTerminalOutcomes,
     get acquireAttempts() { return acquireAttempts; },
@@ -478,19 +487,10 @@ async function testRoutes() {
         context,
       }, "原生 Stop 元数据与当前训练上下文必须先交给本地 pending store");
       await byClass(tree, "check-in-button").props.onClick();
-      assert.deepEqual(page.submittedPending[0], {
-        requestId: "0123456789abcdef0123456789abcdef",
-        localPath: "/saved/recording.mp3",
-        recoverable: true,
-        context,
-        durationMs: 1200,
-        fileSizeBytes: 4096,
-        cloudFileId: "",
-        status: "local",
-        updatedAtMs: 1,
-      }, "提交 coordinator 必须收到本地保存后的完整 pending 记录");
-      assert.equal(page.navigations.at(-1), "/pages/CheckInDetail/CheckInDetail?id=record%261&token=token%261");
-      assert.equal(page.navigationMethods.at(-1), "redirectTo", "打卡成功必须替换训练页，确保旧页面卸载并释放录音 owner");
+      assert.deepEqual(page.completedPending[0], { requestId: "0123456789abcdef0123456789abcdef", committed: true }, "完成练习只持久化本机完成状态");
+      assert.equal(page.submittedPending.length, 0, "完成练习不能启动云端提交");
+      assert.equal(page.navigations.at(-1), "/pages/CheckInDetail/CheckInDetail?localId=0123456789abcdef0123456789abcdef");
+      assert.equal(page.navigationMethods.at(-1), "redirectTo", "本机完成后必须替换训练页并释放录音 owner");
     }
   }
 
@@ -1040,7 +1040,7 @@ async function testRoutes() {
   ).props.onClick();
   await switchDuringUploadAttempt;
   assert.equal(removalCallsDuringUpload, 0, "提交已开始后，切页流程不得调用本地录音删除");
-  assert.equal(switchingDuringUploadPage.submittedPending.length, 1);
+  assert.equal(switchingDuringUploadPage.submittedPending.length, 0, "完成练习不得上传");
   assert.equal(
     switchingDuringUploadPage.stateValues().some(
       (value) => value?.requestId === oldPending.requestId && value.localPath === oldPending.localPath,

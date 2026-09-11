@@ -37,8 +37,8 @@ assert.doesNotMatch(
 );
 assert.match(
   myCheckIns,
-  /src=\{record\.imageUrl\}/,
-  "打卡卡片应显示这次练习对应的教材内页",
+  /src=\{context\?\.imageUrl\s*\|\|\s*cloud!\.imageUrl\}/,
+  "本地录音与兼容云记录都应显示各自练习的教材内页",
 );
 assert.doesNotMatch(
   myCheckIns,
@@ -48,8 +48,8 @@ assert.doesNotMatch(
 assert.match(myCheckIns, /mode='aspectFit'/, "教材内页应完整显示，不能裁切");
 assert.match(
   myCheckIns,
-  /第\s*\{record\.pageNumber\}\s*页/,
-  "打卡卡片应显示这次练习的教材页数",
+  /教材页\s*\{context\?\.pageNumber\s*\?\?\s*cloud!\.pageNumber\}/,
+  "本地录音与兼容云记录都应显示教材页数",
 );
 assert.match(
   myCheckInsStyles,
