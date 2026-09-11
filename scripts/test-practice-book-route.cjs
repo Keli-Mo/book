@@ -62,7 +62,14 @@ const createPage = (file, params, options = {}) => {
   const submittedPending = [];
   const recorderReleaseCalls = [];
   const recorderTerminalOutcomes = [];
+  const modalCalls = [];
   const pendingItems = [...(options.pendingItems || [])];
+  const recorderActionOutcomes = Object.fromEntries(
+    Object.entries(options.recorderActionOutcomes || {}).map(([action, outcomes]) => [
+      action,
+      [...outcomes],
+    ]),
+  );
   let activeRecorder = null;
   let acquireAttempts = 0;
   const hook = (initial) => {
@@ -105,7 +112,10 @@ const createPage = (file, params, options = {}) => {
     redirectTo: async ({ url }) => { navigations.push(url); navigationMethods.push("redirectTo"); },
     reLaunch: async ({ url }) => { navigations.push(url); },
     showToast() {}, showLoading() {}, hideLoading() {}, pageScrollTo() {},
-    showModal: async () => ({ confirm: true }),
+    showModal: async (input) => {
+      modalCalls.push(input);
+      return { confirm: true };
+    },
     getSetting: async () => {
       permissionChecks.push("scope.record:granted");
       return { authSetting: { "scope.record": true } };
@@ -131,21 +141,25 @@ const createPage = (file, params, options = {}) => {
       if (outcome === "busy") return { ok: false, reason: "busy", phase: "draining" };
       if (outcome === "unavailable") return { ok: false, reason: "unavailable" };
       const session = { listener: null, detachedTerminalSink: null, phase: "idle", released: false };
-      const succeed = (action, actionOptions) => {
+      const runAction = (action, actionOptions) => {
         recorderActions.push(actionOptions === undefined ? { action } : { action, options: actionOptions });
+        const actionOutcome = recorderActionOutcomes[action]?.shift();
+        if (actionOutcome === "throw") {
+          return { ok: false, reason: "exception", error: new Error(`${action} 同步失败`) };
+        }
         session.phase = action === "start" ? "starting" : action === "stop" ? "stopping" : action === "pause" ? "paused" : "recording";
         return { ok: true };
       };
       const owner = {
-        start: (recordingOptions) => succeed("start", recordingOptions),
-        pause: () => succeed("pause"),
-        resume: () => succeed("resume"),
-        stop: () => succeed("stop"),
+        start: (recordingOptions) => runAction("start", recordingOptions),
+        pause: () => runAction("pause"),
+        resume: () => runAction("resume"),
+        stop: () => runAction("stop"),
         release(releaseOptions) {
           recorderReleaseCalls.push(releaseOptions);
           session.detachedTerminalSink = releaseOptions?.terminalSink || null;
           if (["starting", "recording", "paused"].includes(session.phase)) {
-            succeed("stop");
+            runAction("stop");
           }
           session.listener = null;
           session.released = true;
@@ -322,6 +336,7 @@ const createPage = (file, params, options = {}) => {
   };
   return {
     render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending,
+    modalCalls,
     recorderReleaseCalls, recorderTerminalOutcomes,
     get acquireAttempts() { return acquireAttempts; },
     stateValues() {
@@ -473,6 +488,103 @@ async function testRoutes() {
   await settle();
   assert.equal(hiddenWhileStarting.savedRecordings.length, 1, "后台收口 start 后的有效 Stop 仍必须保存到本地队列");
 
+  const hiddenPauseFailure = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { recorderActionOutcomes: { pause: ["throw"] } },
+  );
+  let hiddenPauseFailureTree = hiddenPauseFailure.render();
+  hiddenPauseFailureTree = hiddenPauseFailure.render();
+  await byClass(hiddenPauseFailureTree, "record-button").props.onClick();
+  hiddenPauseFailure.recorderHandlers.Start();
+  hiddenPauseFailure.hide();
+  assert.deepEqual(
+    hiddenPauseFailure.recorderActions.slice(-2).map(({ action }) => action),
+    ["pause", "stop"],
+    "隐藏页 pause 同步失败后必须立即降级 stop，不能继续后台录音",
+  );
+  assert.equal(
+    hiddenPauseFailure.modalCalls.some(({ title }) => title === "录音操作失败"),
+    false,
+    "隐藏页安全收口失败不得弹出用户当前看不到的操作弹窗",
+  );
+
+  const hiddenStartRetryTimers = createFakeTimers();
+  const hiddenStartFailure = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderActionOutcomes: { stop: ["throw", "ok"] },
+      setTimeout: hiddenStartRetryTimers.setTimeout,
+      clearTimeout: hiddenStartRetryTimers.clearTimeout,
+    },
+  );
+  let hiddenStartFailureTree = hiddenStartFailure.render();
+  hiddenStartFailureTree = hiddenStartFailure.render();
+  await byClass(hiddenStartFailureTree, "record-button").props.onClick();
+  hiddenStartFailure.hide();
+  assert.equal(hiddenStartRetryTimers.size, 1, "隐藏时首次 stop 同步失败必须安排有限安全重试");
+  hiddenStartFailure.recorderHandlers.Start();
+  assert.equal(
+    hiddenStartFailure.recorderActions.filter(({ action }) => action === "stop").length,
+    2,
+    "stop 失败后的迟到 onStart 必须被接收并再次 stop",
+  );
+  assert.equal(hiddenStartRetryTimers.size, 0, "迟到 onStart 已成功收口后必须清除备用重试");
+  assert.equal(
+    hiddenStartFailure.modalCalls.some(({ title }) => title === "录音操作失败"),
+    false,
+    "隐藏页 stop 同步失败不得弹出操作失败弹窗",
+  );
+
+  const boundedRetryTimers = createFakeTimers();
+  const boundedRetryPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderActionOutcomes: {
+        pause: ["throw"],
+        stop: ["throw", "throw", "throw", "throw"],
+      },
+      setTimeout: boundedRetryTimers.setTimeout,
+      clearTimeout: boundedRetryTimers.clearTimeout,
+    },
+  );
+  let boundedRetryTree = boundedRetryPage.render();
+  boundedRetryTree = boundedRetryPage.render();
+  await byClass(boundedRetryTree, "record-button").props.onClick();
+  boundedRetryPage.recorderHandlers.Start();
+  boundedRetryPage.hide();
+  boundedRetryTimers.advance(5000);
+  assert.equal(
+    boundedRetryPage.recorderActions.filter(({ action }) => action === "stop").length,
+    3,
+    "隐藏页 stop 连续失败时只做固定三次尝试，不能无限循环",
+  );
+  assert.equal(boundedRetryTimers.size, 0, "安全重试达到上限后不得残留定时器");
+
+  const unloadRetryTimers = createFakeTimers();
+  const unloadRetryPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderActionOutcomes: { pause: ["throw"], stop: ["throw", "throw"] },
+      setTimeout: unloadRetryTimers.setTimeout,
+      clearTimeout: unloadRetryTimers.clearTimeout,
+    },
+  );
+  let unloadRetryTree = unloadRetryPage.render();
+  unloadRetryTree = unloadRetryPage.render();
+  await byClass(unloadRetryTree, "record-button").props.onClick();
+  unloadRetryPage.recorderHandlers.Start();
+  unloadRetryPage.hide();
+  assert.equal(unloadRetryTimers.size, 1);
+  unloadRetryPage.unload();
+  const unloadActionCount = unloadRetryPage.recorderActions.length;
+  assert.equal(unloadRetryTimers.size, 0, "页面卸载必须取消隐藏页 stop 重试");
+  unloadRetryTimers.advance(5000);
+  assert.equal(unloadRetryPage.recorderActions.length, unloadActionCount, "卸载后不得再次调用录音器或更新页面状态");
+
   const hiddenWhileResuming = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "22", practice: "0" },
@@ -489,6 +601,44 @@ async function testRoutes() {
   hiddenWhileResuming.hide();
   hiddenWhileResuming.recorderHandlers.Resume();
   assert.equal(hiddenWhileResuming.recorderActions.at(-1).action, "pause", "隐藏后迟到的 Resume 确认必须立即再次暂停");
+
+  const hiddenResumeRetryTimers = createFakeTimers();
+  const hiddenResumeFailure = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderActionOutcomes: {
+        pause: ["ok", "throw"],
+        stop: ["throw", "ok"],
+      },
+      setTimeout: hiddenResumeRetryTimers.setTimeout,
+      clearTimeout: hiddenResumeRetryTimers.clearTimeout,
+    },
+  );
+  let hiddenResumeFailureTree = hiddenResumeFailure.render();
+  hiddenResumeFailureTree = hiddenResumeFailure.render();
+  await byClass(hiddenResumeFailureTree, "record-button").props.onClick();
+  hiddenResumeFailure.recorderHandlers.Start();
+  hiddenResumeFailureTree = hiddenResumeFailure.render();
+  byClass(hiddenResumeFailureTree, "record-button--pause").props.onClick();
+  hiddenResumeFailure.recorderHandlers.Pause();
+  hiddenResumeFailureTree = hiddenResumeFailure.render();
+  byClass(hiddenResumeFailureTree, "record-button--resume").props.onClick();
+  hiddenResumeFailure.hide();
+  hiddenResumeFailure.recorderHandlers.Resume();
+  assert.deepEqual(
+    hiddenResumeFailure.recorderActions.slice(-2).map(({ action }) => action),
+    ["pause", "stop"],
+    "隐藏后迟到 onResume 的 pause 失败时必须立即降级 stop",
+  );
+  assert.equal(hiddenResumeRetryTimers.size, 1, "迟到 onResume 的首次 stop 失败也必须进入有限重试");
+  hiddenResumeRetryTimers.advance(5000);
+  assert.equal(
+    hiddenResumeFailure.recorderActions.filter(({ action }) => action === "stop").length,
+    2,
+    "迟到 onResume 必须在有限重试内完成 stop",
+  );
+  assert.equal(hiddenResumeRetryTimers.size, 0);
 
   const hiddenResumeWithoutPause = createPage(
     "src/pages/Practice/Practice.tsx",

@@ -84,6 +84,8 @@ const RECORDER_OPTIONS = {
   format: "mp3" as const,
 };
 const RECORDER_ACQUIRE_RETRY_MS = 300;
+const HIDDEN_RECORDER_STOP_RETRY_MS = 120;
+const HIDDEN_RECORDER_STOP_MAX_ATTEMPTS = 3;
 
 const recorderOperationError = (reason: string, error?: unknown) =>
   error || new Error(reason === "busy" ? "录音设备正在收尾，请稍后再试" : "当前录音操作暂不可用");
@@ -204,6 +206,8 @@ function PracticeSession({
   const saveGenerationRef = useRef(0);
   const replacementPendingIdsRef = useRef(new Set<string>());
   const teardownAwaitingStopRef = useRef(false);
+  const hiddenStopRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hiddenStopAttemptsRef = useRef(0);
   const practiceContextRef = useRef({ practice, practiceIndex });
   practiceContextRef.current = { practice, practiceIndex };
 
@@ -275,9 +279,18 @@ function PracticeSession({
     [imageSize.height, imageSize.width, practice.tracks],
   );
 
+  const clearHiddenStopRetry = useCallback(() => {
+    if (hiddenStopRetryTimerRef.current !== null) {
+      clearTimeout(hiddenStopRetryTimerRef.current);
+      hiddenStopRetryTimerRef.current = null;
+    }
+    hiddenStopAttemptsRef.current = 0;
+  }, []);
+
   const runRecorderAction = useCallback((
     action: RecorderAction,
     pauseReason: Exclude<PauseReason, null> = "user",
+    silent = false,
   ) => {
     const owner = recorderOwnerRef.current;
     if (!owner) return false;
@@ -317,13 +330,56 @@ function PracticeSession({
         }),
       );
     }
-    void Taro.showModal({
-      title: "录音操作失败",
-      content: getRecordingErrorMessage(error),
-      showCancel: false,
-    });
+    if (!silent) {
+      void Taro.showModal({
+        title: "录音操作失败",
+        content: getRecordingErrorMessage(error),
+        showCancel: false,
+      });
+    }
     return false;
   }, [applyRecordingMachine]);
+
+  const stopRecorderWhileHidden = useCallback(function stopRecorderWhileHidden(
+    restartAttempts = false,
+  ) {
+    if (restartAttempts) clearHiddenStopRetry();
+    if (!mountedRef.current || !pageHiddenRef.current) {
+      clearHiddenStopRetry();
+      return false;
+    }
+
+    const owner = recorderOwnerRef.current;
+    const current = recordingMachineRef.current;
+    const teardown = requestRecorderTeardown(current);
+    if (!owner || (!teardown.command && current.state !== "stopping")) {
+      clearHiddenStopRetry();
+      return false;
+    }
+
+    if (teardown.command) applyRecordingMachine(teardown.machine);
+    hiddenStopAttemptsRef.current += 1;
+    const stopped = owner.stop();
+    if (stopped.ok) {
+      clearHiddenStopRetry();
+      return true;
+    }
+
+    if (teardown.command) {
+      // stop 同步失败表示原生录音可能仍活着；恢复旧状态才能接住迟到的 Start/Resume。
+      applyRecordingMachine(current);
+    }
+    if (
+      hiddenStopAttemptsRef.current < HIDDEN_RECORDER_STOP_MAX_ATTEMPTS &&
+      hiddenStopRetryTimerRef.current === null
+    ) {
+      hiddenStopRetryTimerRef.current = setTimeout(() => {
+        hiddenStopRetryTimerRef.current = null;
+        stopRecorderWhileHidden();
+      }, HIDDEN_RECORDER_STOP_RETRY_MS);
+    }
+    return false;
+  }, [applyRecordingMachine, clearHiddenStopRetry]);
 
   const clearRecordingView = useCallback(() => {
     stopAudioIfLoaded(recordingAudioRef.current);
@@ -338,6 +394,7 @@ function PracticeSession({
   }, []);
 
   const releaseRecorderOwner = useCallback(() => {
+    clearHiddenStopRetry();
     teardownAwaitingStopRef.current = false;
     recorderUnsubscribeRef.current?.();
     recorderUnsubscribeRef.current = null;
@@ -346,7 +403,7 @@ function PracticeSession({
     recorderOwnerRef.current = null;
     owner?.release();
     recordingMachineRef.current = disposeRecordingMachine(recordingMachineRef.current);
-  }, []);
+  }, [clearHiddenStopRetry]);
 
   useEffect(() => {
     const modelAudioController = createTrackAudioController(
@@ -435,25 +492,7 @@ function PracticeSession({
 
       // 页面在原生 start 确认前已进入后台时，不允许录音继续悄悄运行。
       if (pageHiddenRef.current) {
-        const requested = requestRecorderAction(next, "stop", "background");
-        if (requested.command) {
-          applyRecordingMachine(requested.machine);
-          const stopped = owner.stop();
-          if (!stopped.ok) {
-            const error = recorderOperationError(
-              stopped.reason,
-              "error" in stopped ? stopped.error : undefined,
-            );
-            applyRecordingMachine(
-              resolveRecorderCallback(requested.machine, {
-                type: "error",
-                sessionId: requested.command.sessionId,
-                operationSeq: requested.command.operationSeq,
-                error,
-              }),
-            );
-          }
-        }
+        stopRecorderWhileHidden(true);
       }
     };
 
@@ -490,9 +529,11 @@ function PracticeSession({
       // resume 回调可能晚于页面隐藏；确认后立刻重新暂停，旧机型则直接安全停止。
       if (pageHiddenRef.current) {
         if (next.capabilities?.canPause && next.capabilities.canResume) {
-          runRecorderAction("pause", "background");
+          if (!runRecorderAction("pause", "background", true)) {
+            stopRecorderWhileHidden(true);
+          }
         } else {
-          runRecorderAction("stop", "background");
+          stopRecorderWhileHidden(true);
         }
       }
     };
@@ -662,6 +703,7 @@ function PracticeSession({
     removeReplacementBackups,
     recorderAcquireAttempt,
     runRecorderAction,
+    stopRecorderWhileHidden,
   ]);
 
   useEffect(() => {
@@ -734,6 +776,7 @@ function PracticeSession({
 
   useDidShow(() => {
     pageHiddenRef.current = false;
+    clearHiddenStopRetry();
   });
 
   useDidHide(() => {
@@ -750,32 +793,16 @@ function PracticeSession({
     const current = recordingMachineRef.current;
     if (current.state === "starting") {
       // start 已交给微信但尚未确认时也可能已经占用麦克风，切后台必须覆盖为 stop。
-      const owner = recorderOwnerRef.current;
-      const teardown = requestRecorderTeardown(current);
-      if (owner && teardown.command) {
-        applyRecordingMachine(teardown.machine);
-        const stopped = owner.stop();
-        if (!stopped.ok) {
-          applyRecordingMachine(
-            resolveRecorderCallback(teardown.machine, {
-              type: "error",
-              sessionId: teardown.command.sessionId,
-              operationSeq: teardown.command.operationSeq,
-              error: recorderOperationError(
-                stopped.reason,
-                "error" in stopped ? stopped.error : undefined,
-              ),
-            }),
-          );
-        }
-      }
+      stopRecorderWhileHidden(true);
       return;
     }
     if (current.state === "recording") {
       if (current.capabilities?.canPause && current.capabilities.canResume) {
-        runRecorderAction("pause", "background");
+        if (!runRecorderAction("pause", "background", true)) {
+          stopRecorderWhileHidden(true);
+        }
       } else {
-        runRecorderAction("stop", "background");
+        stopRecorderWhileHidden(true);
       }
     }
   });
@@ -783,6 +810,7 @@ function PracticeSession({
   useUnload(() => {
     pageHiddenRef.current = true;
     mountedRef.current = false;
+    clearHiddenStopRetry();
     submissionHandleRef.current?.cancel();
     const owner = recorderOwnerRef.current;
     const current = recordingMachineRef.current;
