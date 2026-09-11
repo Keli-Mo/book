@@ -424,6 +424,38 @@ check("320PX 书库搜索框保留 44PX 触控高度", () => {
   }
 });
 
+check("Pad 书库系列筛选不会超出根容器", () => {
+  const library = pages.find((page) => page.name === "书库");
+  assert.ok(
+    ruleWith(library.styles, [".device-layout--pad", ".series-filters"], {
+      width: "calc(100% + 34PX)",
+      "margin-left": "-17PX",
+      "margin-right": "-17PX",
+    }),
+    "Pad 固定 17PX 页面内边距后，全出血筛选栏必须精确回补 17PX，不能沿用随屏放大的 34rpx",
+  );
+  assert.ok(
+    ruleWith(library.styles, [".device-layout--pad", ".series-filters__track"], {
+      "padding-left": "17PX",
+      "padding-right": "17PX",
+    }),
+  );
+});
+
+check("Text 类型的目录触控目标显式建立 44PX 盒子", () => {
+  for (const selector of [".practice-header__directory", ".practice-directory-close"]) {
+    assert.ok(
+      matchingRules(practice.styles, [selector]).some(
+        (rule) =>
+          has(rule, "display", "flex") &&
+          has(rule, "align-items", "center") &&
+          has(rule, "justify-content", "center"),
+      ),
+      `${selector} 使用 Text 节点，必须显式使用 flex 才能让最小触控尺寸生效`,
+    );
+  }
+});
+
 check("书库和我的打卡仅在 split 下使用两列", () => {
   for (const [name, selector] of [
     ["书库", ".book-list"],

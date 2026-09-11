@@ -50,6 +50,15 @@
   .book-library__title { font-size: 24PX; }
   .book-library__count { margin-top: 4PX; font-size: 12PX; }
 
+  // Pad 根容器固定 17PX 内边距；筛选栏只回补这 17PX，避免 34rpx 随宽屏放大后横向溢出。
+  .series-filters {
+    width: calc(100% + 34PX);
+    margin-left: -17PX;
+    margin-right: -17PX;
+
+    &__track { padding-right: 17PX; padding-left: 17PX; }
+  }
+
   .book-search {
     height: 44PX;
     padding: 0 12PX;

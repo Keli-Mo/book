@@ -24,6 +24,9 @@
   }
   &__progress { color: #2f876b; font-size: 25rpx; font-weight: 600; }
   &__directory {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 8rpx 18rpx;
     border-radius: 999rpx;
     background: #e2f1eb;
@@ -285,7 +288,14 @@ button[disabled] { opacity: 0.5; }
 }
 
 .practice-directory-title { font-size: 32rpx; font-weight: 800; }
-.practice-directory-close { color: #2f876b; font-size: 25rpx; font-weight: 700; }
+.practice-directory-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2f876b;
+  font-size: 25rpx;
+  font-weight: 700;
+}
 .practice-directory-scroll { height: 62vh; }
 .practice-directory-group { padding: 26rpx 26rpx 0; }
 .practice-directory-group__title { font-size: 27rpx; font-weight: 800; }
