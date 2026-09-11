@@ -56,6 +56,59 @@
   .check-in-list-card { margin-bottom: 0; }
 }
 
+.device-layout--pad {
+  &.my-check-ins {
+    padding-top: 19PX;
+    padding-right: 14PX;
+    padding-left: 14PX;
+  }
+
+  .my-check-ins__intro { padding: 4PX 4PX 15PX; }
+  .my-check-ins__title { font-size: 21PX; }
+  .my-check-ins__tip { margin-top: 5PX; font-size: 12PX; }
+  .my-check-ins__section { margin-bottom: 16PX; }
+  .my-check-ins__section-heading { gap: 8PX; padding: 0 4PX 9PX; }
+  .my-check-ins__section-title { font-size: 15PX; }
+  .my-check-ins__section-tip { font-size: 11PX; }
+  .my-check-ins__notice { gap: 10PX; margin-bottom: 14PX; padding: 11PX 12PX; }
+  .my-check-ins__notice-title { font-size: 12PX; }
+  .my-check-ins__notice-text { margin-top: 3PX; font-size: 11PX; }
+  .my-check-ins__notice-button {
+    width: 56PX;
+    min-height: 44PX;
+    font-size: 12PX;
+    line-height: 44PX;
+  }
+
+  .check-in-list-card {
+    &__preview { width: 88PX; min-height: 122PX; padding: 6PX; }
+    &__image { height: 110PX; }
+    &__content { padding: 13PX 12PX 11PX; }
+    &__section { font-size: 14PX; }
+    &__book { margin-top: 4PX; font-size: 11PX; }
+    &__meta { margin-top: 6PX; font-size: 11PX; }
+    &__actions { gap: 6PX; padding-top: 9PX; }
+    &__open,
+    &__delete,
+    &__submit,
+    &__cancel,
+    &__delete-local { height: 44PX; padding: 0 5PX; font-size: 12PX; }
+    &__delete { width: 45PX; }
+  }
+
+  .pending-check-in-status {
+    margin-top: 7PX;
+    padding: 6PX 7PX;
+
+    &__label { font-size: 12PX; }
+    &__detail { margin-top: 2PX; font-size: 11PX; }
+    &__warning { margin-top: 3PX; font-size: 10PX; }
+  }
+
+  .my-check-ins-state__title { font-size: 17PX; }
+  .my-check-ins-state__button { min-height: 44PX; font-size: 13PX; line-height: 41PX; }
+}
+
 .check-in-list-card {
   display: flex;
   overflow: hidden;

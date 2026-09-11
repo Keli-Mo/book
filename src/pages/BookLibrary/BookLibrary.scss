@@ -39,6 +39,38 @@
   gap: 24PX;
 }
 
+.device-layout--pad {
+  &.book-library {
+    padding-top: 16PX;
+    padding-right: 17PX;
+    padding-left: 17PX;
+  }
+
+  .book-library__heading { padding: 5PX 2PX 14PX; }
+  .book-library__title { font-size: 24PX; }
+  .book-library__count { margin-top: 4PX; font-size: 12PX; }
+
+  .book-search {
+    height: 44PX;
+    padding: 0 12PX;
+
+    &__input { height: 44PX; margin-left: 8PX; font-size: 14PX; line-height: 44PX; }
+    &__clear { width: 44PX; height: 44PX; }
+  }
+
+  .series-filter { height: 44PX; padding: 0 12PX; font-size: 12PX; }
+
+  .book-row {
+    min-height: 82PX;
+
+    &__cover { width: 51PX; height: 68PX; flex-basis: 51PX; }
+    &__text { margin-left: 11PX; }
+    &__title { font-size: 13PX; }
+    &__meta,
+    &__state { font-size: 11PX; }
+  }
+}
+
 @media (max-width: 360PX) {
   .book-row {
     &__meta,

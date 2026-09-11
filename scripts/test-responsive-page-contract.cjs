@@ -270,6 +270,15 @@ const atLeast44PX = (value) => {
   const match = value.match(/^(\d+(?:\.\d+)?)PX$/);
   return Boolean(match && Number(match[1]) >= 44);
 };
+const fixedPX = (value) => /^\d+(?:\.\d+)?PX$/.test(value);
+const fixedPXAtMost = (value, maximum) => {
+  const match = value.match(/^(\d+(?:\.\d+)?)PX$/);
+  return Boolean(match && Number(match[1]) <= maximum);
+};
+const padHasFixed = (styleRoot, selector, property) =>
+  matchingRules(styleRoot, [".device-layout--pad", selector]).some((rule) =>
+    values(rule, property).some(fixedPX),
+  );
 
 const appConfig = defaultConfig(ast("src/app.config.ts"), "defineAppConfig");
 const appStyles = styles("src/app.scss");
@@ -395,7 +404,7 @@ check("训练 split 工作区为教材与控制双列", () => {
       (rule) =>
         has(rule, "display", "grid") &&
         values(rule, "grid-template-columns").some(
-          (value) => compact(value) === "minmax(480PX,1fr)minmax(320PX,1fr)",
+          (value) => compact(value) === "minmax(480PX,1fr)minmax(320PX,420PX)",
         ) &&
         (has(rule, "gap", "24PX") || has(rule, "column-gap", "24PX")),
     ),
@@ -444,6 +453,65 @@ check("热点命中壳与视觉点分离", () => {
       (rule) => values(rule, "width").length > 0 && values(rule, "height").length > 0,
     ),
   );
+  const padVisual = matchingRules(
+    practice.styles,
+    [".device-layout--pad", ".audio-hotspot__visual"],
+  );
+  for (const property of ["width", "height", "flex-basis"]) {
+    assert.ok(
+      padVisual.some((rule) =>
+        values(rule, property).some((value) => fixedPXAtMost(value, 44)),
+      ),
+      `Pad 热点视觉 ${property} 必须固定且不超过 44PX`,
+    );
+  }
+});
+
+check("Pad 主要标题与操作控件不随 rpx 整窗放大", () => {
+  const requirements = [
+    ["首页", [".library-home__heading"], [".continue-card__button", ".home-tabs"]],
+    ["书库", [".book-library__title"], [".book-search", ".series-filter"]],
+    [
+      "我的打卡",
+      [".my-check-ins__title", ".my-check-ins__section-title"],
+      [
+        ".my-check-ins__notice-button",
+        ".check-in-list-card__open",
+        ".check-in-list-card__delete",
+        ".check-in-list-card__submit",
+        ".check-in-list-card__cancel",
+        ".check-in-list-card__delete-local",
+      ],
+    ],
+    [
+      "打卡详情",
+      [".check-in-detail__title"],
+      [".shared-recording__play", ".check-in-actions__practice"],
+    ],
+    [
+      "训练",
+      [".practice-header__section"],
+      [".record-button", ".check-in-button", ".practice-navigation__button"],
+    ],
+  ];
+
+  for (const [name, titles, controls] of requirements) {
+    const page = pages.find((item) => item.name === name);
+    titles.forEach((selector) => {
+      assert.ok(
+        padHasFixed(page.styles, selector, "font-size"),
+        `${name} ${selector} 在 Pad 下必须用固定 PX 字号`,
+      );
+    });
+    controls.forEach((selector) => {
+      assert.ok(
+        ["height", "min-height", "line-height"].some((property) =>
+          padHasFixed(page.styles, selector, property),
+        ),
+        `${name} ${selector} 在 Pad 下必须用固定 PX 控件高度`,
+      );
+    });
+  }
 });
 
 check("训练目录在单栏贴底、split 靠右且可滚动", () => {
@@ -471,8 +539,22 @@ check("训练目录在单栏贴底、split 靠右且可滚动", () => {
         values(rule, "width").some((value) => /^(?:3[2-9]\d|4[01]\d|420)PX$/.test(value)) &&
         [...values(rule, "height"), ...values(rule, "max-height")].some((value) =>
           /^(?:100%|100vh)$/.test(value),
-        ),
+        ) &&
+        has(rule, "display", "flex") &&
+        has(rule, "flex-direction", "column"),
     ),
+  );
+  assert.ok(
+    matchingRules(
+      practice.styles,
+      [".device-layout--split", ".practice-directory-scroll"],
+    ).some(
+      (rule) =>
+        has(rule, "flex", "1") &&
+        has(rule, "min-height", "0") &&
+        values(rule, "height").some((value) => /^(?:auto|unset|none)$/.test(value)),
+    ),
+    "横屏 Pad 目录滚动区必须占据 sheet 剩余高度，不得用固定扣减猜测 header 高度",
   );
   const scroll = byClass(directoryAst, "practice-directory-scroll", "ScrollView")[0];
   assert.ok(scroll && trueAttribute(scroll, "scrollY"));

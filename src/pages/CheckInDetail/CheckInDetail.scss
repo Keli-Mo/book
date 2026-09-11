@@ -108,6 +108,48 @@
   .check-in-state { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
 }
 
+.device-layout--pad {
+  &.check-in-detail {
+    padding-top: 21PX;
+    padding-right: 15PX;
+    padding-left: 15PX;
+  }
+
+  .check-in-detail {
+    &__success { padding: 11PX 0 18PX; }
+    &__title { margin-top: 6PX; font-size: 21PX; }
+    &__time { margin-top: 5PX; font-size: 12PX; }
+  }
+
+  .check-in-course-card {
+    &__image { width: 95PX; height: 105PX; flex-basis: 95PX; }
+    &__content { padding: 13PX; }
+    &__book { font-size: 12PX; }
+    &__section { margin-top: 5PX; font-size: 15PX; }
+    &__meta { margin-top: 7PX; font-size: 11PX; }
+  }
+
+  .shared-recording {
+    padding: 17PX 14PX;
+
+    &__label { font-size: 12PX; }
+    &__duration { margin-top: 4PX; font-size: 24PX; }
+    &__play { min-height: 44PX; font-size: 14PX; line-height: 44PX; }
+    &__privacy { margin-top: 11PX; font-size: 11PX; }
+  }
+
+  .check-in-actions {
+    gap: 9PX;
+    margin-top: 14PX;
+
+    &__share,
+    &__practice { min-height: 44PX; font-size: 13PX; line-height: 44PX; }
+  }
+
+  .check-in-state__title { font-size: 17PX; }
+  .check-in-state__button { min-height: 44PX; }
+}
+
 @media (max-width: 360PX) {
   .check-in-course-card {
     &__image { width: 150rpx; flex-basis: 150rpx; }

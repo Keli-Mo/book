@@ -265,6 +265,61 @@
   }
 }
 
+// Pad 使用固定 CSS 像素保持手机端的视觉密度，避免 rpx 随整窗放大。
+.device-layout--pad {
+  .library-home__brand { font-size: 18PX; }
+  .library-home__search { width: 44PX; height: 44PX; }
+  .library-home__content { padding: 12PX 17PX 17PX; }
+  .library-home__heading { margin: 9PX 0 14PX; font-size: 25PX; }
+
+  .continue-card {
+    min-height: 165PX;
+    padding: 14PX;
+
+    &__cover { width: 95PX; height: 137PX; flex-basis: 95PX; }
+    &__body { padding: 6PX 0 0 17PX; }
+    &__title { font-size: 16PX; }
+    &__progress { margin-top: 10PX; font-size: 12PX; }
+    &__available { margin-top: 8PX; font-size: 12PX; }
+    &__button { height: 44PX; font-size: 14PX; }
+  }
+
+  .series-section {
+    margin-top: 21PX;
+
+    &__heading { min-height: 44PX; padding-bottom: 7PX; }
+    &__title { font-size: 19PX; }
+    &__summary { margin-top: 5PX; font-size: 12PX; }
+    &__all { height: 44PX; font-size: 13PX; }
+  }
+
+  .series-row {
+    min-height: 62PX;
+
+    &__cover { width: 43PX; height: 49PX; flex-basis: 43PX; }
+    &__text { margin-left: 12PX; }
+    &__title { font-size: 14PX; }
+    &__range,
+    &__state { font-size: 11PX; }
+  }
+
+  .home-tabs {
+    min-height: 56PX;
+    height: calc(56PX + constant(safe-area-inset-bottom));
+    padding: 6PX 24PX 0;
+    padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
+
+    &__item { font-size: 12PX; }
+  }
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .device-layout--pad .home-tabs {
+    height: calc(56PX + env(safe-area-inset-bottom));
+    padding-bottom: calc(12PX + env(safe-area-inset-bottom));
+  }
+}
+
 // 320 宽屏与大字号下允许标题和状态自然换行，不挤压右侧操作。
 @media (max-width: 360PX) {
   .continue-card {

@@ -55,7 +55,7 @@
 // 宽 Pad 的教材与录音控制同时可见；手机横屏仍走单栏。
 .device-layout--split .practice-workspace {
   display: grid;
-  grid-template-columns: minmax(480PX, 1fr) minmax(320PX, 1fr);
+  grid-template-columns: minmax(480PX, 1fr) minmax(320PX, 420PX);
   gap: 24PX;
   align-items: start;
 }
@@ -293,6 +293,8 @@ button[disabled] { opacity: 0.5; }
 }
 
 .device-layout--split .practice-directory-sheet {
+  display: flex;
+  flex-direction: column;
   width: 360PX;
   height: 100%;
   max-height: 100%;
@@ -300,7 +302,83 @@ button[disabled] { opacity: 0.5; }
 }
 
 .device-layout--split .practice-directory-scroll {
-  height: calc(100vh - 88PX);
+  height: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.device-layout--pad {
+  &.practice-page {
+    padding-top: 17PX;
+    padding-right: 13PX;
+    padding-left: 13PX;
+  }
+
+  .practice-header {
+    padding: 4PX 5PX 14PX;
+
+    &__course { font-size: 12PX; }
+    &__section { margin-top: 5PX; font-size: 21PX; }
+    &__progress-row { margin-top: 6PX; }
+    &__progress { font-size: 13PX; }
+    &__directory { padding: 4PX 9PX; font-size: 12PX; }
+  }
+
+  .audio-hotspot__visual {
+    box-sizing: border-box;
+    width: 29PX;
+    height: 29PX;
+    flex-basis: 29PX;
+    border-width: 2PX;
+  }
+  .audio-hotspot__icon { margin-left: 1PX; font-size: 10PX; }
+  .audio-hotspot__number {
+    right: -4PX;
+    bottom: -4PX;
+    width: 13PX;
+    height: 13PX;
+    font-size: 9PX;
+  }
+
+  .practice-recorder {
+    margin-top: 11PX;
+    padding: 15PX 14PX;
+
+    &__title { font-size: 15PX; }
+    &__time,
+    &__tip { font-size: 12PX; }
+  }
+
+  .record-button,
+  .check-in-button,
+  .record-actions__secondary {
+    min-height: 44PX;
+    margin-top: 12PX;
+    font-size: 14PX;
+    line-height: 44PX;
+  }
+
+  .recording-indicator { margin-top: 11PX; font-size: 13PX; }
+  .practice-navigation {
+    gap: 10PX;
+    margin-top: 14PX;
+
+    &__button { height: 46PX; font-size: 14PX; }
+  }
+
+  .practice-directory-header { padding: 15PX 15PX 11PX; }
+  .practice-directory-title { font-size: 16PX; }
+  .practice-directory-close { font-size: 13PX; }
+  .practice-directory-group { padding: 13PX 13PX 0; }
+  .practice-directory-group__title { font-size: 14PX; }
+  .practice-directory-items { gap: 8PX; margin-top: 9PX; }
+  .practice-directory-item {
+    width: calc(50% - 4PX);
+    padding: 10PX;
+
+    &__page { font-size: 13PX; }
+    &__tracks { margin-top: 4PX; font-size: 11PX; }
+  }
 }
 
 @media (max-width: 360PX) {
