@@ -111,7 +111,11 @@ const createPage = (file, params, options = {}) => {
     useUnload(callback) { frame.unload = callback; },
     useShareAppMessage() {},
     navigateTo: async ({ url }) => { navigations.push(url); navigationMethods.push("navigateTo"); },
-    redirectTo: async ({ url }) => { navigations.push(url); navigationMethods.push("redirectTo"); },
+    redirectTo: async ({ url }) => {
+      navigations.push(url);
+      navigationMethods.push("redirectTo");
+      if (options.redirectTo) return options.redirectTo({ url });
+    },
     reLaunch: async ({ url }) => { navigations.push(url); },
     showToast() {}, showLoading() {}, hideLoading() {}, pageScrollTo() {},
     showModal: async (input) => {
@@ -296,6 +300,7 @@ const createPage = (file, params, options = {}) => {
     },
     async complete(requestId, committed) {
       completedPending.push({ requestId, committed });
+      if (options.pendingComplete) return options.pendingComplete(requestId, committed);
       const index = pendingItems.findIndex((current) => current.requestId === requestId);
       if (index < 0 || !committed) return false;
       pendingItems[index] = { ...pendingItems[index], completedAtMs: 2 };
@@ -493,6 +498,79 @@ async function testRoutes() {
       assert.equal(page.navigationMethods.at(-1), "redirectTo", "本机完成后必须替换训练页并释放录音 owner");
     }
   }
+
+  let throwingCompleteCalls = 0;
+  const throwingPending = {
+    requestId: "fedcba9876543210fedcba9876543210",
+    localPath: "/saved/throwing-complete.mp3",
+    recoverable: true,
+    context: {
+      bookId: "22",
+      bookTitle: buildBookPracticeBundle("22").book.title,
+      practiceId: buildBookPracticeBundle("22").practices[0].id,
+      practiceIndex: 0,
+      pageNumber: buildBookPracticeBundle("22").practices[0].pageNumber,
+      sectionTitle: buildBookPracticeBundle("22").practices[0].sectionTitle,
+      imageUrl: buildBookPracticeBundle("22").practices[0].imageUrl,
+    },
+    durationMs: 1800,
+    fileSizeBytes: 5000,
+    cloudFileId: "",
+    status: "local",
+    updatedAtMs: 1,
+  };
+  const throwingCompletePage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      pendingItems: [throwingPending],
+      pendingComplete: async () => {
+        throwingCompleteCalls += 1;
+        throw new Error("metadata write failed");
+      },
+    },
+  );
+  let throwingCompleteTree = throwingCompletePage.render();
+  throwingCompleteTree = throwingCompletePage.render();
+  await settle();
+  throwingCompleteTree = throwingCompletePage.render();
+  await byClass(throwingCompleteTree, "check-in-button").props.onClick();
+  throwingCompleteTree = throwingCompletePage.render();
+  await byClass(throwingCompleteTree, "check-in-button").props.onClick();
+  assert.equal(throwingCompleteCalls, 2, "complete 抛异常后必须解除互斥并允许用户重试");
+
+  let completedRemovalCalls = 0;
+  const redirectFailurePage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      savedFilePath: "/saved/completed-before-navigation.mp3",
+      redirectTo: async () => { throw new Error("navigation failed"); },
+      pendingRemove: async () => { completedRemovalCalls += 1; return true; },
+    },
+  );
+  let redirectFailureTree = redirectFailurePage.render();
+  redirectFailureTree = redirectFailurePage.render();
+  await byClass(redirectFailureTree, "record-button").props.onClick();
+  redirectFailurePage.recorderHandlers.Start();
+  redirectFailureTree = redirectFailurePage.render();
+  byClass(redirectFailureTree, "record-button--stop").props.onClick();
+  await redirectFailurePage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/completed-before-navigation.mp3",
+    duration: 1800,
+    fileSize: 5000,
+  });
+  await settle();
+  redirectFailureTree = redirectFailurePage.render();
+  await byClass(redirectFailureTree, "check-in-button").props.onClick();
+  redirectFailureTree = redirectFailurePage.render();
+  assert.equal(
+    elements(redirectFailureTree).some((node) => node.type === "Button" && textOf(node) === "重新录制"),
+    false,
+    "完成持久化后即使详情导航失败，也不得把已完成录音继续暴露为可重录草稿",
+  );
+  await byClass(redirectFailureTree, "record-button").props.onClick();
+  assert.equal(completedRemovalCalls, 0, "导航失败后开始新录音不得自动删除刚完成的文件");
 
   const hiddenWhileStarting = createPage(
     "src/pages/Practice/Practice.tsx",
@@ -1045,13 +1123,13 @@ async function testRoutes() {
     switchingDuringUploadPage.stateValues().some(
       (value) => value?.requestId === oldPending.requestId && value.localPath === oldPending.localPath,
     ),
-    true,
-    "提交已开始后，旧 render 的切页点击不得删除正在上传的本地录音",
+    false,
+    "完成记录应与训练页草稿状态脱钩，但仍保留在 store 中",
   );
   assert.match(
     textOf(byClass(switchingDuringUploadPage.render(), "practice-header__progress")),
     /跟读训练 1 \/ 24/,
-    "上传中的录音必须留在原训练直到提交收口",
+    "完成收口期间旧点击必须被同步互斥，且不得删除录音",
   );
   uploadBeforeSwitch.resolve({ state: "cancelled", error: new Error("用户取消") });
   await uploadAttempt;

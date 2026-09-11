@@ -50,7 +50,7 @@ assert.match(source, /getPendingCheckInStore\(\)\.complete\(pending\.requestId,\
 assert.match(source, /CheckInDetail\/CheckInDetail\?localId=/);
 assert.doesNotMatch(source, /getCheckInSubmissionCoordinator\(\)\.submit\(/, "完成练习不上传");
 assert.match(source, /\.release\s*\(\s*\{[\s\S]*?terminalSink\s*:/, "页面卸载必须把迟到 terminal 托管给全局协调器");
-assert.match(source, /\.cancel\s*\(\s*\)/, "页面隐藏或用户取消时必须中止尚未完成的上传");
+assert.doesNotMatch(source, /取消上传并保留录音|uploadLabel|cancelSubmission/, "训练页不应残留不可达上传界面");
 assert.match(
   source,
   /useUnload\(\(\) => \{[\s\S]*?requestRecorderTeardown\([\s\S]*?terminalSink/,

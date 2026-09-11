@@ -74,17 +74,23 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
 
   const commit = deferred();
   const shared = { id: "cloud-new", shareToken: "token-new", expiresAtMs: Date.now() + 60_000 };
+  let commitActive = true;
   const hiddenCommit = createLocalPage({
     submit: () => ({ promise: commit.promise, cancel: () => false }),
-    isSubmitting: () => false,
+    isSubmitting: () => commitActive,
   });
   hiddenCommit.page.render(); await settle(); tree = hiddenCommit.page.render();
   const commitAttempt = byClass(tree, "check-in-actions__share").props.onClick();
   await settle(); hiddenCommit.page.hide();
+  hiddenCommit.page.show();
+  tree = hiddenCommit.page.render();
+  assert.equal(byClass(tree, "check-in-actions__share").props.loading, true, "返回时 commit 未完成应准确保持 busy");
   hiddenCommit.items[0] = makePending(shared);
+  commitActive = false;
   commit.resolve({ state: "committed", ...shared, cleanupPending: false });
-  await commitAttempt; hiddenCommit.page.show(); tree = hiddenCommit.page.render();
-  assert.equal(textOf(byClass(tree, "check-in-actions__share")), "发送给朋友", "隐藏期间完成后返回应读取最新分享快照");
+  await commitAttempt; tree = hiddenCommit.page.render();
+  assert.equal(textOf(byClass(tree, "check-in-actions__share")), "发送给朋友", "hide→show→commit 后应收敛为可发送分享");
+  assert.equal(byClass(tree, "check-in-actions__share").props.openType, "share");
   hiddenCommit.page.dispose();
 
   const cleanupPending = createLocalPage({

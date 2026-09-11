@@ -53,10 +53,6 @@ import {
 } from "@/features/listeningPractice/recorderCoordinator";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
 import { getPendingCheckInStore } from "@/features/listeningPractice/pendingCheckInRuntime";
-import type {
-  CheckInSubmissionHandle,
-  SubmissionProgress,
-} from "@/features/listeningPractice/checkInSubmissionCoordinator";
 import {
   useDeviceLayout,
   type DeviceLayoutState,
@@ -190,7 +186,6 @@ function PracticeSession({
   const [pendingCheckIn, setPendingCheckIn] = useState<PendingCheckIn | null>(null);
   const [isSavingRecording, setIsSavingRecording] = useState(false);
   const [pendingRestoreRefresh, setPendingRestoreRefresh] = useState(0);
-  const [submissionProgress, setSubmissionProgress] = useState<SubmissionProgress | null>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const modelAudioControllerRef = useRef<ReturnType<
     typeof createTrackAudioController
@@ -206,7 +201,6 @@ function PracticeSession({
     operationSeq: number;
   } | null>(null);
   const pendingCheckInRef = useRef<PendingCheckIn | null>(null);
-  const submissionHandleRef = useRef<CheckInSubmissionHandle | null>(null);
   const completionInFlightRef = useRef(false);
   const recorderUnsubscribeRef = useRef<(() => void) | null>(null);
   const recorderTerminalSinkRef = useRef<RecorderTerminalSink | null>(null);
@@ -243,6 +237,11 @@ function PracticeSession({
   const removeReplacementBackups = useCallback(async () => {
     const store = getPendingCheckInStore();
     for (const requestId of [...replacementPendingIdsRef.current]) {
+      const latest = store.list().find((item) => item.requestId === requestId);
+      if (latest?.completedAtMs !== undefined) {
+        replacementPendingIdsRef.current.delete(requestId);
+        continue;
+      }
       if (await store.remove(requestId)) {
         replacementPendingIdsRef.current.delete(requestId);
       }
@@ -322,6 +321,7 @@ function PracticeSession({
       currentOwner === expected.owner &&
       recordingStartAttemptRef.current === expected.attemptId &&
       !practiceSwitchInFlightRef.current &&
+      !completionInFlightRef.current &&
       currentPractice.practice.id === expected.practiceId &&
       currentPractice.practiceIndex === expected.practiceIndex &&
       getRecorderCoordinator().getPhase() === "idle" &&
@@ -452,7 +452,6 @@ function PracticeSession({
       setTempRecordingPath("");
       setRecordingDurationMs(0);
       setRecordingElapsedMs(0);
-      setSubmissionProgress(null);
     }
     recordingTimelineRef.current = { accumulatedMs: 0, activeSinceMs: null };
   }, []);
@@ -983,7 +982,6 @@ function PracticeSession({
     );
     setPlayingTrackId(null);
     setIsPlayingRecording(false);
-    submissionHandleRef.current?.cancel();
 
     const current = recordingMachineRef.current;
     if (current.state === "starting") {
@@ -1009,7 +1007,6 @@ function PracticeSession({
     pageHiddenRef.current = true;
     mountedRef.current = false;
     clearHiddenStopRetry();
-    submissionHandleRef.current?.cancel();
     const owner = recorderOwnerRef.current;
     const current = recordingMachineRef.current;
     const teardown = requestRecorderTeardown(current);
@@ -1049,6 +1046,13 @@ function PracticeSession({
   const removeCurrentPending = async () => {
     const pending = pendingCheckInRef.current;
     if (!pending) return true;
+    const latest = getPendingCheckInStore().list().find(
+      (item) => item.requestId === pending.requestId,
+    );
+    if (latest?.completedAtMs !== undefined) {
+      applyPendingCheckIn(null);
+      return true;
+    }
     const removed = await getPendingCheckInStore().remove(pending.requestId);
     if (!removed) {
       void Taro.showModal({
@@ -1076,7 +1080,6 @@ function PracticeSession({
     if (
       !canContinuePracticeSwitch(switchRequest) ||
       savingRecordingRef.current ||
-      submissionHandleRef.current ||
       completionInFlightRef.current ||
       beforeRemoval.pendingAction ||
       beforeRemoval.state === "starting" ||
@@ -1099,7 +1102,6 @@ function PracticeSession({
     const canCommitSwitch = () => (
       canContinuePracticeSwitch(switchRequest) &&
       !savingRecordingRef.current &&
-      !submissionHandleRef.current &&
       saveGenerationRef.current === switchRequest.saveGeneration &&
       pendingCheckInRef.current === null
     );
@@ -1179,7 +1181,6 @@ function PracticeSession({
     }
     const policy = getPracticeSwitchPolicy(currentMachine.state);
     if (
-      submissionHandleRef.current ||
       currentMachine.state === "uploading" ||
       policy === "block-uploading"
     ) {
@@ -1258,7 +1259,7 @@ function PracticeSession({
     if (permission === "open-settings") {
       const choice = await Taro.showModal({
         title: "需要麦克风权限",
-        content: "跟读录音只会在你确认打卡后上传。请在设置中允许使用麦克风。",
+        content: "跟读录音只会在你点击分享后上传。请在设置中允许使用麦克风。",
         confirmText: "去设置",
       });
       if (choice.confirm && canStartRecordingNow(request)) {
@@ -1339,7 +1340,7 @@ function PracticeSession({
     const pending = pendingCheckInRef.current;
     if (
       !pending ||
-      submissionHandleRef.current ||
+      completionInFlightRef.current ||
       practiceSwitchInFlightRef.current ||
       recordingState !== "recorded"
     ) return;
@@ -1349,12 +1350,22 @@ function PracticeSession({
       return;
     }
     completionInFlightRef.current = true;
-    const completed = await getPendingCheckInStore().complete(pending.requestId, true);
+    let completed = false;
+    try {
+      completed = await getPendingCheckInStore().complete(pending.requestId, true);
+    } catch (_error) {
+      completed = false;
+    }
     if (!completed || !mountedRef.current) {
       completionInFlightRef.current = false;
       Taro.showToast({ title: "保存完成状态失败，请重试", icon: "none" });
       return;
     }
+    // 完成记录从当前草稿会话脱钩；即使导航失败也不能再被“重新录制”当作备份删除。
+    replacementPendingIdsRef.current.delete(pending.requestId);
+    applyPendingCheckIn(null);
+    clearRecordingView();
+    applyRecordingMachine(resetRecordingMachine(recordingMachineRef.current));
     Taro.showToast({ title: "已保存到我的录音", icon: "success" });
     try {
       await Taro.redirectTo({
@@ -1362,12 +1373,8 @@ function PracticeSession({
       });
     } catch (_navigationError) {
       Taro.showToast({ title: "请到我的录音中查看", icon: "none" });
-    }
-  };
-
-  const cancelSubmission = () => {
-    if (!submissionHandleRef.current?.cancel()) {
-      Taro.showToast({ title: "正在确认打卡，暂时不能取消", icon: "none" });
+    } finally {
+      completionInFlightRef.current = false;
     }
   };
 
@@ -1375,13 +1382,6 @@ function PracticeSession({
     recordingState === "recording" || recordingState === "paused"
       ? recordingElapsedMs
       : recordingDurationMs;
-  const uploadLabel = submissionProgress?.uncertain
-    ? "正在上传…"
-    : submissionProgress?.percent === 100
-      ? "上传完成，正在确认"
-      : submissionProgress?.percent !== null && submissionProgress !== null
-        ? `正在上传 ${submissionProgress.percent}%`
-        : "正在上传";
 
   return (
     <View className={`practice-page ${layoutClassName}`}>
@@ -1556,7 +1556,7 @@ function PracticeSession({
                 </>
               )}
 
-              {(recordingState === "recorded" || recordingState === "uploading") && (
+              {recordingState === "recorded" && (
                 <>
                   <Text className='practice-recorder__tip'>
                     {isSavingRecording
@@ -1570,14 +1570,12 @@ function PracticeSession({
                       <View className='record-actions device-actions'>
                         <Button
                           className='record-actions__secondary device-touch-target'
-                          disabled={recordingState === "uploading"}
                           onClick={playRecording}
                         >
                           {isPlayingRecording ? "停止回听" : "回听录音"}
                         </Button>
                         <Button
                           className='record-actions__secondary device-touch-target'
-                          disabled={recordingState === "uploading"}
                           onClick={startRecording}
                         >
                           重新录制
@@ -1585,20 +1583,10 @@ function PracticeSession({
                       </View>
                       <Button
                         className='check-in-button device-touch-target'
-                        loading={recordingState === "uploading"}
-                        disabled={recordingState === "uploading"}
                         onClick={submitCheckIn}
                       >
-                        {recordingState === "uploading" ? uploadLabel : "完成练习"}
+                        完成练习
                       </Button>
-                      {recordingState === "uploading" && (
-                        <Button
-                          className='upload-cancel-button device-touch-target'
-                          onClick={cancelSubmission}
-                        >
-                          取消上传并保留录音
-                        </Button>
-                      )}
                     </>
                   )}
                 </>

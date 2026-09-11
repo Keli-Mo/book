@@ -183,7 +183,14 @@ export default function CheckInDetail() {
       submissionRef.current = handle;
       const result = await handle.promise;
       if (submissionRef.current === handle) submissionRef.current = null;
-      if (!mountedRef.current || !visibleRef.current || shareAttemptRef.current !== attempt) return;
+      if (!mountedRef.current) return;
+      if (result.state === "committed" && !result.cleanupPending && visibleRef.current) {
+        const latest = pendingStore.list().find((item) => item.requestId === localId);
+        if (latest?.share) {
+          setDetail({ source: "local", pending: latest, recordingUrl: latest.localPath });
+        }
+      }
+      if (!visibleRef.current || shareAttemptRef.current !== attempt) return;
       if (result.state !== "committed") {
         Taro.showToast({ title: result.state === "cancelled" ? "已取消分享" : "分享失败，本机录音仍保留", icon: "none" });
         return;
