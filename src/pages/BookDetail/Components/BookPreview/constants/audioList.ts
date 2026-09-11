@@ -2895,7 +2895,7 @@ const audioList6 = {
         {
             offset: [896, 215],
             url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E7%AC%AC%E5%9B%9B%E6%9C%AC%E8%87%AA%E6%8B%BC%E9%83%A8%E5%88%86%E9%9F%B3%E9%A2%91%EF%BC%88%E6%8C%89%E6%95%B0%E5%AD%97%E9%A1%BA%E5%BA%8F%EF%BC%89/Oxford%20Phonics%20World_4_SB_CD1/'
-                + 'Track16.mp3',
+                + 'Track17.mp3',
         },
     ],
 
@@ -6893,7 +6893,7 @@ const audioList12 = {
         {
         offset: ["46%", "28%"],
         url: 'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_L1_Workbook-%E9%9F%B3%E9%A2%91/ow2e_wb1_ame_'
-		+'1.10.mp3',
+		+'1.11.mp3',
         flag: "Percentage",
       }
     ],

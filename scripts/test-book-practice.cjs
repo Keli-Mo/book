@@ -142,24 +142,50 @@ materialRepair("教材 11 移除官方不存在的伪轨 5.15", () => {
     "全部教材不得通过查询串或片段掩盖官方不存在的伪轨 5.15",
   );
 });
+materialRepair("教材 6 第 11 页使用连续的 Track17", () => {
+  assert.equal(
+    path.basename(new URL(allAudioList["6"][11][0].url).pathname),
+    "Track17.mp3",
+    "第 10 页已使用 Track16，第 11 页必须衔接 Track17，不能重复播放上一页",
+  );
+});
+materialRepair("教材 12 第 17 页使用连续的 1.11", () => {
+  assert.equal(
+    path.basename(new URL(allAudioList["12"][17][0].url).pathname),
+    "ow2e_wb1_ame_1.11.mp3",
+    "第 16 页已使用 1.10，第 17 页必须衔接 1.11，不能重复播放上一页",
+  );
+});
 assert.equal(
   materialRepairFailures.length,
   0,
-  `${materialRepairFailures.length}/3 项教材素材修正未满足：\n${materialRepairFailures.join("\n")}`,
+  `${materialRepairFailures.length}/5 项教材素材修正未满足：\n${materialRepairFailures.join("\n")}`,
 );
 
+const expectedEmptyAudioKeys = {
+  3: [0, 1], 4: [0, 1], 5: [0, 1], 6: [0, 1],
+  7: [0], 8: [0], 9: [0], 10: [0],
+  11: [0, 1], 12: [0, 1], 13: [0, 1], 14: [0, 1],
+  15: [0, 1], 16: [0, 1], 17: [0, 1],
+  18: [1], 19: [1], 20: [1], 21: [1],
+  22: [1], 23: [1], 24: [1], 25: [1],
+};
 const emptyPagePlaceholders = BOOK_IDS.flatMap((bookId) => {
-  const imagePages = new Set(concatImages[bookId].map(parseImagePageNumber));
+  const imageCount = concatImages[bookId].length;
   return Object.entries(allAudioList[bookId])
-    .filter(([page]) => !imagePages.has(Number(page)))
+    .filter(([page, tracks]) => {
+      const imageIndex = Number(page) - 2;
+      return tracks.length === 0 && (imageIndex < 0 || imageIndex >= imageCount);
+    })
     .map(([page, tracks]) => [bookId, Number(page), tracks.length]);
 });
-assert.deepEqual(emptyPagePlaceholders, [
-  ["3", 0, 0], ["4", 0, 0], ["4", 2, 0], ["5", 0, 0], ["5", 2, 0],
-  ["6", 0, 0], ["6", 2, 0], ["7", 0, 0], ["8", 0, 0], ["9", 0, 0],
-  ["10", 0, 0], ["11", 0, 0], ["12", 0, 0], ["13", 0, 0],
-  ["14", 0, 0], ["15", 0, 0], ["16", 0, 0], ["17", 0, 0],
-], "仅这 18 个既有空占位键允许没有对应图片");
+assert.deepEqual(
+  emptyPagePlaceholders,
+  Object.entries(expectedEmptyAudioKeys).flatMap(([bookId, keys]) =>
+    keys.map((key) => [bookId, key, 0]),
+  ),
+  "仅既有负索引空音频键允许没有对应图片",
+);
 
 assert.equal(
   EXPECTED_PRACTICE_COUNTS.reduce((sum, count) => sum + count, 0),
@@ -297,6 +323,24 @@ for (const [bookId, expectedPracticeCount] of expectedBundles) {
   );
 }
 
+for (const [bookId, audioKey, expectedImageIndex, expectedPageNumber] of [
+  ["3", 4, 2, 4],
+  ["8", 37, 35, 36],
+  ["11", 6, 4, 4],
+  ["12", 5, 3, 3],
+  ["15", 10, 8, 9],
+  ["20", 11, 9, 10],
+]) {
+  const sourceTrackUrl = allAudioList[bookId][audioKey][0].url;
+  const practice = buildBookPracticeBundle(bookId).practices.find((item) =>
+    item.tracks.some(({ url }) => url === sourceTrackUrl),
+  );
+  assert.ok(practice, `教材 ${bookId} 音频键 ${audioKey} 应生成训练页`);
+  assert.equal(practice.imageIndex, expectedImageIndex, "历史音频键必须按 imageIndex + 2 解释");
+  assert.equal(practice.pageNumber, expectedPageNumber, "展示页码必须来自实际教材图片文件名");
+  assert.equal(practice.imageUrl, concatImages[bookId][expectedImageIndex]);
+}
+
 const immutableBundle = buildBookPracticeBundle("3");
 assert.ok(immutableBundle, "默认教材应能构建训练包");
 assert.equal(Object.isFrozen(immutableBundle), true, "训练包应不可变");
@@ -377,10 +421,14 @@ for (const [name, track, [leftPercent, topPercent]] of coordinateCases) {
 }
 
 const validTrack = { flag: "Percentage", offset: ["42%", "87%"], url: "https://example.com/a.mp3" };
+const mappedFixtureImages = Array.from(
+  { length: 7 },
+  (_, index) => `https://example.com/book_${index + 2}.jpg`,
+);
 const fixtureBundle = (changes = {}, bookId = "3") => {
   const fixture = {
     images: ["https://example.com/book_2.png", "https://example.com/book_8.jpg"],
-    audio: { 2: [validTrack], 8: [] },
+    audio: { 2: [validTrack] },
     catalog: [{ name: "第一单元", page: 0 }],
     ...changes,
   };
@@ -395,15 +443,15 @@ const fixtureBundle = (changes = {}, bookId = "3") => {
 regression("精确白名单中的缺图空占位页允许保留", () => {
   for (const [bookId, pageNumber] of emptyPagePlaceholders) {
     assert.equal(fixtureBundle({
-      images: ["https://example.com/book_8.jpg"],
+      images: mappedFixtureImages,
       audio: { [pageNumber]: [], 8: [validTrack] },
     }, bookId).practices.length, 1);
   }
 });
 regression("空占位白名单不能泛化到其他教材或页号", () => {
-  for (const [bookId, pageNumber] of [["18", 0], ["3", 2], ["3", 99]]) {
+  for (const [bookId, pageNumber] of [["18", 0], ["7", 1], ["3", 99]]) {
     assert.throws(() => fixtureBundle({
-      images: ["https://example.com/book_8.jpg"],
+      images: mappedFixtureImages,
       audio: { [pageNumber]: [], 8: [validTrack] },
     }, bookId), new RegExp(`教材 ${bookId} 第 ${pageNumber} 页`));
   }
@@ -418,7 +466,7 @@ const invalidDataCases = [
   ["图片数组缺项", { images: ["https://example.com/book_2.png", ,] }, /图片索引 1/],
   ["音频映射为数组", { audio: [] }, /音频/],
   ["音频映射为空", { audio: {} }, /音频/],
-  ["无非空音频页", { audio: { 2: [], 8: [] } }, /音频/],
+  ["无非空音频页", { audio: { 2: [] } }, /音频/],
   ["缺失音频", { audio: null }, /音频/],
   ["空目录", { catalog: [] }, /目录/],
   ["缺失目录", { catalog: null }, /目录/],
@@ -495,21 +543,22 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
   regression(`教材 ${bookId} 全部生产训练项逐一匹配原始数据`, () => {
     const audioPages = Object.entries(allAudioList[bookId]).filter(([, tracks]) => tracks.length > 0);
     assert.deepEqual(
-      bundle.practices.map((practice) => practice.pageNumber).sort((a, b) => a - b),
-      audioPages.map(([page]) => Number(page)).sort((a, b) => a - b),
-      "训练页应恰好对应所有非空音频页，且不遗漏或重复",
+      bundle.practices.map((practice) => practice.imageIndex),
+      audioPages.map(([audioKey]) => Number(audioKey) - 2),
+      "每个非空音频键 K 必须严格映射到 images[K - 2]，且不遗漏或重复",
     );
     let previousImageIndex = -1;
     for (const practice of bundle.practices) {
-      const imageIndex = concatImages[bookId].findIndex((url) => parseImagePageNumber(url) === practice.pageNumber);
+      const imageIndex = practice.imageIndex;
       assert.ok(imageIndex > previousImageIndex, "训练页应按图片数组顺序排列");
       previousImageIndex = imageIndex;
       assert.equal(practice.bookId, bookId);
       assert.equal(practice.imageIndex, imageIndex);
       assert.equal(practice.imageUrl, concatImages[bookId][imageIndex]);
+      assert.equal(practice.pageNumber, parseImagePageNumber(practice.imageUrl));
       const precedingSections = catalogLists[bookId].filter((section) => section.page <= imageIndex);
       assert.equal(practice.sectionTitle, precedingSections.at(-1)?.name ?? "课程导入");
-      const originalTracks = allAudioList[bookId][practice.pageNumber];
+      const originalTracks = allAudioList[bookId][imageIndex + 2];
       assert.equal(practice.tracks.length, originalTracks.length, `第 ${practice.pageNumber} 页轨道数`);
       for (const [trackIndex, track] of practice.tracks.entries()) {
         const original = originalTracks[trackIndex];
