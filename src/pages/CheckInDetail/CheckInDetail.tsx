@@ -12,6 +12,7 @@ import { getCheckInDetail, getReadableCloudError, type CheckInDetail as CloudDet
 import { sharedImage } from "@/constant";
 import { formatCheckInTime, formatPlaybackDurationLabel } from "@/utils/checkInFormat";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
+import CheckInNavigation from "./CheckInNavigation";
 import "./CheckInDetail.scss";
 
 const pendingStore = getPendingCheckInStore();
@@ -75,6 +76,13 @@ export default function CheckInDetail() {
       return Taro.navigateBack({ delta: 1 });
     }
     return Taro.navigateTo({ url: practiceUrl || "/pages/BookLibrary/BookLibrary" });
+  };
+
+  const goBack = () => {
+    if (Taro.getCurrentPages().length > 1) {
+      return Taro.navigateBack({ delta: 1 });
+    }
+    return Taro.reLaunch({ url: practiceUrl || "/pages/Home/Home" });
   };
 
   useShareAppMessage(() => {
@@ -246,14 +254,19 @@ export default function CheckInDetail() {
   };
 
   if (loading) {
-    return <View className={`check-in-state device-layout__content ${layoutClassName}`}>正在读取录音…</View>;
+    return (
+      <View className={`check-in-state device-layout__content ${layoutClassName}`}>
+        <CheckInNavigation onBack={goBack} />
+        <Text className='check-in-state__message'>正在读取录音…</Text>
+      </View>
+    );
   }
   if (!detail || !values) {
     return (
       <View className={`check-in-state device-layout__content ${layoutClassName}`}>
+        <CheckInNavigation onBack={goBack} />
         <Text className='check-in-state__title'>暂时无法打开这条录音</Text>
         <Text className='check-in-state__message'>{errorMessage}</Text>
-        <Button className='check-in-state__button device-touch-target' onClick={() => Taro.reLaunch({ url: "/pages/Home/Home" })}>返回首页</Button>
       </View>
     );
   }
@@ -270,7 +283,7 @@ export default function CheckInDetail() {
 
   return (
     <View className={`check-in-detail device-layout__content ${layoutClassName}`}>
-      <Button className='check-in-detail__home device-touch-target' onClick={() => Taro.reLaunch({ url: "/pages/Home/Home" })}>返回首页</Button>
+      <CheckInNavigation onBack={goBack} />
       <View className='check-in-detail__success'>
         <Text className='check-in-detail__check'>✓</Text>
         <Text className='check-in-detail__title'>完成一次英语跟读</Text>

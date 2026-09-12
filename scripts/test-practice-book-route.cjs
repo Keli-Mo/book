@@ -122,6 +122,7 @@ const createPage = (file, params, options = {}) => {
     },
     navigateBack: async () => { navigationMethods.push("navigateBack"); },
     getCurrentPages: () => options.pageStack || [],
+    getMenuButtonBoundingClientRect: () => ({}),
     reLaunch: async ({ url }) => { navigations.push(url); navigationMethods.push("reLaunch"); },
     showToast() {}, showLoading() {}, hideLoading() {}, pageScrollTo() {},
     showModal: async (input) => {
@@ -327,6 +328,10 @@ const createPage = (file, params, options = {}) => {
   };
   const overrides = {
     react,
+    "taro-ui/lib/components/icon": {
+      __esModule: true,
+      default: (props) => ({ type: "Text", props }),
+    },
     "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "ScrollView"].map((name) => [name, name])),
     "@tarojs/taro": { __esModule: true, default: taro, ...taro },
     "@/constant": { sharedImage: "share.png" },

@@ -1,7 +1,7 @@
 import { Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
 import { useState } from "react";
-import AtIcon from "taro-ui/lib/components/icon";
+import AppIcon from "@/components/AppIcon/AppIcon";
 import {
   BOOK_SERIES,
   type BookSeriesId,
@@ -81,7 +81,7 @@ export default function Home() {
           }}
         >
           <View className='library-home__brand'>
-            <AtIcon value='bookmark' size='27' color='#278465' />
+            <AppIcon value='bookmark' size='27' color='#278465' />
             <Text>海沙牛娃</Text>
           </View>
           <View
@@ -89,7 +89,7 @@ export default function Home() {
             hoverClass='is-pressed'
             onClick={() => openLibrary("all")}
           >
-            <AtIcon value='search' size='25' color='#173f34' />
+            <AppIcon value='search' size='25' color='#173f34' />
           </View>
         </View>
       </View>
@@ -139,7 +139,7 @@ export default function Home() {
               onClick={() => openLibrary("all")}
             >
               <Text>全部教材</Text>
-              <AtIcon value='chevron-right' size='16' color='#2f856a' />
+              <AppIcon value='chevron-right' size='16' color='#2f856a' />
             </View>
           </View>
 
@@ -161,7 +161,7 @@ export default function Home() {
                   <Text className='series-row__title'>{series.title}</Text>
                   <Text className='series-row__range'>{series.rangeLabel}</Text>
                 </View>
-                <AtIcon value='chevron-right' size='18' color='#9aa6a2' />
+                <AppIcon value='chevron-right' size='18' color='#9aa6a2' />
               </View>
             ))}
           </View>
@@ -170,7 +170,7 @@ export default function Home() {
 
       <View className='home-tabs'>
         <View className='home-tabs__item device-touch-target is-active'>
-          <AtIcon value='folder' size='24' color='#2f856a' />
+          <AppIcon value='folder' size='24' color='#2f856a' />
           <Text>学习</Text>
         </View>
         <View
@@ -178,7 +178,7 @@ export default function Home() {
           hoverClass='is-pressed'
           onClick={openMyCheckIns}
         >
-          <AtIcon value='user' size='24' color='#7b827f' />
+          <AppIcon value='user' size='24' color='#7b827f' />
           <Text>我的</Text>
         </View>
       </View>

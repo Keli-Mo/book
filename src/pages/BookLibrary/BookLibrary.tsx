@@ -1,7 +1,7 @@
 import { Image, Input, ScrollView, Text, View } from "@tarojs/components";
 import Taro, { useRouter, useShareAppMessage } from "@tarojs/taro";
 import { useMemo, useState } from "react";
-import AtIcon from "taro-ui/lib/components/icon";
+import AppIcon from "@/components/AppIcon/AppIcon";
 import {
   BOOKS,
   BOOK_SERIES,
@@ -58,7 +58,7 @@ export default function BookLibrary() {
       </View>
 
       <View className='book-search'>
-        <AtIcon value='search' size='20' color='#73857d' />
+        <AppIcon value='search' size='20' color='#73857d' />
         <Input
           className='book-search__input'
           value={query}
@@ -74,7 +74,7 @@ export default function BookLibrary() {
             hoverClass='is-pressed'
             onClick={() => setQuery("")}
           >
-            <AtIcon value='close-circle' size='18' color='#7a8a84' />
+            <AppIcon value='close-circle' size='18' color='#7a8a84' />
           </View>
         ) : null}
       </View>
@@ -128,13 +128,13 @@ export default function BookLibrary() {
                   {seriesId === "casa" ? book.title : `${book.level} · ${book.kind}`}
                 </Text>
               </View>
-              <AtIcon value='chevron-right' size='18' color='#9aa6a2' />
+              <AppIcon value='chevron-right' size='18' color='#9aa6a2' />
             </View>
           ))}
         </View>
       ) : (
         <View className='book-empty'>
-          <AtIcon value='search' size='38' color='#2f856a' />
+          <AppIcon value='search' size='38' color='#2f856a' />
           <Text className='book-empty__title'>没有找到这本教材</Text>
           <Text className='book-empty__tip'>换一个书名或级别试试</Text>
         </View>
