@@ -21,11 +21,11 @@
 
 **Files:**
 - Modify: `src/pages/Home/Home.tsx`, `src/pages/Home/Home.scss`
-- Test: `scripts/test-reading-progress-pages.cjs`, `scripts/test-responsive-page-contract.cjs`, `scripts/test-ui-refinements.cjs`, `scripts/audit-ui-layout.cjs`
+- Test: `scripts/test-reading-progress-pages.cjs`, `scripts/test-responsive-page-contract.cjs`, `scripts/test-ui-refinements.cjs`, `scripts/test-ui-layout.cjs`, `scripts/audit-ui-layout.cjs`
 
 **Interfaces:** 保持 `startPractice`、`readReadingProgress`、`useDidShow` 及所有导航 URL 不变；无新接口。
 
-- [ ] Step 1: 在已有真实页面测试中先替换旧标题断言，并增加双态断言：
+- [x] Step 1: 在已有真实页面测试中先替换旧标题断言，并增加双态断言：
 
 ```js
 assert.equal(byClass(tree, "library-home__heading"), undefined);
@@ -37,8 +37,8 @@ assert.equal(byClass(tree, "library-home__heading"), undefined);
 assert.equal(textOf(byClass(tree, "continue-card__button")), "继续跟读");
 ```
 
-- [ ] Step 2: 运行 `node scripts/test-reading-progress-pages.cjs`，应因独立标题仍存在而失败，记录输出。
-- [ ] Step 3: 删除 Home.tsx 的整个 `library-home__heading` Text 节点，并将卡片标题表达式改为：
+- [x] Step 2: 运行 `node scripts/test-reading-progress-pages.cjs`，应因独立标题仍存在而失败，记录输出。
+- [x] Step 3: 删除 Home.tsx 的整个 `library-home__heading` Text 节点，并将卡片标题表达式改为：
 
 ```tsx
 {progressBundle?.book.title || "开始跟读练习"}
@@ -46,15 +46,16 @@ assert.equal(textOf(byClass(tree, "continue-card__button")), "继续跟读");
 
 删除 Home.scss 中 `.library-home` 内的 `&__heading` 与 `.device-layout--pad .library-home__heading` 专属样式，其余卡片/正文 padding 不变，不删除 series-section 的 heading。
 
-- [ ] Step 4: 更新响应式测试中标题字号检查目标为 `.continue-card__title`；UI 文案测试明确断言独立标题消失，保留按钮双态契约。
-- [ ] Step 5: 扩充现有 audit-ui-layout.cjs 的 Home 验证：两种首页状态无旧独立标题；空状态新标题/原说明/原按钮正确；卡片顶部位于导航底部之后，卡片标题、说明与按钮不重叠且不越过卡片内边界，保留横向溢出/安全区/底栏/图片/触区检查。原18状态×8窗口仍保留，不缩减场景。
-- [ ] Step 6: 运行 `node scripts/test-reading-progress-pages.cjs`、`node scripts/test-responsive-page-contract.cjs`、`node scripts/test-ui-refinements.cjs`、`node scripts/test-home-navigation.cjs`、`node scripts/test-bookshelf-polish.cjs`；应全部通过。
-- [ ] Step 7: 精确暂存任务文件，提交 `fix: 简化首页跟读卡片标题`，自查并报告 RED/GREEN 和变更文件；不推送。
+- [x] Step 4: 更新响应式测试中标题字号检查目标为 `.continue-card__title`；UI 文案测试明确断言独立标题消失，保留按钮双态契约。
+  同步修正 `test-ui-layout.cjs` 中上轮用户已删除录音空态按钮的过期断言：将对 `${selector}__button` 的 44PX min-height 断言改为其样式匹配数量为 0。仅修测试，不恢复按钮或修改 MyCheckIns 源码。
+- [x] Step 5: 扩充现有 audit-ui-layout.cjs 的 Home 验证：两种首页状态无旧独立标题；空状态新标题/原说明/原按钮正确；卡片顶部位于导航底部之后，卡片标题、说明与按钮不重叠且不越过卡片内边界，保留横向溢出/安全区/底栏/图片/触区检查。原18状态×8窗口仍保留，不缩减场景。
+- [x] Step 6: 运行 `node scripts/test-reading-progress-pages.cjs`、`node scripts/test-responsive-page-contract.cjs`、`node scripts/test-ui-refinements.cjs`、`node scripts/test-home-navigation.cjs`、`node scripts/test-bookshelf-polish.cjs`；应全部通过。
+- [x] Step 7: 精确暂存任务文件，提交 `fix: 简化首页跟读卡片标题`，自查并报告 RED/GREEN 和变更文件；不推送。
 
 ## Controller validation and handoff
 
-- [ ] 任务级独立复核 spec 与 code quality。
-- [ ] `npm run build:weapp`；已知依赖弃用/包体警告记录，不为消警升级依赖。
-- [ ] 使用现有 Playwright 的 NODE_PATH 执行 `node scripts/audit-ui-layout.cjs home-heading`，144场景0失败；查看手机/iPad首页双态截图及其他页面代表截图。
-- [ ] 运行全部 `scripts/test-*.cjs`，类型检查（既有兼容参数）、修改源文件 ESLint、git diff --check。
+- [x] 任务级独立复核 spec 与 code quality。
+- [x] `npm run build:weapp`；已知依赖弃用/包体警告记录，不为消警升级依赖。
+- [x] 使用现有 Playwright 的 NODE_PATH 执行 `node scripts/audit-ui-layout.cjs home-heading`，144场景0失败；查看手机/iPad首页双态截图及其他页面代表截图。
+- [x] 运行全部 `scripts/test-*.cjs`，类型检查（既有兼容参数）、修改源文件 ESLint、git diff --check。
 - [ ] 全分支独立复核，更新验证记录与进度，保留分支和工作树，不合并/推送/部署。
