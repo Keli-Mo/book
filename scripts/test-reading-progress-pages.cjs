@@ -32,7 +32,10 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   // 实际 Home 和实际 readingProgress 模块共享本机存储边界，不用伪造的读写进度函数。
   const home = mount("Home");
   let tree = home.render();
-  assert.equal(textOf(byClass(tree, "library-home__heading")), "选择教材");
+  assert.equal(byClass(tree, "library-home__heading"), undefined);
+  assert.equal(textOf(byClass(tree, "continue-card__title")), "开始跟读练习");
+  assert.equal(textOf(byClass(tree, "continue-card__progress")), "还没有跟读记录，先去书库选择教材");
+  assert.equal(textOf(byClass(tree, "continue-card__button")), "选择教材");
   assert.equal(byClass(tree, "continue-card__cover"), undefined);
   assert.doesNotMatch(textOf(tree), /上次练到|可跟读|册可练/);
   await byClass(tree, "continue-card__button").props.onClick();
@@ -47,9 +50,11 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   assert.equal(storage.get(key).practiceIndex, 4, "目录切页应保存真实生效的训练下标，不是原始入口 URL");
   home.show(); tree = home.render();
   const bundle = buildBookPracticeBundle("22");
+  assert.equal(byClass(tree, "library-home__heading"), undefined);
   assert.equal(textOf(byClass(tree, "continue-card__title")), bundle.book.title);
   assert.equal(byClass(tree, "continue-card__cover").props.src, bundle.book.cover);
   assert.equal(textOf(byClass(tree, "continue-card__progress")), `${bundle.practices[4].sectionTitle} · 教材第 ${bundle.practices[4].pageNumber} 页`);
+  assert.equal(textOf(byClass(tree, "continue-card__button")), "继续跟读");
   await byClass(tree, "continue-card__button").props.onClick();
   assert.equal(home.navigations.at(-1), "/pages/Practice/Practice?bookId=22&practice=4");
 

@@ -80,7 +80,7 @@ async function surface(name,state,profile) {
       css=css.replace(/env\(safe-area-inset-(bottom|left|right|top)\)/g,(_,side)=>(side==='bottom'?safeAreaBottom:side==='top'?0:sideInset)+'px');
       await page.setContent(`<html><meta charset="utf-8"><style>html,body{margin:0;font-family:Arial,"Microsoft YaHei",sans-serif}view,scroll-view{display:block}text{display:inline}input{border:0;box-sizing:border-box;background:transparent}button{display:block;margin:0 auto;padding:0 14px;font-size:18px;line-height:2.555;text-align:center;border:0;box-sizing:border-box}img{display:block}scroll-view{scrollbar-width:none}</style><style>${css}</style><body>${body}</body></html>`,{waitUntil:'domcontentloaded'});
       await page.locator('img').evaluateAll(images=>Promise.all(images.map(img=>img.complete?null:new Promise(resolve=>{img.onload=resolve;img.onerror=resolve;setTimeout(resolve,5000)}))));
-      const measure=await page.evaluate(({name:surfaceName,isPad:padSurface,statusBarHeight,safeAreaBottom:bottomInset,sideInset:notchInset})=>{
+      const measure=await page.evaluate(({name:surfaceName,state:surfaceState,isPad:padSurface,statusBarHeight,safeAreaBottom:bottomInset,sideInset:notchInset})=>{
         const errors=[];const box=el=>el.getBoundingClientRect();const $=s=>document.querySelector(s);
         const nav=$('.check-in-navigation');
         if(nav){
@@ -95,6 +95,31 @@ async function surface(name,state,profile) {
         const content=$(surfaceName==='Home'?'.library-home__content':surfaceName==='BookLibrary'?'.book-library':surfaceName==='Practice'?'.practice-page, .practice-empty':surfaceName==='MyCheckIns'?'.my-check-ins':'.check-in-detail, .check-in-state');
         const padding=content?parseFloat(getComputedStyle(content).paddingLeft):null;
         if(content&&padding<10) errors.push('正文左右留白丢失');
+        if(surfaceName==='Home'){
+          const homeNav=$('.library-home__navigation'),card=$('.continue-card');
+          const title=$('.continue-card__title'),progress=$('.continue-card__progress'),button=$('.continue-card__button');
+          if($('.library-home__heading')) errors.push('首页残留卡片上方独立标题');
+          if(surfaceState==='empty'){
+            if(title?.textContent?.trim()!=='开始跟读练习') errors.push('首页空态卡片标题错误');
+            if(progress?.textContent?.trim()!=='还没有跟读记录，先去书库选择教材') errors.push('首页空态说明错误');
+            if(button?.textContent?.trim()!=='选择教材') errors.push('首页空态按钮错误');
+          }else if(button?.textContent?.trim()!=='继续跟读') errors.push('首页历史态按钮错误');
+          if(homeNav&&card&&box(card).top<box(homeNav).bottom-1) errors.push('首页卡片侵入导航区');
+          if(card&&title&&progress&&button){
+            const cardBox=box(card),cardStyle=getComputedStyle(card);
+            const inner={
+              top:cardBox.top+parseFloat(cardStyle.paddingTop),
+              right:cardBox.right-parseFloat(cardStyle.paddingRight),
+              bottom:cardBox.bottom-parseFloat(cardStyle.paddingBottom),
+              left:cardBox.left+parseFloat(cardStyle.paddingLeft),
+            };
+            const titleBox=box(title),progressBox=box(progress),buttonBox=box(button);
+            if(titleBox.bottom>progressBox.top+1||progressBox.bottom>buttonBox.top+1) errors.push('首页卡片标题、说明或按钮重叠');
+            for(const [label,item] of [['标题',titleBox],['说明',progressBox],['按钮',buttonBox]]){
+              if(item.top<inner.top-1||item.right>inner.right+1||item.bottom>inner.bottom+1||item.left<inner.left-1) errors.push(`首页卡片${label}越过内边界`);
+            }
+          }
+        }
         const largeIcons=[...document.querySelectorAll('.at-icon[data-ui-icon-size]')].filter(el=>Math.abs(parseFloat(getComputedStyle(el).fontSize)-Number(el.dataset.uiIconSize))>0.5);
         if(largeIcons.length) errors.push(`图标随屏宽放大:${largeIcons.length}`);
         const tab=$('.home-tabs');
@@ -105,7 +130,7 @@ async function surface(name,state,profile) {
         const targets=[...document.querySelectorAll('.device-touch-target')].filter(el=>box(el).width<43.9||box(el).height<43.9);if(targets.length)errors.push(`命中区不足44px:${targets.length}`);
         if([...document.images].some(el=>!el.naturalWidth))errors.push('教材图片未加载成功');
         return {errors,padding,largeIcons:largeIcons.map(el=>({name:el.className,size:getComputedStyle(el).fontSize})),previewWidth:preview?box(preview).width:null,missingImages:[...document.images].filter(el=>!el.naturalWidth).length};
-      },{name,isPad,statusBarHeight:profile.statusBarHeight,safeAreaBottom,sideInset});
+      },{name,state,isPad,statusBarHeight:profile.statusBarHeight,safeAreaBottom,sideInset});
       const file=`${width}x${height}-${name}-${state}.png`;await page.screenshot({path:path.join(out,file),fullPage:state!=='directory'});
       results.push({width,height,name,state,...measure,file});
     }

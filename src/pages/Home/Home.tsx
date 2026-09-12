@@ -95,10 +95,6 @@ export default function Home() {
       </View>
 
       <View className='library-home__content device-layout__content'>
-        <Text className='library-home__heading'>
-          {progressBundle ? "继续跟读" : "选择教材"}
-        </Text>
-
         <View className={`continue-card ${progressBundle ? "" : "continue-card--empty"}`}>
           {progressBundle && progressPractice ? (
             <Image
@@ -110,7 +106,7 @@ export default function Home() {
           ) : null}
           <View className='continue-card__body'>
             <Text className='continue-card__title'>
-              {progressBundle?.book.title || "从一本喜欢的教材开始"}
+              {progressBundle?.book.title || "开始跟读练习"}
             </Text>
             <Text className='continue-card__progress'>
               {progressPractice

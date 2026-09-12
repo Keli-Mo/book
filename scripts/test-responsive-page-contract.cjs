@@ -569,7 +569,7 @@ check("热点命中壳与视觉点分离", () => {
 
 check("Pad 主要标题与操作控件不随 rpx 整窗放大", () => {
   const requirements = [
-    ["首页", [".library-home__heading"], [".continue-card__button", ".home-tabs"]],
+    ["首页", [".continue-card__title"], [".continue-card__button", ".home-tabs"]],
     ["书库", [".book-library__title"], [".book-search", ".series-filter"]],
     [
       "我的打卡",

@@ -43,16 +43,6 @@
   &__content {
     padding: 24rpx 18PX 34rpx;
   }
-
-  &__heading {
-    display: block;
-    margin: 18rpx 0 28rpx;
-    color: #171d1a;
-    font-size: 50rpx;
-    font-weight: 800;
-    line-height: 1.25;
-    letter-spacing: -1rpx;
-  }
 }
 
 .continue-card {
@@ -316,7 +306,6 @@
   .library-home__brand { font-size: 18PX; }
   .library-home__search { width: 44PX; height: 44PX; }
   .library-home__content { padding: 12PX 28PX 17PX; }
-  .library-home__heading { margin: 9PX 0 14PX; font-size: 25PX; }
 
   .continue-card {
     min-height: 165PX;

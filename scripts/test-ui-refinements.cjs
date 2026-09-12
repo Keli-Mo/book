@@ -23,10 +23,16 @@ assert.doesNotMatch(practiceStyles, /\.practice-guide\b/, "训练页不应保留
 assert.doesNotMatch(home, /班级|showClassPreview/, "首页底栏应只保留当前可用入口");
 assert.match(home, />学习</, "首页底栏应保留学习入口");
 assert.match(home, />我的</, "首页底栏应保留我的入口");
+assert.doesNotMatch(home, /library-home__heading/, "首页不应保留卡片上方的独立标题");
+assert.match(
+  home,
+  /progressBundle\?\.book\.title \|\| "开始跟读练习"/,
+  "首页卡片标题应显示真实书名或新用户练习入口",
+);
 assert.match(
   home,
   /progressBundle \? "继续跟读" : "选择教材"/,
-  "首页标题应区分真实历史和新用户选择入口",
+  "首页按钮应保留继续跟读和选择教材双态契约",
 );
 assert.doesNotMatch(home, /接着上次，读一页/, "首页不应保留生硬的引导文案");
 

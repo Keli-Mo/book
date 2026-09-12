@@ -29,6 +29,13 @@ const check = (label, run) => { try { run(); } catch (error) { failures.push(`${
     sheets[name].walkRules(rule => { if (rule.selector.split(",").map(s => s.trim()).includes(selector)) rule.walkDecls(prop, decl => found.push(decl.value)); });
     return found;
   };
+  const rules = (name, selector) => {
+    const found = [];
+    sheets[name].walkRules(rule => {
+      if (rule.selector.split(",").map(s => s.trim()).includes(selector)) found.push(rule);
+    });
+    return found;
+  };
   check("Pad 录音封面", () => assert.ok(values("MyCheckIns", ".device-layout--pad .check-in-list-card__preview", "flex-basis").includes("88PX"), "必须覆盖真实 flex-basis，不能只设置 width"));
   check("底栏文字行高", () => assert.ok(values("Home", ".home-tabs__item", "line-height").includes("16PX"), "固定图标与文字行高应独立于屏宽"));
   check("底栏固定字号", () => assert.ok(values("Home", ".home-tabs__item", "font-size").includes("12PX"), "底栏字号不应在横屏随 rpx 放大"));
@@ -52,7 +59,7 @@ const check = (label, run) => { try { run(); } catch (error) { failures.push(`${
     const selector = ".device-layout--phone.device-layout--landscape.my-check-ins .my-check-ins-state";
     assert.ok(values("MyCheckIns", selector, "padding").includes("8PX 24PX 12PX"), "短视口空态应收紧上下留白");
     assert.ok(values("MyCheckIns", `${selector}__title`, "font-size").includes("17PX"), "空态标题应使用固定字号");
-    assert.ok(values("MyCheckIns", `${selector}__button`, "min-height").includes("44PX"), "CTA 应完整保留 44PX 触控高度");
+    assert.equal(rules("MyCheckIns", `${selector}__button`).length, 0, "已删除的空态 CTA 不应残留样式");
   });
   check("Pad 打卡错误说明", () => {
     assert.ok(values("CheckInDetail", ".device-layout--pad .check-in-state__message", "font-size").includes("12PX"), "错误说明字号应固定为 12PX");
