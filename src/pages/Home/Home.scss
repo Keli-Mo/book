@@ -1,7 +1,7 @@
 .library-home {
   min-height: 100vh;
   box-sizing: border-box;
-  padding-bottom: calc(132rpx + constant(safe-area-inset-bottom));
+  padding-bottom: 132rpx;
   background:
     radial-gradient(circle at 88% 4%, rgba(210, 239, 229, 0.42), transparent 30%),
     linear-gradient(180deg, #ffffff 0%, #f7faf9 100%);
@@ -9,8 +9,8 @@
 
   &__navigation {
     box-sizing: border-box;
-    padding-right: 30rpx;
-    padding-left: 34rpx;
+    padding-right: 18PX;
+    padding-left: 18PX;
   }
 
   &__navigation-main {
@@ -41,7 +41,7 @@
   }
 
   &__content {
-    padding: 24rpx 34rpx 34rpx;
+    padding: 24rpx 18PX 34rpx;
   }
 
   &__heading {
@@ -62,7 +62,9 @@
   padding: 28rpx;
   border-radius: 36rpx;
   background: #edf8f4;
-  box-shadow: 0 18rpx 50rpx rgba(41, 101, 82, 0.08);
+  box-shadow: 0 10rpx 28rpx rgba(41, 101, 82, 0.06);
+
+  &--empty &__body { padding-left: 0; }
 
   &__cover {
     flex: 0 0 190rpx;
@@ -70,7 +72,7 @@
     height: 274rpx;
     border-radius: 8rpx;
     background: #ffffff;
-    box-shadow: 0 8rpx 24rpx rgba(30, 60, 49, 0.13);
+    box-shadow: 0 4rpx 12rpx rgba(30, 60, 49, 0.08);
   }
 
   &__body {
@@ -93,19 +95,6 @@
     margin-top: 20rpx;
     color: #53665f;
     font-size: 24rpx;
-  }
-
-  &__available {
-    display: flex;
-    margin-top: 16rpx;
-    align-items: center;
-    color: #2f856a;
-    font-size: 23rpx;
-    font-weight: 600;
-
-    .at-icon {
-      margin-right: 8rpx;
-    }
   }
 
   &__button {
@@ -170,11 +159,11 @@
 }
 
 .series-row {
+  position: relative;
   display: flex;
   min-height: 124rpx;
   box-sizing: border-box;
   align-items: center;
-  border-bottom: 1rpx solid #e5ece9;
 
   &__cover {
     flex: 0 0 86rpx;
@@ -191,6 +180,18 @@
     flex: 1;
     flex-direction: column;
     margin-left: 24rpx;
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  &::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 110rpx;
+    height: 1rpx;
+    background: #e5ece9;
+    content: "";
   }
 
   &__title {
@@ -211,17 +212,6 @@
     white-space: nowrap;
   }
 
-  &__state {
-    margin: 0 10rpx;
-    color: #7b8984;
-    font-size: 22rpx;
-    white-space: nowrap;
-
-    &.is-available {
-      color: #2f856a;
-      font-weight: 600;
-    }
-  }
 }
 
 .home-tabs {
@@ -231,10 +221,10 @@
   bottom: 0;
   left: 0;
   display: flex;
-  height: calc(112rpx + constant(safe-area-inset-bottom));
+  height: 112rpx;
   box-sizing: border-box;
   padding: 12rpx 48rpx 0;
-  padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
+  padding-bottom: 12PX;
   border-top: 1rpx solid #e5ece9;
   background: rgba(255, 255, 255, 0.97);
 
@@ -258,6 +248,14 @@
   }
 }
 
+@supports (padding-bottom: constant(safe-area-inset-bottom)) {
+  .library-home { padding-bottom: calc(132rpx + constant(safe-area-inset-bottom)); }
+  .home-tabs {
+    height: calc(112rpx + constant(safe-area-inset-bottom));
+    padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
+  }
+}
+
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .library-home {
     padding-bottom: calc(132rpx + env(safe-area-inset-bottom));
@@ -272,13 +270,13 @@
 // 刘海手机横屏时，自定义导航、正文与固定底栏都避开左右安全区。
 .device-layout--phone.device-layout--landscape {
   .library-home__navigation {
-    padding-left: calc(34rpx + constant(safe-area-inset-left));
-    padding-right: calc(30rpx + constant(safe-area-inset-right));
+    padding-left: calc(18PX + constant(safe-area-inset-left));
+    padding-right: calc(18PX + constant(safe-area-inset-right));
   }
 
   .library-home__content {
-    padding-left: calc(34rpx + constant(safe-area-inset-left));
-    padding-right: calc(34rpx + constant(safe-area-inset-right));
+    padding-left: calc(18PX + constant(safe-area-inset-left));
+    padding-right: calc(18PX + constant(safe-area-inset-right));
   }
 
   .home-tabs {
@@ -290,13 +288,13 @@
 @supports (padding-left: env(safe-area-inset-left)) {
   .device-layout--phone.device-layout--landscape {
     .library-home__navigation {
-      padding-left: calc(34rpx + env(safe-area-inset-left));
-      padding-right: calc(30rpx + env(safe-area-inset-right));
+      padding-left: calc(18PX + env(safe-area-inset-left));
+      padding-right: calc(18PX + env(safe-area-inset-right));
     }
 
     .library-home__content {
-      padding-left: calc(34rpx + env(safe-area-inset-left));
-      padding-right: calc(34rpx + env(safe-area-inset-right));
+      padding-left: calc(18PX + env(safe-area-inset-left));
+      padding-right: calc(18PX + env(safe-area-inset-right));
     }
 
     .home-tabs {
@@ -308,9 +306,10 @@
 
 // Pad 使用固定 CSS 像素保持手机端的视觉密度，避免 rpx 随整窗放大。
 .device-layout--pad {
+  .library-home__navigation { padding-right: 28PX; padding-left: 28PX; }
   .library-home__brand { font-size: 18PX; }
   .library-home__search { width: 44PX; height: 44PX; }
-  .library-home__content { padding: 12PX 17PX 17PX; }
+  .library-home__content { padding: 12PX 28PX 17PX; }
   .library-home__heading { margin: 9PX 0 14PX; font-size: 25PX; }
 
   .continue-card {
@@ -321,7 +320,6 @@
     &__body { padding: 6PX 0 0 17PX; }
     &__title { font-size: 16PX; }
     &__progress { margin-top: 10PX; font-size: 12PX; }
-    &__available { margin-top: 8PX; font-size: 12PX; }
     &__button { height: 44PX; font-size: 14PX; }
   }
 
@@ -340,17 +338,23 @@
     &__cover { width: 43PX; height: 49PX; flex-basis: 43PX; }
     &__text { margin-left: 12PX; }
     &__title { font-size: 14PX; }
-    &__range,
-    &__state { font-size: 11PX; }
+    &__range { font-size: 11PX; }
   }
 
   .home-tabs {
     min-height: 56PX;
-    height: calc(56PX + constant(safe-area-inset-bottom));
+    height: 56PX;
     padding: 6PX 24PX 0;
-    padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
+    padding-bottom: 12PX;
 
     &__item { font-size: 12PX; }
+  }
+}
+
+@supports (padding-bottom: constant(safe-area-inset-bottom)) {
+  .device-layout--pad .home-tabs {
+    height: calc(56PX + constant(safe-area-inset-bottom));
+    padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
   }
 }
 
@@ -374,7 +378,6 @@
   .series-row {
     &__title,
     &__range { white-space: normal; }
-    &__state { white-space: normal; text-align: right; }
   }
 }
 

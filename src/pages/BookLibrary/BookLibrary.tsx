@@ -121,12 +121,13 @@ export default function BookLibrary() {
                 lazyLoad
               />
               <View className='book-row__text'>
-                <Text className='book-row__title'>{book.title}</Text>
+                <Text className='book-row__title'>
+                  {seriesId === "casa" ? book.level : book.title}
+                </Text>
                 <Text className='book-row__meta'>
-                  {book.level} · {book.kind}
+                  {seriesId === "casa" ? book.title : `${book.level} · ${book.kind}`}
                 </Text>
               </View>
-              <Text className='book-row__state is-available'>可跟读</Text>
               <AtIcon value='chevron-right' size='18' color='#9aa6a2' />
             </View>
           ))}

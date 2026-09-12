@@ -7,6 +7,7 @@ import Taro, {
 } from "@tarojs/taro";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
+import { saveReadingProgress } from "@/features/bookLibrary/readingProgress";
 import {
   createTrackAudioController,
   stopAudioIfLoaded,
@@ -963,6 +964,8 @@ function PracticeSession({
   useDidShow(() => {
     const wasHidden = pageHiddenRef.current;
     pageHiddenRef.current = false;
+    const visiblePractice = practiceContextRef.current;
+    saveReadingProgress(bundle.book.id, visiblePractice.practiceIndex);
     clearHiddenStopRetry();
     // 重试可能在后台完成，返回时用同一录音的最新快照恢复路径和持久状态。
     const latest = getPendingCheckInStore().list().find((item) => item.requestId === pendingCheckInRef.current?.requestId);
@@ -1157,6 +1160,7 @@ function PracticeSession({
     pendingRestoreAttemptRef.current += 1;
     practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
     setCurrentPractice({ practiceIndex: nextIndex, practice: nextPractice });
+    saveReadingProgress(bundle.book.id, nextIndex);
     Taro.pageScrollTo({ scrollTop: 0, duration: 200 });
   };
 

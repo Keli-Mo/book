@@ -146,6 +146,7 @@ const createPage = (file, params, options = {}) => {
       audios.push(audio);
       return audio;
     },
+    ...options.taroOverrides,
   };
   const recorderCoordinator = {
     acquire() {

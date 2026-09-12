@@ -25,8 +25,8 @@ assert.match(home, />学习</, "首页底栏应保留学习入口");
 assert.match(home, />我的</, "首页底栏应保留我的入口");
 assert.match(
   home,
-  /className='library-home__heading'>继续跟读<\/Text>/,
-  "首页继续学习区域应使用直接自然的标题",
+  /progressBundle \? "继续跟读" : "选择教材"/,
+  "首页标题应区分真实历史和新用户选择入口",
 );
 assert.doesNotMatch(home, /接着上次，读一页/, "首页不应保留生硬的引导文案");
 

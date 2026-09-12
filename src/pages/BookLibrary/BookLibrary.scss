@@ -1,8 +1,10 @@
 .book-library {
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 32rpx 34rpx 64rpx;
-  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
+  padding-top: 32rpx;
+  padding-right: 18PX;
+  padding-left: 18PX;
+  padding-bottom: 24PX;
   background:
     radial-gradient(circle at 88% 2%, rgba(210, 239, 229, 0.34), transparent 25%),
     #f7faf9;
@@ -28,6 +30,10 @@
   }
 }
 
+@supports (padding-bottom: constant(safe-area-inset-bottom)) {
+  .book-library { padding-bottom: calc(24PX + constant(safe-area-inset-bottom)); }
+}
+
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .book-library { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
 }
@@ -42,21 +48,21 @@
 .device-layout--pad {
   &.book-library {
     padding-top: 16PX;
-    padding-right: 17PX;
-    padding-left: 17PX;
+    padding-right: 28PX;
+    padding-left: 28PX;
   }
 
   .book-library__heading { padding: 5PX 2PX 14PX; }
   .book-library__title { font-size: 24PX; }
   .book-library__count { margin-top: 4PX; font-size: 12PX; }
 
-  // Pad 根容器固定 17PX 内边距；筛选栏只回补这 17PX，避免 34rpx 随宽屏放大后横向溢出。
+  // Pad 筛选栏只回补页面的 28PX 基础留白。
   .series-filters {
-    width: calc(100% + 34PX);
-    margin-left: -17PX;
-    margin-right: -17PX;
+    width: calc(100% + 56PX);
+    margin-left: -28PX;
+    margin-right: -28PX;
 
-    &__track { padding-right: 17PX; padding-left: 17PX; }
+    &__track { padding-right: 28PX; padding-left: 28PX; }
   }
 
   .book-search {
@@ -75,15 +81,13 @@
     &__cover { width: 51PX; height: 68PX; flex-basis: 51PX; }
     &__text { margin-left: 11PX; }
     &__title { font-size: 13PX; }
-    &__meta,
-    &__state { font-size: 11PX; }
+    &__meta { font-size: 11PX; }
   }
 }
 
 @media (max-width: 360PX) {
   .book-row {
-    &__meta,
-    &__state { white-space: normal; }
+    &__meta { white-space: normal; }
   }
 }
 
@@ -124,37 +128,38 @@
 
 // 横屏刘海机型的书库根容器避开左右不可用区域。
 .device-layout--phone.device-layout--landscape.book-library {
-  padding-left: calc(34rpx + constant(safe-area-inset-left));
-  padding-right: calc(34rpx + constant(safe-area-inset-right));
+  padding-left: calc(18PX + constant(safe-area-inset-left));
+  padding-right: calc(18PX + constant(safe-area-inset-right));
 }
 
 @supports (padding-left: env(safe-area-inset-left)) {
   .device-layout--phone.device-layout--landscape.book-library {
-    padding-left: calc(34rpx + env(safe-area-inset-left));
-    padding-right: calc(34rpx + env(safe-area-inset-right));
+    padding-left: calc(18PX + env(safe-area-inset-left));
+    padding-right: calc(18PX + env(safe-area-inset-right));
   }
 }
 
 .series-filters {
-  width: calc(100% + 68rpx);
-  margin: 24rpx -34rpx 18rpx;
+  width: calc(100% + 36PX);
+  margin: 24rpx -18PX 18rpx;
   white-space: nowrap;
 
   &__track {
     display: inline-flex;
-    padding: 0 34rpx;
+    padding: 0 18PX;
   }
 }
 
 .series-filter {
   display: flex;
   height: 68rpx;
+  min-height: 44PX;
   box-sizing: border-box;
   margin-right: 14rpx;
   padding: 0 24rpx;
   align-items: center;
   justify-content: center;
-  border: 1rpx solid #dce7e3;
+  border: 1rpx solid transparent;
   border-radius: 34rpx;
   background: #ffffff;
   color: #60716a;
@@ -168,16 +173,14 @@
   }
 }
 
-.book-list {
-  border-top: 1rpx solid #e5ece9;
-}
+.book-list { border-top: 1rpx solid #e5ece9; }
 
 .book-row {
+  position: relative;
   display: flex;
   min-height: 164rpx;
   box-sizing: border-box;
   align-items: center;
-  border-bottom: 1rpx solid #e5ece9;
 
   &__cover {
     flex: 0 0 102rpx;
@@ -194,6 +197,18 @@
     flex: 1;
     flex-direction: column;
     margin-left: 22rpx;
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  &::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 124rpx;
+    height: 1rpx;
+    background: #e5ece9;
+    content: "";
   }
 
   &__title {
@@ -216,17 +231,6 @@
     white-space: nowrap;
   }
 
-  &__state {
-    margin: 0 10rpx;
-    color: #7b8984;
-    font-size: 21rpx;
-    white-space: nowrap;
-
-    &.is-available {
-      color: #2f856a;
-      font-weight: 600;
-    }
-  }
 }
 
 .book-empty {

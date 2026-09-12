@@ -124,39 +124,6 @@ const isDefaultPracticeNavigation = (node, checker) => {
       isDefaultPracticeUrl(property.initializer, checker),
   );
 };
-const getVariableArrowFunction = (sourceFile, name) => {
-  const declaration = findNodes(
-    sourceFile,
-    (node) =>
-      ts.isVariableDeclaration(node) &&
-      isIdentifier(node.name, name) &&
-      node.initializer &&
-      ts.isArrowFunction(node.initializer),
-  )[0];
-  return declaration?.initializer;
-};
-const assertHomeDefaultEntry = (source) => {
-  const { checker, sourceFile } = createTsxProgram("Home.tsx", source);
-  const startPractice = getVariableArrowFunction(sourceFile, "startPractice");
-  assert.ok(startPractice, "首页必须保留 startPractice 实际点击处理器");
-  assert.ok(
-    findNodes(startPractice.body, (node) => isDefaultPracticeNavigation(node, checker))
-      .length === 1,
-    "首页 startPractice 必须用从 bookPractice 导入的 DEFAULT_BOOK_ID 导航至实际训练路由",
-  );
-  assert.ok(
-    findNodes(
-      sourceFile,
-      (node) =>
-        ts.isJsxAttribute(node) &&
-        isIdentifier(node.name, "onClick") &&
-        node.initializer &&
-        ts.isJsxExpression(node.initializer) &&
-        isIdentifier(node.initializer.expression, "startPractice"),
-    ).length === 1,
-    "首页继续跟读按钮必须绑定 startPractice",
-  );
-};
 const assertEmptyCheckInDefaultEntry = (source) => {
   const { checker, sourceFile } = createTsxProgram("MyCheckIns.tsx", source);
   const firstPracticeButton = findNodes(
@@ -293,7 +260,8 @@ for (const [name, invalidValue] of [
   assertNavigationFallback(`statusBarHeight 为${name}`, 390, invalidValue, validMenuButton);
 }
 
-assertHomeDefaultEntry(home);
+assert.doesNotMatch(home, /DEFAULT_BOOK_ID/, "首页不得伪造固定教材的上次进度");
+assert.match(home, /readReadingProgress/, "首页入口应来自已校验的本机阅读进度");
 assertEmptyCheckInDefaultEntry(myCheckIns);
 
 const assertDefaultBookReferenceUsesPracticeImport = (source) => {

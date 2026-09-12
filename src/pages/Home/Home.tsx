@@ -1,22 +1,24 @@
 import { Image, Text, View } from "@tarojs/components";
-import Taro, { useShareAppMessage } from "@tarojs/taro";
+import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
+import { useState } from "react";
 import AtIcon from "taro-ui/lib/components/icon";
 import {
-  BOOKS,
   BOOK_SERIES,
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
 import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavigation";
+import { readReadingProgress, type ReadingProgress } from "@/features/bookLibrary/readingProgress";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
-import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
+import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import { sharedImage } from "@/constant";
 
 import "./Home.scss";
 
-const PRIMARY_BOOK = BOOKS.find((book) => book.id === DEFAULT_BOOK_ID) || BOOKS[0];
-
 export default function Home() {
+  const [readingProgress, setReadingProgress] = useState<ReadingProgress | null>(
+    () => readReadingProgress(),
+  );
   const layout = useDeviceLayout();
   // 首页采用用户确认的单栏方案，宽 Pad 也只增加留白，不改成信息双列。
   const layoutClassName = buildDeviceLayoutClassName({
@@ -28,12 +30,22 @@ export default function Home() {
     layout.statusBarHeight,
     Taro.getMenuButtonBoundingClientRect(),
   );
+  const progressBundle = readingProgress
+    ? buildBookPracticeBundle(readingProgress.bookId)
+    : null;
+  const progressPractice = progressBundle && readingProgress
+    ? progressBundle.practices[readingProgress.practiceIndex]
+    : null;
 
   useShareAppMessage(() => ({
     title: "海沙牛娃英语听力与跟读训练",
     path: "pages/Home/Home",
     imageUrl: sharedImage,
   }));
+
+  useDidShow(() => {
+    setReadingProgress(readReadingProgress());
+  });
 
   const openLibrary = (seriesId: BookSeriesId | "all" = "all") => {
     Taro.navigateTo({
@@ -42,9 +54,12 @@ export default function Home() {
   };
 
   const startPractice = () => {
-    // 默认入口也显式传递教材，避免训练页自行猜测当前教材。
+    if (!readingProgress || !progressBundle || !progressPractice) {
+      openLibrary("all");
+      return;
+    }
     Taro.navigateTo({
-      url: `/pages/Practice/Practice?bookId=${DEFAULT_BOOK_ID}&practice=0`,
+      url: `/pages/Practice/Practice?bookId=${encodeURIComponent(readingProgress.bookId)}&practice=${readingProgress.practiceIndex}`,
     });
   };
 
@@ -80,28 +95,34 @@ export default function Home() {
       </View>
 
       <View className='library-home__content device-layout__content'>
-        <Text className='library-home__heading'>继续跟读</Text>
+        <Text className='library-home__heading'>
+          {progressBundle ? "继续跟读" : "选择教材"}
+        </Text>
 
-        <View className='continue-card'>
-          <Image
-            className='continue-card__cover'
-            src={PRIMARY_BOOK.cover}
-            mode='aspectFit'
-            lazyLoad
-          />
+        <View className={`continue-card ${progressBundle ? "" : "continue-card--empty"}`}>
+          {progressBundle && progressPractice ? (
+            <Image
+              className='continue-card__cover'
+              src={progressBundle.book.cover}
+              mode='aspectFit'
+              lazyLoad
+            />
+          ) : null}
           <View className='continue-card__body'>
-            <Text className='continue-card__title'>{PRIMARY_BOOK.title}</Text>
-            <Text className='continue-card__progress'>上次练到 Unit 1 · 课文</Text>
-            <View className='continue-card__available'>
-              <AtIcon value='check-circle' size='16' color='#2f856a' />
-              <Text>可跟读</Text>
-            </View>
+            <Text className='continue-card__title'>
+              {progressBundle?.book.title || "从一本喜欢的教材开始"}
+            </Text>
+            <Text className='continue-card__progress'>
+              {progressPractice
+                ? `${progressPractice.sectionTitle} · 教材第 ${progressPractice.pageNumber} 页`
+                : "还没有跟读记录，先去书库选择教材"}
+            </Text>
             <View
               className='continue-card__button device-touch-target'
               hoverClass='is-pressed'
               onClick={startPractice}
             >
-              <Text>继续跟读</Text>
+              <Text>{progressBundle ? "继续跟读" : "选择教材"}</Text>
             </View>
           </View>
         </View>
@@ -140,15 +161,6 @@ export default function Home() {
                   <Text className='series-row__title'>{series.title}</Text>
                   <Text className='series-row__range'>{series.rangeLabel}</Text>
                 </View>
-                <Text
-                  className={`series-row__state ${
-                    series.availableCount ? "is-available" : ""
-                  }`}
-                >
-                  {series.availableCount
-                    ? `${series.availableCount} 册可练`
-                    : "待上线"}
-                </Text>
                 <AtIcon value='chevron-right' size='18' color='#9aa6a2' />
               </View>
             ))}

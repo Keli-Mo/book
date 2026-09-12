@@ -393,12 +393,12 @@ check("横屏手机限制内容宽度并保留左右安全区", () => {
   );
 
   const home = pages.find((page) => page.name === "首页");
-  horizontalSafeArea(home.styles, ".device-layout--phone.device-layout--landscape .library-home__navigation", "34rpx", "30rpx");
-  horizontalSafeArea(home.styles, ".device-layout--phone.device-layout--landscape .library-home__content", "34rpx");
+  horizontalSafeArea(home.styles, ".device-layout--phone.device-layout--landscape .library-home__navigation", "18PX");
+  horizontalSafeArea(home.styles, ".device-layout--phone.device-layout--landscape .library-home__content", "18PX");
   horizontalSafeArea(home.styles, ".device-layout--phone.device-layout--landscape .home-tabs", "48rpx");
 
   for (const [name, selector, base] of [
-    ["书库", ".device-layout--phone.device-layout--landscape.book-library", "34rpx"],
+    ["书库", ".device-layout--phone.device-layout--landscape.book-library", "18PX"],
     ["训练", ".device-layout--phone.device-layout--landscape.practice-page", "26rpx"],
     ["打卡详情", ".device-layout--phone.device-layout--landscape.check-in-detail", "30rpx"],
     ["我的打卡", ".device-layout--phone.device-layout--landscape.my-check-ins", "28rpx"],
@@ -428,16 +428,16 @@ check("Pad 书库系列筛选不会超出根容器", () => {
   const library = pages.find((page) => page.name === "书库");
   assert.ok(
     ruleWith(library.styles, [".device-layout--pad", ".series-filters"], {
-      width: "calc(100% + 34PX)",
-      "margin-left": "-17PX",
-      "margin-right": "-17PX",
+      width: "calc(100% + 56PX)",
+      "margin-left": "-28PX",
+      "margin-right": "-28PX",
     }),
-    "Pad 固定 17PX 页面内边距后，全出血筛选栏必须精确回补 17PX，不能沿用随屏放大的 34rpx",
+    "Pad 固定 28PX 页面内边距后，全出血筛选栏必须精确回补 28PX",
   );
   assert.ok(
     ruleWith(library.styles, [".device-layout--pad", ".series-filters__track"], {
-      "padding-left": "17PX",
-      "padding-right": "17PX",
+      "padding-left": "28PX",
+      "padding-right": "28PX",
     }),
   );
 });
