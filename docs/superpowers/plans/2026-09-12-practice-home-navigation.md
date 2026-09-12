@@ -103,4 +103,4 @@ const goBack = () => {
 - [x] 扩充 `scripts/audit-ui-layout.cjs` 的 Practice 外壳/导航与正文边界检查，沿用18状态×8窗口矩阵；构建后运行144场景，检查代表截图。
   构建后发现共享组件样式被提取为 `app.wxss` 引用 `app-origin.wxss` / `common.wxss`，增加 `scripts/helpers/read-wxss.cjs` 和 `scripts/test-wxss-imports.cjs` 递归展开本地引用，保持原次序与重复引用，循环/缺失时报错；避免受控截图漏掉公共导航样式。仅验证工具变更。
 - [x] 类型检查沿用兼容参数、相关文件 ESLint 与 git diff --check；运行全39脚本，进程停滞必须记录并单独重跑，不能误报一次全绿。新增WXSS测试另有通过证据。
-- [ ] 最终全分支复核、写验收记录，保留本地分支和工作树，不合并/推送/部署。
+- [x] 最终全分支复核、写验收记录，保留本地分支和工作树，不合并/推送/部署。
