@@ -11,7 +11,7 @@
   flex: 1;
   min-height: 0;
   padding: 42rpx 30rpx 80rpx;
-  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
+  padding-bottom: 24PX;
   box-sizing: border-box;
   background:
     radial-gradient(circle at 50% 0, rgba(68, 161, 128, 0.18), transparent 32%),
@@ -103,7 +103,7 @@
   flex: 1;
   min-height: 0;
   padding: 50rpx;
-  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
+  padding-bottom: 24PX;
   box-sizing: border-box;
   background: #f4f7f5;
   color: #71827b;
@@ -114,6 +114,11 @@
   &__button { width: 280rpx; margin-top: 32rpx; background: #2f896c; color: #ffffff; }
 }
 
+@supports (padding-bottom: constant(safe-area-inset-bottom)) {
+  .check-in-detail,
+  .check-in-state { padding-bottom: calc(24PX + constant(safe-area-inset-bottom)); }
+}
+
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .check-in-detail,
   .check-in-state { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
@@ -121,8 +126,15 @@
 
 // 横屏刘海机型保留左右安全区，详情卡片与操作按钮不贴入缺口。
 .device-layout--phone.device-layout--landscape.check-in-detail {
-  padding-left: calc(30rpx + constant(safe-area-inset-left));
-  padding-right: calc(30rpx + constant(safe-area-inset-right));
+  padding-left: 30rpx;
+  padding-right: 30rpx;
+}
+
+@supports (padding-left: constant(safe-area-inset-left)) {
+  .device-layout--phone.device-layout--landscape.check-in-detail {
+    padding-left: calc(30rpx + constant(safe-area-inset-left));
+    padding-right: calc(30rpx + constant(safe-area-inset-right));
+  }
 }
 
 @supports (padding-left: env(safe-area-inset-left)) {
@@ -171,6 +183,7 @@
   }
 
   .check-in-state__title { font-size: 17PX; }
+  .check-in-state__message { margin-top: 9PX; font-size: 12PX; }
   .check-in-state__button { min-height: 44PX; }
 }
 

@@ -1,7 +1,7 @@
 .library-home {
   min-height: 100vh;
   box-sizing: border-box;
-  padding-bottom: 132rpx;
+  padding-bottom: 76PX;
   background:
     radial-gradient(circle at 88% 4%, rgba(210, 239, 229, 0.42), transparent 30%),
     linear-gradient(180deg, #ffffff 0%, #f7faf9 100%);
@@ -225,7 +225,7 @@
   bottom: 0;
   left: 0;
   display: flex;
-  height: 112rpx;
+  height: 64PX;
   box-sizing: border-box;
   padding: 12rpx 48rpx 0;
   padding-bottom: 12PX;
@@ -235,14 +235,16 @@
   &__item {
     display: flex;
     flex: 1;
+    flex-shrink: 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     color: #7b827f;
     font-size: 22rpx;
+    line-height: 16PX;
 
     > text {
-      margin-top: 4rpx;
+      margin-top: 4PX;
     }
 
     &.is-active {
@@ -253,20 +255,20 @@
 }
 
 @supports (padding-bottom: constant(safe-area-inset-bottom)) {
-  .library-home { padding-bottom: calc(132rpx + constant(safe-area-inset-bottom)); }
+  .library-home { padding-bottom: calc(76PX + constant(safe-area-inset-bottom)); }
   .home-tabs {
-    height: calc(112rpx + constant(safe-area-inset-bottom));
+    height: calc(64PX + constant(safe-area-inset-bottom));
     padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
   }
 }
 
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .library-home {
-    padding-bottom: calc(132rpx + env(safe-area-inset-bottom));
+    padding-bottom: calc(76PX + env(safe-area-inset-bottom));
   }
 
   .home-tabs {
-    height: calc(112rpx + env(safe-area-inset-bottom));
+    height: calc(64PX + env(safe-area-inset-bottom));
     padding-bottom: calc(12PX + env(safe-area-inset-bottom));
   }
 }
@@ -348,8 +350,8 @@
   }
 
   .home-tabs {
-    min-height: 56PX;
-    height: 56PX;
+    min-height: 64PX;
+    height: 64PX;
     padding: 6PX 24PX 0;
     padding-bottom: 12PX;
 
@@ -359,14 +361,14 @@
 
 @supports (padding-bottom: constant(safe-area-inset-bottom)) {
   .device-layout--pad .home-tabs {
-    height: calc(56PX + constant(safe-area-inset-bottom));
+    height: calc(64PX + constant(safe-area-inset-bottom));
     padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
   }
 }
 
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .device-layout--pad .home-tabs {
-    height: calc(56PX + env(safe-area-inset-bottom));
+    height: calc(64PX + env(safe-area-inset-bottom));
     padding-bottom: calc(12PX + env(safe-area-inset-bottom));
   }
 }

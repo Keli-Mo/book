@@ -1,7 +1,7 @@
 .practice-page {
   min-height: 100vh;
   padding: 34rpx 26rpx 80rpx;
-  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
+  padding-bottom: 24PX;
   box-sizing: border-box;
   background: #f4f7f5;
   color: #24362f;
@@ -245,7 +245,7 @@ button[disabled] { opacity: 0.5; }
   justify-content: center;
   min-height: 100vh;
   padding: 32rpx;
-  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
+  padding-bottom: 24PX;
   box-sizing: border-box;
   flex-direction: column;
   color: #7c8984;
@@ -271,9 +271,13 @@ button[disabled] { opacity: 0.5; }
 }
 
 .practice-directory-sheet {
+  display: flex;
+  overflow: hidden;
   width: 100%;
+  height: 78vh;
   max-height: 78vh;
-  padding-bottom: calc(12PX + constant(safe-area-inset-bottom));
+  flex-direction: column;
+  padding-bottom: 12PX;
   box-sizing: border-box;
   border-radius: 32rpx 32rpx 0 0;
   background: #f5f8f6;
@@ -283,6 +287,7 @@ button[disabled] { opacity: 0.5; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
   padding: 30rpx 30rpx 22rpx;
   background: #ffffff;
 }
@@ -296,7 +301,7 @@ button[disabled] { opacity: 0.5; }
   font-size: 25rpx;
   font-weight: 700;
 }
-.practice-directory-scroll { height: 62vh; }
+.practice-directory-scroll { height: auto; min-height: 0; flex: 1; }
 .practice-directory-group { padding: 26rpx 26rpx 0; }
 .practice-directory-group__title { font-size: 27rpx; font-weight: 800; }
 .practice-directory-items {
@@ -312,6 +317,12 @@ button[disabled] { opacity: 0.5; }
   border: 2rpx solid #d6e0dc;
   border-radius: 18rpx;
   background: #ffffff;
+}
+
+@supports (padding-bottom: constant(safe-area-inset-bottom)) {
+  .practice-page,
+  .practice-empty { padding-bottom: calc(24PX + constant(safe-area-inset-bottom)); }
+  .practice-directory-sheet { padding-bottom: calc(12PX + constant(safe-area-inset-bottom)); }
 }
 
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
@@ -343,8 +354,8 @@ button[disabled] { opacity: 0.5; }
 // 横屏手机仍使用底部目录，但让滚动区消费剩余高度，避免头部与 62vh 叠加溢出。
 .device-layout--phone.device-layout--landscape {
   &.practice-page {
-    padding-left: calc(26rpx + constant(safe-area-inset-left));
-    padding-right: calc(26rpx + constant(safe-area-inset-right));
+    padding-left: 26rpx;
+    padding-right: 26rpx;
   }
 
   .practice-directory-sheet {
@@ -353,14 +364,28 @@ button[disabled] { opacity: 0.5; }
     height: 78vh;
     max-height: 78vh;
     flex-direction: column;
-    padding-left: calc(0PX + constant(safe-area-inset-left));
-    padding-right: calc(0PX + constant(safe-area-inset-right));
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .practice-directory-scroll {
     height: auto;
     min-height: 0;
     flex: 1;
+  }
+}
+
+@supports (padding-left: constant(safe-area-inset-left)) {
+  .device-layout--phone.device-layout--landscape {
+    &.practice-page {
+      padding-left: calc(26rpx + constant(safe-area-inset-left));
+      padding-right: calc(26rpx + constant(safe-area-inset-right));
+    }
+
+    .practice-directory-sheet {
+      padding-left: calc(0PX + constant(safe-area-inset-left));
+      padding-right: calc(0PX + constant(safe-area-inset-right));
+    }
   }
 }
 

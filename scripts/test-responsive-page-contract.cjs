@@ -25,7 +25,7 @@ const pages = [
     file: "src/pages/Home/Home.tsx",
     config: "src/pages/Home/Home.config.ts",
     scss: "src/pages/Home/Home.scss",
-    safe: [[".library-home", "132rpx"], [".home-tabs", 12]],
+    safe: [[".library-home", 76], [".home-tabs", 12]],
     targets: ["library-home__search", "continue-card__button", "series-section__all", "home-tabs__item"],
   },
   {

@@ -256,6 +256,13 @@
   }
 }
 
+.device-layout--pad .book-empty {
+  min-height: 260PX;
+
+  &__title { font-size: 17PX; }
+  &__tip { font-size: 12PX; }
+}
+
 .is-pressed {
   opacity: 0.68;
 }

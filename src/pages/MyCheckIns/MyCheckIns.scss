@@ -1,7 +1,7 @@
 .my-check-ins {
   min-height: 100vh;
   padding: 38rpx 28rpx 80rpx;
-  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
+  padding-bottom: 24PX;
   box-sizing: border-box;
   background: #f4f7f5;
   color: #24362f;
@@ -81,7 +81,7 @@
   }
 
   .check-in-list-card {
-    &__preview { width: 88PX; min-height: 122PX; padding: 6PX; }
+    &__preview { width: 88PX; min-height: 122PX; flex-basis: 88PX; padding: 6PX; }
     &__image { height: 110PX; }
     &__content { padding: 13PX 12PX 11PX; }
     &__section { font-size: 14PX; }
@@ -186,9 +186,10 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 0;
+  flex: 1;
   padding: 52rpx;
-  padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
+  padding-bottom: 24PX;
   box-sizing: border-box;
   background: #f4f7f5;
   color: #71827b;
@@ -210,6 +211,11 @@
   }
 }
 
+@supports (padding-bottom: constant(safe-area-inset-bottom)) {
+  .my-check-ins,
+  .my-check-ins-state { padding-bottom: calc(24PX + constant(safe-area-inset-bottom)); }
+}
+
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .my-check-ins,
   .my-check-ins-state { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
@@ -217,8 +223,15 @@
 
 // 横屏刘海机型保留左右安全区，列表卡片与操作按钮保持完整勿被裁切。
 .device-layout--phone.device-layout--landscape.my-check-ins {
-  padding-left: calc(28rpx + constant(safe-area-inset-left));
-  padding-right: calc(28rpx + constant(safe-area-inset-right));
+  padding-left: 28rpx;
+  padding-right: 28rpx;
+}
+
+@supports (padding-left: constant(safe-area-inset-left)) {
+  .device-layout--phone.device-layout--landscape.my-check-ins {
+    padding-left: calc(28rpx + constant(safe-area-inset-left));
+    padding-right: calc(28rpx + constant(safe-area-inset-right));
+  }
 }
 
 @supports (padding-left: env(safe-area-inset-left)) {
