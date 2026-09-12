@@ -2,7 +2,7 @@ import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidHide, useDidShow, useUnload } from "@tarojs/taro";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
-import { getPendingCheckInStore } from "@/features/listeningPractice/pendingCheckInRuntime";
+import { getPendingCheckInStore, logRecordingDiagnostic } from "@/features/listeningPractice/pendingCheckInRuntime";
 import { mergeRecordingLibrary } from "@/features/listeningPractice/recordingLibraryView";
 import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
 import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
@@ -20,6 +20,7 @@ export default function MyCheckIns() {
   const [cloudRecords, setCloudRecords] = useState<CheckInSummary[]>([]);
   const [cloudNotice, setCloudNotice] = useState("");
   const visibleRef = useRef(false);
+  const deletingLocalRef = useRef(new Set<string>());
   const libraryRecords = useMemo(
     () => mergeRecordingLibrary(localRecords, cloudRecords),
     [cloudRecords, localRecords],
@@ -50,22 +51,42 @@ export default function MyCheckIns() {
   useUnload(() => { visibleRef.current = false; });
 
   const deleteLocal = async (localId: string) => {
+    if (deletingLocalRef.current.has(localId)) {
+      logRecordingDiagnostic("delete.duplicate_ignored", { requestId: localId });
+      return;
+    }
     if (submissionCoordinator.isSubmitting(localId)) {
+      logRecordingDiagnostic("delete.blocked_sharing", { requestId: localId });
       Taro.showToast({ title: "分享处理中，暂时不能删除", icon: "none" });
       return;
     }
-    const confirmation = await Taro.showModal({
-      title: "删除本机录音？",
-      content: "只删除本机文件；已经发出的云端分享不受影响。此操作无法撤销。",
-      confirmText: "删除",
-      confirmColor: "#d9573f",
-    });
-    if (!confirmation.confirm || submissionCoordinator.isSubmitting(localId)) return;
-    if (!await pendingStore.remove(localId)) {
-      Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
-      return;
+    deletingLocalRef.current.add(localId);
+    try {
+      const confirmation = await Taro.showModal({
+        title: "删除本机录音？",
+        content: "只删除本机文件；已经发出的云端分享不受影响。此操作无法撤销。",
+        confirmText: "删除",
+        confirmColor: "#d9573f",
+      });
+      if (!confirmation.confirm) {
+        logRecordingDiagnostic("delete.cancelled", { requestId: localId });
+        return;
+      }
+      if (submissionCoordinator.isSubmitting(localId)) {
+        logRecordingDiagnostic("delete.blocked_sharing", { requestId: localId });
+        return;
+      }
+      if (!await pendingStore.remove(localId)) {
+        if (visibleRef.current) Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
+        return;
+      }
+      if (visibleRef.current) setLocalRecords((items) => items.filter((item) => item.requestId !== localId));
+    } catch (error) {
+      logRecordingDiagnostic("delete.unexpected.failed", { requestId: localId, error });
+      if (visibleRef.current) Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
+    } finally {
+      deletingLocalRef.current.delete(localId);
     }
-    setLocalRecords((items) => items.filter((item) => item.requestId !== localId));
   };
 
   const deleteCloud = async (record: CheckInSummary) => {

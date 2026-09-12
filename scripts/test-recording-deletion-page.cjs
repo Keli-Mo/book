@@ -1,0 +1,74 @@
+/* eslint-disable import/no-commonjs */
+const assert = require("node:assert/strict");
+const { createPage, byClass, elements } = require("./test-practice-book-route.cjs");
+const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
+const record = {
+  requestId: "a".repeat(32), localPath: "wxfile://store/private.mp3", recoverable: true,
+  context: { bookId: "3", bookTitle: "测试教材", practiceId: "3-page-4", practiceIndex: 0, pageNumber: 4, imageUrl: "page.png", sectionTitle: "Unit 1" },
+  durationMs: 1000, fileSizeBytes: 4096, status: "local", updatedAtMs: 100,
+};
+
+async function fixture({ remove = async () => true, confirm = true, sharing = false } = {}) {
+  const logs = [], toasts = [];
+  let calls = 0, cloudDeletes = 0;
+  const page = createPage("src/pages/MyCheckIns/MyCheckIns.tsx", {}, {
+    showModal: async () => ({ confirm }),
+    showToast: input => toasts.push(input),
+    overrides: {
+      "@/features/listeningPractice/pendingCheckInRuntime": {
+        getPendingCheckInStore: () => ({ ready: async () => {}, cleanup: async () => {}, list: () => [record], remove: async () => { calls++; return remove(); } }),
+        logRecordingDiagnostic: (...args) => logs.push(args),
+      },
+      "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => ({ isSubmitting: () => sharing }) },
+      "@/services/cloudCheckIn": { listMyCheckIns: async () => [], removeCheckIn: async () => { cloudDeletes++; } },
+    },
+  });
+  page.render(); page.show(); await settle();
+  const click = () => byClass(page.render(), "check-in-list-card__delete").props.onClick();
+  const hasCard = () => elements(page.render()).some(node => node.props?.className?.includes("check-in-list-card__delete"));
+  return { page, click, hasCard, logs, toasts, calls: () => calls, cloudDeletes: () => cloudDeletes };
+}
+
+(async () => {
+  const success = await fixture();
+  await success.click();
+  assert.equal(success.hasCard(), false);
+  assert.equal(success.cloudDeletes(), 0, "本地删除不得删除云分享");
+  success.page.dispose();
+
+  const fail = await fixture({ remove: async () => false });
+  await fail.click();
+  assert.equal(fail.hasCard(), true);
+  assert.equal(fail.toasts[0].title, "删除失败，请稍后重试");
+  fail.page.dispose();
+
+  const thrown = await fixture({ remove: async () => { throw new Error("native internal failure"); } });
+  await assert.doesNotReject(thrown.click(), "原生/仓储意外异常必须在页面收口，不能产生未处理 Promise");
+  assert.equal(thrown.hasCard(), true);
+  assert.equal(thrown.toasts[0].title, "删除失败，请稍后重试");
+  assert.ok(thrown.logs.some(([stage]) => stage === "delete.unexpected.failed"));
+  assert.equal(JSON.stringify(thrown.toasts).includes("native internal failure"), false, "用户不显示底层错误");
+  thrown.page.dispose();
+
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const double = await fixture({ remove: async () => { await gate; return true; } });
+  const first = double.click();
+  const second = double.click();
+  await settle();
+  assert.equal(double.calls(), 1, "连续点击不得重复删除同一录音");
+  assert.equal(double.page.modalCalls.length, 1, "弹确认框期间就应互斥");
+  release(); await Promise.all([first, second]);
+  assert.equal(double.hasCard(), false);
+  double.page.dispose();
+
+  for (const state of [{ confirm: false }, { sharing: true }]) {
+    const blocked = await fixture(state);
+    await blocked.click();
+    assert.equal(blocked.calls(), 0);
+    assert.equal(blocked.hasCard(), true);
+    assert.ok(blocked.logs.some(([stage]) => stage === (state.sharing ? "delete.blocked_sharing" : "delete.cancelled")));
+    blocked.page.dispose();
+  }
+  console.log("录音删除页面测试通过：成功、失败、异常、重复点击、取消、分享中阻止及简洁提示。");
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -54,7 +54,7 @@ export type PendingCheckInFileAdapter = {
     | SavedPendingRecordingFile
     | Promise<SavedPendingRecordingFile>;
   exists(filePath: string): boolean | Promise<boolean>;
-  remove(filePath: string): void | Promise<void>;
+  remove(filePath: string, kind: "saved" | "temporary"): void | Promise<void>;
 };
 
 export type PendingCheckInAdapters = {
@@ -62,6 +62,7 @@ export type PendingCheckInAdapters = {
   file: PendingCheckInFileAdapter;
   clock: { now(): number };
   random: { hex(): string };
+  diagnose?(stage: string, details?: { requestId?: string; error?: unknown }): void;
 };
 
 export type SavePendingRecordingInput = {
@@ -175,6 +176,10 @@ const capacityMessage = (countExceeded: boolean) =>
  * 待上传项只持久化已由 saveFile 移入本地文件系统的路径；临时路径只在本次会话内保留。
  */
 export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
+  // 诊断不能影响保存、删除结果；不向页面传播底层错误。
+  const diagnose = (stage: string, details?: { requestId?: string; error?: unknown }) => {
+    try { adapters.diagnose?.(stage, details); } catch (_error) { /* 日志故障不阻断录音操作。 */ }
+  };
   let persistedItems: PendingCheckIn[] = [];
   const temporaryItems = new Map<string, PendingCheckIn>();
   // 文件移动成功与索引写入成功是两个阶段；会话内牢记前者，避免重试移动失效路径。
@@ -211,7 +216,8 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
             : [];
           metadataReadable = true;
         })
-        .catch(() => {
+        .catch((error) => {
+          diagnose("metadata.read.failed", { error });
           // 列表保持可用，但不允许把“读取失败”误当成空库后覆盖旧索引；下次操作会重试读取。
           persistedItems = [];
           metadataReadable = false;
@@ -237,7 +243,8 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       await persistItems(persistedItems);
       metadataDirty = false;
       return true;
-    } catch (_error) {
+    } catch (error) {
+      diagnose("metadata.write.failed", { error });
       return false;
     }
   };
@@ -597,24 +604,44 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   };
 
   const removeInternal = async (requestId: string): Promise<boolean> => {
+    diagnose("delete.start", { requestId });
     await ready();
-    await flushDirtyMetadata();
     const temporaryItem = temporaryItems.get(requestId);
+    if (!metadataReadable && !temporaryItem) {
+      diagnose("delete.metadata.unavailable.failed", { requestId });
+      return false;
+    }
+    await flushDirtyMetadata();
     const item =
       temporaryItem ||
       persistedItems.find((current) => current.requestId === requestId);
-    if (!item) return false;
+    if (!item) {
+      diagnose("delete.already_removed", { requestId });
+      return true;
+    }
+    let exists: boolean;
     try {
-      if (await adapters.file.exists(item.localPath)) {
-        await adapters.file.remove(item.localPath);
-      }
-    } catch (_error) {
+      exists = await adapters.file.exists(item.localPath);
+    } catch (error) {
+      diagnose("delete.access.failed", { requestId, error });
       return false;
     }
+    try {
+      if (exists) {
+        // recoverable=false 也可能已完成 saveFile，仅索引写入失败，不能当作临时文件删除。
+        const kind = !temporaryItem || savedTemporaryIds.has(requestId) ? "saved" : "temporary";
+        await adapters.file.remove(item.localPath, kind);
+      }
+    } catch (error) {
+      diagnose("delete.file.failed", { requestId, error });
+      return false;
+    }
+    diagnose(exists ? "delete.file.success" : "delete.file.already_missing", { requestId });
 
     if (temporaryItem) {
       temporaryItems.delete(requestId);
       savedTemporaryIds.delete(requestId);
+      diagnose("delete.success", { requestId });
       return true;
     }
 
@@ -622,7 +649,10 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       (current) => current.requestId !== requestId,
     );
     metadataDirty = true;
-    return flushDirtyMetadata();
+    const written = await flushDirtyMetadata();
+    diagnose(written ? "delete.success" : "delete.metadata.pending", { requestId });
+    // 文件已确认删除，页面应移除失效卡片；索引失败保留 dirty 标记，后续 cleanup/mutation 补写。
+    return true;
   };
 
   const cleanup = () => enqueueMutation(cleanupInternal);

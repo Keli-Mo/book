@@ -124,9 +124,10 @@ const createPage = (file, params, options = {}) => {
     getCurrentPages: () => options.pageStack || [],
     getMenuButtonBoundingClientRect: () => ({}),
     reLaunch: async ({ url }) => { navigations.push(url); navigationMethods.push("reLaunch"); },
-    showToast() {}, showLoading() {}, hideLoading() {}, pageScrollTo() {},
+    showToast(input) { options.showToast?.(input); }, showLoading() {}, hideLoading() {}, pageScrollTo() {},
     showModal: async (input) => {
       modalCalls.push(input);
+      if (options.showModal) return options.showModal(input);
       return { confirm: true };
     },
     getSetting: async () => {
@@ -340,7 +341,7 @@ const createPage = (file, params, options = {}) => {
       getReadableCloudError: (error) => error.message,
     },
     "@/features/listeningPractice/recorderCoordinator": { getRecorderCoordinator: () => recorderCoordinator },
-    "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => pendingStore },
+    "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => pendingStore, logRecordingDiagnostic() {} },
     "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => submissionCoordinator },
     wx: {},
     __setTimeout: options.setTimeout,

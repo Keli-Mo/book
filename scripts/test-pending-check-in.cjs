@@ -621,6 +621,19 @@ const createBarrier = () => {
   );
   assert.equal(completeWriteFails.getRecords().length, 2, "后续保存不能覆盖完成标记失败的原元数据");
 
+  const unreadableDelete = createAdapters({
+    existingPaths: ["/tmp/unreadable-delete.mp3"],
+    storageGetBehavior: async () => { throw new Error("storage read failed"); },
+  });
+  const unreadableDeleteStore = createPendingCheckInStore(unreadableDelete.adapters);
+  const unreadableTemporary = await unreadableDeleteStore.saveRecording(recording({ tempFilePath: "/tmp/unreadable-delete.mp3" }));
+  assert.equal(unreadableTemporary.persisted, false);
+  assert.equal(await unreadableDeleteStore.remove(unreadableTemporary.item.requestId), true, "索引读失败也可删除明确持有的会话临时录音");
+  assert.equal(unreadableDeleteStore.list().length, 0);
+  assert.equal(unreadableDelete.existing.has("/tmp/unreadable-delete.mp3"), false);
+  assert.equal(unreadableDelete.calls.set, 0, "索引读失败不能覆盖持久录音列表");
+  assert.equal(await unreadableDeleteStore.remove(hex(999)), false, "未知持久录音不能把读取失败当作已删除");
+
   const corrupted = createAdapters({ records: [{ requestId: "broken" }] });
   const corruptedStore = createPendingCheckInStore(corrupted.adapters);
   await corruptedStore.ready();
