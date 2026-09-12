@@ -6,6 +6,7 @@ const path = require('path');
 // 默认使用项目可解析的 Playwright；本机可通过 NODE_PATH 指向已安装运行时，无需另装依赖。
 const { chromium } = require('playwright');
 const { createUiPage, sampleRecording, settle } = require('./helpers/native-ui-fixtures.cjs');
+const { readWxssWithImports } = require('./helpers/read-wxss.cjs');
 const { byClass, elements } = require('./test-practice-book-route.cjs');
 
 const root = path.resolve(__dirname,'..');
@@ -74,7 +75,7 @@ async function surface(name,state,profile) {
     for(const [name,state] of cases){
       const body=(await surface(name,state,profile)).replace(/(-?[\d.]+)rpx/g,(_,v)=>Number(v)*width/750+'px');
       // 加载实际构建产物，额外导航组件的样式由页面 bundle 自动收集。
-      let css=['dist/app.wxss',`dist/pages/${name}/${name}.wxss`].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n').replace(/(-?[\d.]+)rpx/g,(_,v)=>Number(v)*width/750+'px');
+      let css=['dist/app.wxss',`dist/pages/${name}/${name}.wxss`].map(f=>readWxssWithImports(path.join(root,f))).join('\n').replace(/(-?[\d.]+)rpx/g,(_,v)=>Number(v)*width/750+'px');
       // Edge 不具备微信设备安全区；显式模拟底部/横屏刘海 inset，保留原 constant 不支持行为。
       const sideInset=!isPad&&width>height?44:0;
       css=css.replace(/env\(safe-area-inset-(bottom|left|right|top)\)/g,(_,side)=>(side==='bottom'?safeAreaBottom:side==='top'?0:sideInset)+'px');
@@ -95,6 +96,15 @@ async function surface(name,state,profile) {
         const content=$(surfaceName==='Home'?'.library-home__content':surfaceName==='BookLibrary'?'.book-library':surfaceName==='Practice'?'.practice-page, .practice-empty':surfaceName==='MyCheckIns'?'.my-check-ins':'.check-in-detail, .check-in-state');
         const padding=content?parseFloat(getComputedStyle(content).paddingLeft):null;
         if(content&&padding<10) errors.push('正文左右留白丢失');
+        if(surfaceName==='Practice'){
+          const shell=$('.practice-screen');
+          const title=$('.check-in-navigation__title');
+          if(!shell||!nav) errors.push('教材页缺少公共导航外壳');
+          if(title?.textContent?.trim()!=='听力跟读训练') errors.push('教材导航标题错误');
+          if(shell&&nav&&nav.parentElement!==shell) errors.push('教材导航未直接放在全宽外壳');
+          if(nav&&(Math.abs(box(nav).left)>1||Math.abs(box(nav).width-window.innerWidth)>1)) errors.push('教材导航被正文留白或限宽挤压');
+          if(content&&nav&&(content.contains(nav)||box(content).top<box(nav).bottom-1)) errors.push('教材正文与导航重叠');
+        }
         if(surfaceName==='Home'){
           const homeNav=$('.library-home__navigation'),card=$('.continue-card');
           const title=$('.continue-card__title'),progress=$('.continue-card__progress'),button=$('.continue-card__button');

@@ -27,7 +27,7 @@
 
 **Interfaces:** CheckInNavigation 增加 `title?: string`，默认“跟读打卡”；原 onBack 与首页按钮接口/行为不变。PracticeSession props、useUnload 和 useDidHide 均不改变。
 
-- [ ] Step 1: 增加 RED 测试。复用 createUiPage / createPage、byClass 和 textOf，先断言教材页 config 为 custom；正常与错误页都有导航，位于 `practice-screen` 而不在 `.practice-page` / `.practice-empty` 内；标题正确、图标无文本。示例断言：
+- [x] Step 1: 增加 RED 测试。复用 createUiPage / createPage、byClass 和 textOf，先断言教材页 config 为 custom；正常与错误页都有导航，位于 `practice-screen` 而不在 `.practice-page` / `.practice-empty` 内；标题正确、图标无文本。示例断言：
 
 ```js
 const app = page('Practice', {params: {bookId:'3', practice:'0'}, pageStack:[{route:'pages/Home/Home'},{route:'pages/Practice/Practice'}]});
@@ -43,8 +43,8 @@ assert.equal(app.navigations.at(-1),'/pages/Home/Home');
 
 另用 pageStack 空数组测试返回兜底，用无效 bookId 验证错误页。保留所有 CheckInDetail 测试。活动录音和暂停录音场景实际点击新增房子，再触发 hide/unload 和 Stop 回调，断言 recorderReleaseCalls/terminalSink/savedRecordings/原教材页信息；示范与回听播放离页断言停止。复用已有 `scripts/test-practice-book-route.cjs` 的 leavingPage 和音频案例，不另建复杂假录音机。
 
-- [ ] Step 2: 运行 `node scripts/test-ui-navigation.cjs`，应因教材页尚无 custom config/导航而失败；记录原因。运行扩充的教材离页案例观察缺失按钮失败。
-- [ ] Step 3: 最小实现。为 CheckInNavigation 添加可选 title 与默认值：
+- [x] Step 2: 运行 `node scripts/test-ui-navigation.cjs`，应因教材页尚无 custom config/导航而失败；记录原因。运行扩充的教材离页案例观察缺失按钮失败。
+- [x] Step 3: 最小实现。为 CheckInNavigation 添加可选 title 与默认值：
 
 ```tsx
 type CheckInNavigationProps = { onBack: () => void; title?: string };
@@ -94,12 +94,13 @@ const goBack = () => {
 
 不得删除正文原有 padding 或把导航放入正文；不得重写录音状态机。若新增测试暴露业务层缺陷，先报告具体证据。
 
-- [ ] Step 4: 运行 `node scripts/test-ui-navigation.cjs`、`node scripts/test-practice-book-route.cjs`、`node scripts/test-responsive-page-contract.cjs`、`node scripts/test-check-in-return-navigation.cjs`、`node scripts/test-recording-interaction.cjs`、`node scripts/test-ui-layout.cjs`；全部应通过。若既有测试硬编码旧页面根节点，定向更新为实际新版外壳契约，不弱化录音断言。
-- [ ] Step 5: 精确暂存授权文件、`git diff --check`，提交 `feat: 教材页增加返回首页导航`；写报告记录 RED/GREEN、风险和文件，不推送。构建与 Edge 审计由主代理完成。
+- [x] Step 4: 运行 `node scripts/test-ui-navigation.cjs`、`node scripts/test-practice-book-route.cjs`、`node scripts/test-responsive-page-contract.cjs`、`node scripts/test-check-in-return-navigation.cjs`、`node scripts/test-recording-interaction.cjs`、`node scripts/test-ui-layout.cjs`；全部应通过。若既有测试硬编码旧页面根节点，定向更新为实际新版外壳契约，不弱化录音断言。
+- [x] Step 5: 精确暂存授权文件、`git diff --check`，提交 `feat: 教材页增加返回首页导航`；写报告记录 RED/GREEN、风险和文件，不推送。构建与 Edge 审计由主代理完成。
 
 ## Controller verification
 
-- [ ] 独立任务审查通过。
-- [ ] 扩充 `scripts/audit-ui-layout.cjs` 的 Practice 外壳/导航与正文边界检查，沿用18状态×8窗口矩阵；构建后运行144场景，检查代表截图。
-- [ ] 类型检查沿用兼容参数、相关文件 ESLint 与 git diff --check；运行全39脚本，进程停滞必须记录并单独重跑，不能误报一次全绿。
+- [x] 独立任务审查通过。
+- [x] 扩充 `scripts/audit-ui-layout.cjs` 的 Practice 外壳/导航与正文边界检查，沿用18状态×8窗口矩阵；构建后运行144场景，检查代表截图。
+  构建后发现共享组件样式被提取为 `app.wxss` 引用 `app-origin.wxss` / `common.wxss`，增加 `scripts/helpers/read-wxss.cjs` 和 `scripts/test-wxss-imports.cjs` 递归展开本地引用，保持原次序与重复引用，循环/缺失时报错；避免受控截图漏掉公共导航样式。仅验证工具变更。
+- [x] 类型检查沿用兼容参数、相关文件 ESLint 与 git diff --check；运行全39脚本，进程停滞必须记录并单独重跑，不能误报一次全绿。新增WXSS测试另有通过证据。
 - [ ] 最终全分支复核、写验收记录，保留本地分支和工作树，不合并/推送/部署。
