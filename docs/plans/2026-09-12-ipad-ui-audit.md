@@ -25,21 +25,21 @@
 
 **Interfaces:** AppIcon 消费现有图标 value/color/size，内部传 `customStyle={{ fontSize: `${size}px` }}` 给真实 AtIcon，保留图标字体。CheckInNavigation 消费 `onBack:()=>void`，首页固定 `/pages/Home/Home`；使用现有 calculateHomeNavigationMetrics 与 useDeviceLayout。保留 `check-in-detail__home` 便于旧回归识别首页入口。
 
-- [ ] RED：用真实 AtIcon render 和 pxTransform 路径断言首页/书库图标实际 fontSize 采用 px 而非 rpx；检查详情配置 custom navigation。新增导航点击测试，覆盖保留页面栈返回、孤立入口、有/无详情和纯图标 aria-label。
-- [ ] GREEN：实现薄 AppIcon 适配，不复制图标源码；纯图标导航按钮 44px 点击区、房子 22px、返回 24px、标题 16px，不绘制圆背景/阴影。导航根据胶囊尺寸预留左右空间，窄屏标题可省略但不盖按钮。
-- [ ] GREEN：详情正常/加载/错误都显示导航，删除重复“返回首页”正文入口；有上一页 navigateBack，无上一页用合法实践路径（或首页），详情录音/分享业务保持原样。
-- [ ] 验证：新测试、test-check-in-return-navigation.cjs、test-check-in-detail-runtime.cjs、test-home-navigation.cjs、test-reading-progress-pages.cjs、TypeScript 和 ESLint；独立提交，仅任务文件。
+- [x] RED：用真实 AtIcon render 和 pxTransform 路径断言首页/书库图标实际 fontSize 采用 px 而非 rpx；检查详情配置 custom navigation。新增导航点击测试，覆盖保留页面栈返回、孤立入口、有/无详情和纯图标 aria-label。
+- [x] GREEN：实现薄 AppIcon 适配，不复制图标源码；纯图标导航按钮 44px 点击区、房子 22px、返回 24px、标题 16px，不绘制圆背景/阴影。导航根据胶囊尺寸预留左右空间，窄屏标题可省略但不盖按钮。
+- [x] GREEN：详情正常/加载/错误都显示导航，删除重复“返回首页”正文入口；有上一页 navigateBack，无上一页用合法实践路径（或首页），详情录音/分享业务保持原样。
+- [x] 验证：新测试、test-check-in-return-navigation.cjs、test-check-in-detail-runtime.cjs、test-home-navigation.cjs、test-reading-progress-pages.cjs、TypeScript 和 ESLint；独立提交，仅任务文件。
 
 ## Task 2: 五页面布局缺陷修复
 
 **Files:** Home.scss、BookLibrary.scss、Practice.scss、CheckInDetail.scss、MyCheckIns.scss；scripts/test-ui-layout.cjs；根代理补充可重复的真实组件截图工具。
 
-- [ ] RED：先在未改样式上截图并测量底栏文字边界、正常左右 padding、Pad 录音列表封面 flex-basis、目录头/滚动区/安全区高度、空态 CTA 是否在首屏。
-- [ ] GREEN：只修检查确认的缺陷：有效纯数值基础 padding，constant/env 安全区放对应 supports；补齐 Pad 固定尺寸；底栏文字显式行高和防压缩布局；目录滚动区占剩余高度；窄分屏保证可读可点。不改教材热点坐标/录音状态机。
-- [ ] 验证：五页面、多状态、手机/Pad 竖横屏/窄分屏；断言不横向溢出、固定区文字完整可见、图标/封面尺寸与原始比例符合预期。
+- [x] RED：先在未改样式上截图并测量底栏文字边界、正常左右 padding、Pad 录音列表封面 flex-basis、目录头/滚动区/安全区高度、空态 CTA 是否在首屏。
+- [x] GREEN：只修检查确认的缺陷：有效纯数值基础 padding，constant/env 安全区放对应 supports；补齐 Pad 固定尺寸；底栏文字显式行高和防压缩布局；目录滚动区占剩余高度；窄分屏保证可读可点。不改教材热点坐标/录音状态机。
+- [x] 验证：五页面、多状态、手机/Pad 竖横屏/窄分屏；断言不横向溢出、固定区文字完整可见、图标/封面尺寸与原始比例符合预期。
 
 ## Task 3: 回归、独立复核与交付
 
-- [ ] 所有 test-*.cjs 各自进程、兼容 tsc、变更文件 lint、无缓存小程序构建；出现新错误必须解决。
-- [ ] 对全部五页面按编号记录截图、可见问题与验证边界；补充弱网/过期/空态等可测试场景，不实际上传或删除用户录音。
-- [ ] 任务级与全分支独立代码复核，修复问题后复测；中文提交与验收报告，保留新分支不推送。
+- [x] 所有 test-*.cjs 各自进程、兼容 tsc、变更文件 lint、无缓存小程序构建；出现新错误必须解决。
+- [x] 对全部五页面按编号记录截图、可见问题与验证边界；补充弱网/过期/空态等可测试场景，不实际上传或删除用户录音。
+- [x] 任务级与全分支独立代码复核，修复问题后复测；中文提交与验收报告，保留新分支不推送。
