@@ -31,17 +31,34 @@
     &::after { border: 0; }
   }
 
+  &__back { order: 0; }
+  &__home { order: 1; }
+
   &__title {
     overflow: hidden;
-    flex: 0 1 auto;
+    order: 2;
+    flex: 1;
     min-width: 0;
     margin: 0 8PX;
     color: #173f34;
     font-size: 16PX;
     font-weight: 700;
     line-height: 1.2;
+    text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+@supports (padding-left: constant(safe-area-inset-left)) {
+  .check-in-navigation__main {
+    padding-left: calc(8PX + constant(safe-area-inset-left));
+  }
+}
+
+@supports (padding-left: env(safe-area-inset-left)) {
+  .check-in-navigation__main {
+    padding-left: calc(8PX + env(safe-area-inset-left));
   }
 }
 

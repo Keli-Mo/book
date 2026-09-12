@@ -13,16 +13,17 @@
 node scripts/test-ui-layout.cjs
 ```
 
-退出码为 1。原始 12 类断言按预期失败：6 条未保护 `constant()` padding、Pad 录音封面缺少 `flex-basis: 88PX`、底栏缺少固定行高与防压缩、基础目录面板/滚动区未使用剩余空间、空录音状态嵌套 `100vh`。补充视觉证据后先增加契约再运行，继续按预期失败：底栏缺少 `64PX` 基高、正文缺少 `76PX` 占位、Pad 打卡错误说明缺少 `12PX`/`9PX`、Pad 书库空态缺少 `260PX`/`17PX`/`12PX`。
+退出码为 1。原始 12 类断言按预期失败：6 条未保护 `constant()` padding、Pad 录音封面缺少 `flex-basis: 88PX`、底栏缺少固定行高与防压缩、基础目录面板/滚动区未使用剩余空间、空录音状态嵌套 `100vh`。补充视觉证据后先增加契约再运行，继续按预期失败：底栏缺少 `64PX` 基高、`6PX` 上留白、`12PX` 字号及仅标签生效的 `4PX` 间距，正文缺少 `76PX` 占位，Pad 打卡错误说明缺少 `12PX`/`9PX`，Pad 书库空态缺少 `260PX`/`17PX`/`12PX`。安全区导航契约初跑另准确失败于 `constant()` 左安全区未放入 `@supports` 及返回箭头缺少 `order: 0`。
 
 ## GREEN 与改动
 
-- Home：底栏基础高度固定为 `64PX`，安全区在其上累加；项目 `line-height: 16PX`、`flex-shrink: 0`，文字间距 `4PX`；正文底部占位固定为 `76PX` 并同步安全区契约。
+- Home：底栏基础高度固定为 `64PX`，安全区在其上累加；顶部留白/字号固定为 `6PX`/`12PX`，项目 `line-height: 16PX`、`flex-shrink: 0`，`4PX` 间距仅作用于非 AtIcon 的文字标签；正文底部占位固定为 `76PX` 并同步安全区契约。
 - Practice / CheckInDetail / MyCheckIns：基础 bottom padding 恢复为有效纯数值；`constant()` 与 `env()` 分别放入 `@supports`，横屏左右安全区同样保留数值回退与两级兼容。
 - MyCheckIns：Pad 教材预览同时固定 `width` 与 `flex-basis` 为 `88PX`；嵌套空态改为父容器剩余区 `min-height: 0; flex: 1`。
 - Practice：基础目录 sheet 统一为 `78vh` 有界 flex column；header 不收缩；scroll 使用 `height: auto; min-height: 0; flex: 1`。
 - CheckInDetail：Pad 错误说明固定 `font-size: 12PX; margin-top: 9PX`。
 - BookLibrary：Pad 空态固定 `min-height: 260PX`，标题/说明分别固定 `17PX`/`12PX`。
+- CheckInNavigation：保留 `8PX` 左回退，`constant()`/`env()` 左安全区均置于 `@supports`；返回箭头、房子、标题按 `order: 0/1/2` 排列，标题 `flex: 1` 且居中。
 
 最终集中验证（退出码 0）：
 
@@ -38,6 +39,9 @@ node scripts/test-bookshelf-polish.cjs
 
 node scripts/test-ui-refinements.cjs
 界面收紧测试通过：提示文案、底栏、教材内页和按钮布局符合要求。
+
+node scripts/test-ui-navigation.cjs
+UI 导航测试通过：真实图标固定 px，详情三态纯图标导航与页面栈退路正确。
 ```
 
 测试仅出现仓库既有的 `caniuse-lite is 17 months old` 提示，无断言失败。`git diff --check` 通过，仅对用户已有的两个 project config 文件报告 CRLF 提示，本提交不包含它们。

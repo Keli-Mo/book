@@ -227,7 +227,7 @@
   display: flex;
   height: 64PX;
   box-sizing: border-box;
-  padding: 12rpx 48rpx 0;
+  padding: 6PX 48rpx 0;
   padding-bottom: 12PX;
   border-top: 1rpx solid #e5ece9;
   background: rgba(255, 255, 255, 0.97);
@@ -240,10 +240,10 @@
     align-items: center;
     justify-content: center;
     color: #7b827f;
-    font-size: 22rpx;
+    font-size: 12PX;
     line-height: 16PX;
 
-    > text {
+    > text:not(.at-icon) {
       margin-top: 4PX;
     }
 
