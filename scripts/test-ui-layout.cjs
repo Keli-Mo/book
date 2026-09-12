@@ -41,7 +41,18 @@ const check = (label, run) => { try { run(); } catch (error) { failures.push(`${
   check("首页正文占位", () => assert.ok(values("Home", ".library-home", "padding-bottom").includes("76PX"), "正文应为固定底栏保留完整空间"));
   check("目录面板剩余空间", () => assert.ok(values("Practice", ".practice-directory-sheet", "display").includes("flex"), "所有窗口的目录面板统一分配头部和滚动区高度"));
   check("目录滚动区", () => assert.ok(values("Practice", ".practice-directory-scroll", "min-height").includes("0"), "滚动区允许缩至剩余高度"));
-  check("空录音状态", () => assert.ok(values("MyCheckIns", ".my-check-ins-state", "min-height").includes("0"), "嵌套空态不能再占整屏导致横屏入口离开首屏"));
+  check("空录音状态", () => {
+    assert.ok(values("MyCheckIns", ".my-check-ins", "display").includes("flex"), "父容器必须建立 flex 布局");
+    assert.ok(values("MyCheckIns", ".my-check-ins", "flex-direction").includes("column"), "父容器必须纵向分配剩余高度");
+    assert.ok(values("MyCheckIns", ".my-check-ins-state", "min-height").includes("0"), "嵌套空态不能再占整屏导致横屏入口离开首屏");
+    assert.ok(values("MyCheckIns", ".my-check-ins-state", "flex").includes("1"), "空态必须消费父容器剩余区");
+  });
+  check("横屏短视口空录音状态", () => {
+    const selector = ".device-layout--phone.device-layout--landscape.my-check-ins .my-check-ins-state";
+    assert.ok(values("MyCheckIns", selector, "padding").includes("8PX 24PX 12PX"), "短视口空态应收紧上下留白");
+    assert.ok(values("MyCheckIns", `${selector}__title`, "font-size").includes("17PX"), "空态标题应使用固定字号");
+    assert.ok(values("MyCheckIns", `${selector}__button`, "min-height").includes("44PX"), "CTA 应完整保留 44PX 触控高度");
+  });
   check("Pad 打卡错误说明", () => {
     assert.ok(values("CheckInDetail", ".device-layout--pad .check-in-state__message", "font-size").includes("12PX"), "错误说明字号应固定为 12PX");
     assert.ok(values("CheckInDetail", ".device-layout--pad .check-in-state__message", "margin-top").includes("9PX"), "错误说明间距应固定为 9PX");

@@ -50,3 +50,30 @@ UI 导航测试通过：真实图标固定 px，详情三态纯图标导航与�
 
 - CSS 与真实压缩产物契约已就绪，最终 128 场景 Edge bounds 由根任务统一 build 后复核。
 - Edge 截图仅验证受控组件/样式；微信原生安全区、平台弹窗和录音硬件仍需真机验收。
+
+## Review 修正：844×390 空态与音频旧契约
+
+根任务真实 bounds 发现 `.my-check-ins-state` 虽有 `flex: 1`，父 `.my-check-ins` 并非 flex container，844×390 空态 CTA 仍离开首屏。先补父子关系与短视口契约运行 `node scripts/test-ui-layout.cjs`，按预期 RED：
+
+```text
+空录音状态: 父容器必须建立 flex 布局
+横屏短视口空录音状态: 短视口空态应收紧上下留白
+```
+
+修复为父 `.my-check-ins` 纵向 flex，子空态消费剩余空间；横屏手机固定收紧 intro/空态上下留白与字号，CTA 保留完整 `44PX` 最小触控高度，不裁文字。`test-audio-playback.cjs` 的旧 `homeButton: true` 契约同步迁移为真实 `navigationStyle: custom`、可访问“返回首页”入口及 `/pages/Home/Home` 的 `reLaunch` 验证，未修改音频实现。
+
+最终指定回归均退出码 0：
+
+```text
+node scripts/test-ui-layout.cjs
+全页面布局回归通过：压缩后留白、Pad封面、底栏文字、目录和空态契约。
+node scripts/test-responsive-page-contract.cjs
+响应式页面契约通过：核心配置、布局、触控、教材图与目录规则均符合要求。
+node scripts/test-audio-playback.cjs
+音频播放测试通过：首次停止保护、离页停止与分享进度均正确。
+音频教材回归通过：换书、换训练停止两路音频，目录布局变化保持播放。
+node scripts/test-ui-navigation.cjs
+UI 导航测试通过：真实图标固定 px，详情三态纯图标导航与页面栈退路正确。
+node scripts/test-my-check-ins-pending.cjs
+我的录音接线测试通过：本地优先、云端补充、详情与安全删除均已接入。
+```

@@ -210,12 +210,18 @@ const checkInDetailConfig = fs.readFileSync(
   ),
   "utf8",
 );
+const checkInNavigation = fs.readFileSync(
+  path.join(projectRoot, "src/pages/CheckInDetail/CheckInNavigation.tsx"),
+  "utf8",
+);
 
 assert.match(
   checkInDetailConfig,
-  /homeButton:\s*true/,
-  "分享详情页应在系统导航栏显示原生首页按钮",
+  /navigationStyle:\s*["']custom["']/,
+  "分享详情页应启用包含真实返回入口的自定义导航",
 );
+assert.match(checkInNavigation, /aria-label=['"]返回首页['"]/, "自定义导航应提供可访问的首页入口");
+assert.match(checkInNavigation, /Taro\.reLaunch\(\{\s*url:\s*["']\/pages\/Home\/Home["']\s*\}\)/, "首页入口应真实返回首页");
 
 assert.match(practice, /useDidHide/, "训练页应监听页面隐藏");
 const practiceHideBody = practice.match(

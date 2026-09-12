@@ -1,4 +1,6 @@
 .my-check-ins {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 38rpx 28rpx 80rpx;
   padding-bottom: 24PX;
@@ -223,8 +225,26 @@
 
 // 横屏刘海机型保留左右安全区，列表卡片与操作按钮保持完整勿被裁切。
 .device-layout--phone.device-layout--landscape.my-check-ins {
+  padding-top: 12PX;
   padding-left: 28rpx;
   padding-right: 28rpx;
+
+  .my-check-ins__intro { padding: 4PX 4PX 10PX; }
+  .my-check-ins__title { font-size: 21PX; }
+  .my-check-ins__tip { margin-top: 5PX; font-size: 12PX; }
+
+  .my-check-ins-state {
+    padding: 8PX 24PX 12PX;
+
+    &__title { font-size: 17PX; }
+    &__button {
+      width: 220PX;
+      min-height: 44PX;
+      margin-top: 12PX;
+      font-size: 13PX;
+      line-height: 41PX;
+    }
+  }
 }
 
 @supports (padding-left: constant(safe-area-inset-left)) {
