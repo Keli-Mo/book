@@ -58,4 +58,4 @@ assert.equal(textOf(byClass(tree, "continue-card__button")), "继续跟读");
 - [x] `npm run build:weapp`；已知依赖弃用/包体警告记录，不为消警升级依赖。
 - [x] 使用现有 Playwright 的 NODE_PATH 执行 `node scripts/audit-ui-layout.cjs home-heading`，144场景0失败；查看手机/iPad首页双态截图及其他页面代表截图。
 - [x] 运行全部 `scripts/test-*.cjs`，类型检查（既有兼容参数）、修改源文件 ESLint、git diff --check。
-- [ ] 全分支独立复核，更新验证记录与进度，保留分支和工作树，不合并/推送/部署。
+- [x] 全分支独立复核，更新验证记录与进度，保留分支和工作树，不合并/推送/部署。

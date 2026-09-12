@@ -17,7 +17,7 @@
 4. `node node_modules/typescript/bin/tsc --noEmit --skipLibCheck --noUnusedLocals false --noUnusedParameters false`、Home ESLint、审计脚本语法和 `git diff --check` 通过。类型检查沿用既有兼容参数，不代表默认严格检查已消除存量问题。
 5. Edge 受控布局：18 个状态 × 8 组窗口 = 144 场景，测量记录完整、144 张截图存在，布局错误 0、缺失教材图片 0。
 6. 首页补充滚动验证：双态 × 8 组窗口 = 16 场景，按钮滚动到固定底栏上方后完整可见且中心可命中；列表末行滚动到底后不被底栏挡住。全部通过。
-7. 任务级独立代码审查通过，无阻断发现；全分支复核结果在交付时补充。
+7. 任务级独立代码审查通过；最终全分支独立审查覆盖 `09efe39..92d308d`，并复核本地 144+16 场景测量产物，结论 Ready to merge: Yes，Critical / Important / Minor 均无发现。审查通过不表示已执行合并。
 
 ## 页面与窗口覆盖
 
