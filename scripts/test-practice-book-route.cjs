@@ -327,7 +327,7 @@ const createPage = (file, params, options = {}) => {
   };
   const overrides = {
     react,
-    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Button", "ScrollView"].map((name) => [name, name])),
+    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "ScrollView"].map((name) => [name, name])),
     "@tarojs/taro": { __esModule: true, default: taro, ...taro },
     "@/constant": { sharedImage: "share.png" },
     "@/services/cloudCheckIn": {
