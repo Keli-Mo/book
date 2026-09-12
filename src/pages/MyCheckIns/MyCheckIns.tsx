@@ -5,7 +5,6 @@ import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { getPendingCheckInStore, logRecordingDiagnostic } from "@/features/listeningPractice/pendingCheckInRuntime";
 import { mergeRecordingLibrary } from "@/features/listeningPractice/recordingLibraryView";
 import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
-import { DEFAULT_BOOK_ID } from "@/features/listeningPractice/bookPractice";
 import { listMyCheckIns, removeCheckIn, type CheckInSummary } from "@/services/cloudCheckIn";
 import { formatCheckInTime, formatRecordingDuration } from "@/utils/checkInFormat";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
@@ -115,14 +114,6 @@ export default function MyCheckIns() {
       {libraryRecords.length === 0 ? (
         <View className='my-check-ins-state'>
           <Text className='my-check-ins-state__title'>还没有录音</Text>
-          <Button
-            className='my-check-ins-state__button device-touch-target'
-            onClick={() => Taro.navigateTo({
-              url: `/pages/Practice/Practice?bookId=${DEFAULT_BOOK_ID}&practice=0`,
-            })}
-          >
-            开始第一次跟读
-          </Button>
         </View>
       ) : (
         <View className='my-check-ins__list'>

@@ -66,7 +66,7 @@ const pages = [
     config: "src/pages/MyCheckIns/MyCheckIns.config.ts",
     scss: "src/pages/MyCheckIns/MyCheckIns.scss",
     safe: [[".my-check-ins", 24]],
-    targets: ["my-check-ins-state__button", "check-in-list-card__open", "check-in-list-card__delete"],
+    targets: ["check-in-list-card__open", "check-in-list-card__delete"],
   },
 ].map((page) => ({
   ...page,

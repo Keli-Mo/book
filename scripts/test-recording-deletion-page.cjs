@@ -1,6 +1,6 @@
 /* eslint-disable import/no-commonjs */
 const assert = require("node:assert/strict");
-const { createPage, byClass, elements } = require("./test-practice-book-route.cjs");
+const { createPage, byClass, elements, textOf } = require("./test-practice-book-route.cjs");
 const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 const record = {
   requestId: "a".repeat(32), localPath: "wxfile://store/private.mp3", recoverable: true,
@@ -33,6 +33,9 @@ async function fixture({ remove = async () => true, confirm = true, sharing = fa
   const success = await fixture();
   await success.click();
   assert.equal(success.hasCard(), false);
+  const emptyState = byClass(success.page.render(), "my-check-ins-state");
+  assert.equal(textOf(emptyState), "还没有录音", "空列表只显示没有录音，不再显示开始跟读入口");
+  assert.equal(elements(emptyState).some(node => node.type === "Button"), false);
   assert.equal(success.cloudDeletes(), 0, "本地删除不得删除云分享");
   success.page.dispose();
 

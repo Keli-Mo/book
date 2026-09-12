@@ -108,7 +108,6 @@
   }
 
   .my-check-ins-state__title { font-size: 17PX; }
-  .my-check-ins-state__button { min-height: 44PX; font-size: 13PX; line-height: 41PX; }
 }
 
 .check-in-list-card {
@@ -199,18 +198,6 @@
 
   &__title { color: #2b443b; font-size: 34rpx; font-weight: 700; }
   &__text { margin-top: 16rpx; font-size: 24rpx; line-height: 1.7; }
-  &__button {
-    width: 330rpx;
-    margin-top: 30rpx;
-    border: 0;
-    border-radius: 18rpx;
-    background: #2f896c;
-    color: #ffffff;
-    font-size: 25rpx;
-    line-height: 82rpx;
-
-    &::after { border: 0; }
-  }
 }
 
 @supports (padding-bottom: constant(safe-area-inset-bottom)) {
@@ -237,13 +224,6 @@
     padding: 8PX 24PX 12PX;
 
     &__title { font-size: 17PX; }
-    &__button {
-      width: 220PX;
-      min-height: 44PX;
-      margin-top: 12PX;
-      font-size: 13PX;
-      line-height: 41PX;
-    }
   }
 }
 

@@ -262,7 +262,8 @@ for (const [name, invalidValue] of [
 
 assert.doesNotMatch(home, /DEFAULT_BOOK_ID/, "首页不得伪造固定教材的上次进度");
 assert.match(home, /readReadingProgress/, "首页入口应来自已校验的本机阅读进度");
-assertEmptyCheckInDefaultEntry(myCheckIns);
+assert.match(myCheckIns, /还没有录音/, "空录音列表应保留状态说明");
+assert.doesNotMatch(myCheckIns, /开始第一次跟读|my-check-ins-state__button/, "空录音列表不再提供默认跟读入口");
 
 const assertDefaultBookReferenceUsesPracticeImport = (source) => {
   const { checker, sourceFile } = createTsxProgram("DefaultBook.fixture.tsx", source);
@@ -361,4 +362,4 @@ assert.throws(
   "变异负例：MyCheckIns 空打卡按钮的 onClick 参数不得遮蔽 bookPractice 默认教材",
 );
 
-console.log("首页导航测试通过：胶囊尺寸及两个默认入口的真实导入和点击路由均正确。");
+console.log("首页导航测试通过：胶囊尺寸、阅读进度入口与录音空状态契约正确。");
