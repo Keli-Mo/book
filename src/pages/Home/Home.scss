@@ -335,6 +335,8 @@
   .series-row {
     min-height: 62PX;
 
+    &::after { left: 55PX; }
+
     &__cover { width: 43PX; height: 49PX; flex-basis: 43PX; }
     &__text { margin-left: 12PX; }
     &__title { font-size: 14PX; }

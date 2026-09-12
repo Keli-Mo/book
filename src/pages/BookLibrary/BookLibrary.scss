@@ -78,6 +78,8 @@
   .book-row {
     min-height: 82PX;
 
+    &::after { left: 62PX; }
+
     &__cover { width: 51PX; height: 68PX; flex-basis: 51PX; }
     &__text { margin-left: 11PX; }
     &__title { font-size: 13PX; }

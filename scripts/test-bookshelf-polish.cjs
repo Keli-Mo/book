@@ -33,5 +33,7 @@ for (const [name, css] of [["首页", homeCss], ["书库", libraryCss]]) {
 assert.doesNotMatch(libraryCss, /padding:[^;]*constant\(/, "未保护的 padding 简写不得包含 constant 安全区");
 assert.match(libraryCss, /series-filter[\s\S]*min-height:\s*44PX/, "筛选点击区至少 44PX");
 assert.match(libraryCss, /book-row::after[\s\S]*left:\s*124rpx/, "书库分隔线应从文字区域开始");
+assert.match(homeCss, /device-layout--pad[\s\S]*series-row::after[\s\S]*left:\s*55PX/, "Pad 首页分隔线应与固定尺寸的文字区域对齐");
+assert.match(libraryCss, /device-layout--pad[\s\S]*book-row::after[\s\S]*left:\s*62PX/, "Pad 书库分隔线应与固定尺寸的文字区域对齐");
 
 console.log("书架精修契约通过：标签、真实进度、留白、筛选触区和列表分隔均符合要求。");
