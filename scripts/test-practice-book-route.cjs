@@ -1420,6 +1420,9 @@ async function testRoutes() {
   leavingTree = leavingPage.render();
   await byClass(leavingTree, "record-button").props.onClick();
   leavingPage.recorderHandlers.Start();
+  await byClass(leavingTree, "check-in-navigation__home").props.onClick();
+  assert.equal(leavingPage.navigationMethods.at(-1), "reLaunch", "活动录音点击房子必须离开到首页");
+  assert.equal(leavingPage.navigations.at(-1), "/pages/Home/Home");
   leavingPage.hide();
   assert.equal(leavingPage.recorderActions.at(-1).action, "pause", "页面隐藏应优先暂停录音");
   leavingPage.unload();
@@ -1440,11 +1443,63 @@ async function testRoutes() {
   await settle();
   assert.equal(leavingPage.savedRecordings.length, 1, "离页 stop 结果仍必须进入本地待上传队列");
   assert.equal(leavingPage.savedRecordings[0].durationMs, 2300);
+  assert.equal(leavingPage.savedRecordings[0].context.bookId, "22", "离页保存必须保留原教材");
+  assert.equal(leavingPage.savedRecordings[0].context.practiceIndex, 0, "离页保存必须保留原训练页");
   assert.equal(
     typeof leavingPage.recorderTerminalOutcomes[0]?.then,
     "function",
     "terminal sink 必须把异步本地持久化 Promise 交还协调器等待",
   );
+
+  const pausedLeavingPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/paused-leaving.mp3" },
+  );
+  let pausedLeavingTree = pausedLeavingPage.render();
+  pausedLeavingTree = pausedLeavingPage.render();
+  await byClass(pausedLeavingTree, "record-button").props.onClick();
+  pausedLeavingPage.recorderHandlers.Start();
+  pausedLeavingTree = pausedLeavingPage.render();
+  byClass(pausedLeavingTree, "record-button--pause").props.onClick();
+  pausedLeavingPage.recorderHandlers.Pause();
+  await byClass(pausedLeavingTree, "check-in-navigation__home").props.onClick();
+  pausedLeavingPage.hide();
+  pausedLeavingPage.unload();
+  assert.equal(pausedLeavingPage.recorderActions.at(-1).action, "stop", "暂停录音从房子离页也必须收口");
+  assert.equal(pausedLeavingPage.recorderReleaseCalls.length, 1, "暂停录音离页必须立即释放 owner");
+  assert.equal(typeof pausedLeavingPage.recorderReleaseCalls[0]?.terminalSink, "function", "暂停录音离页必须托管 terminal sink");
+  await pausedLeavingPage.recorderHandlers.Stop({ tempFilePath: "/tmp/paused-leaving.mp3", duration: 2400, fileSize: 8200 });
+  await settle();
+  assert.equal(pausedLeavingPage.savedRecordings[0].context.bookId, "22");
+  assert.equal(pausedLeavingPage.savedRecordings[0].context.practiceIndex, 0);
+
+  const modelPlaybackLeavingPage = createPage("src/pages/Practice/Practice.tsx", { bookId: "22", practice: "0" });
+  let modelPlaybackTree = modelPlaybackLeavingPage.render();
+  modelPlaybackTree = modelPlaybackLeavingPage.render();
+  byClass(modelPlaybackTree, "audio-hotspot").props.onClick();
+  modelPlaybackTree = modelPlaybackLeavingPage.render();
+  await byClass(modelPlaybackTree, "check-in-navigation__home").props.onClick();
+  modelPlaybackLeavingPage.hide();
+  assert.equal(modelPlaybackLeavingPage.audios[1].events.at(-1), "destroy", "示范播放从房子离页必须销毁并停止会话");
+
+  const recordingPlaybackLeavingPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { pendingItems: [oldPending] },
+  );
+  let recordingPlaybackTree = recordingPlaybackLeavingPage.render();
+  recordingPlaybackTree = recordingPlaybackLeavingPage.render();
+  await settle();
+  recordingPlaybackTree = recordingPlaybackLeavingPage.render();
+  const playbackButton = elements(recordingPlaybackTree).find(
+    (node) => node.type === "Button" && textOf(node) === "回听录音",
+  );
+  playbackButton.props.onClick();
+  recordingPlaybackTree = recordingPlaybackLeavingPage.render();
+  await byClass(recordingPlaybackTree, "check-in-navigation__home").props.onClick();
+  recordingPlaybackLeavingPage.hide();
+  assert.equal(recordingPlaybackLeavingPage.audios[0].events.at(-1), "stop", "录音回听从房子离页必须停止");
 
   const invalidRoutes = [{}, { practice: "0" }, { bookId: "3" }, { bookId: "unknown", practice: "0" }];
   for (const bookId of ["3", "22", "25"]) {

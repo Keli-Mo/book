@@ -51,6 +51,8 @@ const assertNavigationShell = tree => {
 
   const config = fs.readFileSync(path.join(projectRoot, "src/pages/CheckInDetail/CheckInDetail.config.ts"), "utf8");
   assert.match(config, /navigationStyle\s*:\s*["']custom["']/, "详情页必须启用 custom navigation");
+  const practiceConfig = fs.readFileSync(path.join(projectRoot, "src/pages/Practice/Practice.config.ts"), "utf8");
+  assert.match(practiceConfig, /navigationStyle\s*:\s*["']custom["']/, "教材页必须启用 custom navigation");
 
   const unavailableCapsule = page("CheckInDetail", {
     params: { localId: "pending" }, pendingItems: [],
@@ -89,6 +91,35 @@ const assertNavigationShell = tree => {
   await controls.back.props.onClick();
   assert.notEqual(isolated.navigationMethods.at(-1), "navigateBack", "孤立入口不能调用无效 navigateBack");
   assert.ok(["navigateTo", "reLaunch"].includes(isolated.navigationMethods.at(-1)), "孤立入口必须提供合法安全退路");
+
+  const practice = page("Practice", {
+    params: { bookId: "3", practice: "0" },
+    pageStack: [{ route: "pages/Home/Home" }, { route: "pages/Practice/Practice" }],
+  });
+  let practiceTree = practice.render();
+  const practiceShell = byClass(practiceTree, "practice-screen");
+  assert.ok(practiceShell, "教材正常页必须使用含导航的页面外壳");
+  assert.ok(byClass(practiceShell, "check-in-navigation"), "教材导航必须位于 practice-screen 内");
+  assert.equal(byClass(byClass(practiceTree, "practice-page"), "check-in-navigation"), undefined, "教材导航不能位于正文内");
+  assert.equal(textOf(byClass(practiceTree, "check-in-navigation__title")), "听力跟读训练");
+  controls = navigation(practiceTree);
+  await controls.back.props.onClick();
+  assert.equal(practice.navigationMethods.at(-1), "navigateBack");
+  await controls.home.props.onClick();
+  assert.equal(practice.navigationMethods.at(-1), "reLaunch");
+  assert.equal(practice.navigations.at(-1), "/pages/Home/Home");
+
+  const isolatedPractice = page("Practice", { params: { bookId: "3", practice: "0" }, pageStack: [] });
+  controls = navigation(isolatedPractice.render());
+  await controls.back.props.onClick();
+  assert.equal(isolatedPractice.navigationMethods.at(-1), "reLaunch", "教材孤立入口返回必须兜底首页");
+  assert.equal(isolatedPractice.navigations.at(-1), "/pages/Home/Home");
+
+  const invalidPractice = page("Practice", { params: { bookId: "invalid", practice: "0" } });
+  practiceTree = invalidPractice.render();
+  assert.ok(byClass(practiceTree, "practice-screen"), "教材错误页也必须保留页面外壳");
+  assert.ok(byClass(practiceTree, "check-in-navigation"), "教材错误页必须显示导航");
+  assert.equal(byClass(byClass(practiceTree, "practice-empty"), "check-in-navigation"), undefined, "教材导航不能位于错误正文内");
 
   const scss = fs.readFileSync(path.join(projectRoot, "src/pages/CheckInDetail/CheckInNavigation.scss"), "utf8");
   assert.match(scss, /min-(?:width|height):\s*44px/i);

@@ -59,6 +59,7 @@ import {
   type DeviceLayoutState,
 } from "@/hooks/useDeviceLayout";
 import PracticeDirectory from "./PracticeDirectory";
+import CheckInNavigation from "../CheckInDetail/CheckInNavigation";
 
 import "./Practice.scss";
 
@@ -122,31 +123,39 @@ export default function Practice() {
     }
   }, [bookId, rawPracticeIndex]);
 
-  if (!route.bundle) {
-    return (
-      <View className={`practice-empty device-layout__content ${layoutClassName}`}>
-        <Text>暂时无法打开训练</Text>
-        <Text>{route.errorMessage}</Text>
-        <Button
-          className='practice-empty__button device-touch-target'
-          onClick={() => Taro.navigateTo({ url: "/pages/BookLibrary/BookLibrary" })}
-        >
-          选择教材
-        </Button>
-      </View>
-    );
-  }
+  const goBack = () => {
+    const pages = Taro.getCurrentPages?.() ?? [];
+    return pages.length > 1
+      ? Taro.navigateBack({ delta: 1 })
+      : Taro.reLaunch({ url: "/pages/Home/Home" });
+  };
 
-  // 验证通过才挂载会话；换书或外部训练路由时先清理旧会话，保持 Hook 顺序稳定。
   return (
-    <PracticeSession
-      key={`${route.bundle.book.id}:${route.practiceIndex}`}
-      bundle={route.bundle}
-      initialPracticeIndex={route.practiceIndex}
-      initialPractice={route.practice}
-      layout={layout}
-      layoutClassName={layoutClassName}
-    />
+    <View className={`practice-screen ${layoutClassName}`}>
+      <CheckInNavigation title='听力跟读训练' onBack={goBack} />
+      {route.bundle ? (
+        // 验证通过才挂载会话；换书或外部训练路由时先清理旧会话，保持 Hook 顺序稳定。
+        <PracticeSession
+          key={`${route.bundle.book.id}:${route.practiceIndex}`}
+          bundle={route.bundle}
+          initialPracticeIndex={route.practiceIndex}
+          initialPractice={route.practice}
+          layout={layout}
+          layoutClassName={layoutClassName}
+        />
+      ) : (
+        <View className={`practice-empty device-layout__content ${layoutClassName}`}>
+          <Text>暂时无法打开训练</Text>
+          <Text>{route.errorMessage}</Text>
+          <Button
+            className='practice-empty__button device-touch-target'
+            onClick={() => Taro.navigateTo({ url: "/pages/BookLibrary/BookLibrary" })}
+          >
+            选择教材
+          </Button>
+        </View>
+      )}
+    </View>
   );
 }
 

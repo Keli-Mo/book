@@ -7,9 +7,13 @@ import "./CheckInNavigation.scss";
 
 type CheckInNavigationProps = {
   onBack: () => void;
+  title?: string;
 };
 
-export default function CheckInNavigation({ onBack }: CheckInNavigationProps) {
+export default function CheckInNavigation({
+  onBack,
+  title = "跟读打卡",
+}: CheckInNavigationProps) {
   const layout = useDeviceLayout();
   let menuButton;
   try {
@@ -43,7 +47,7 @@ export default function CheckInNavigation({ onBack }: CheckInNavigationProps) {
         >
           <AppIcon value='chevron-left' size={24} color='#173f34' />
         </Button>
-        <Text className='check-in-navigation__title'>跟读打卡</Text>
+        <Text className='check-in-navigation__title'>{title}</Text>
         <Button
           className='check-in-detail__home check-in-navigation__home device-touch-target'
           aria-label='返回首页'

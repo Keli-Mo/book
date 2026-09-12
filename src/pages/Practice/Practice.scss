@@ -1,3 +1,17 @@
+.practice-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #f4f7f5;
+
+  > .practice-page,
+  > .practice-empty {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+  }
+}
+
 .practice-page {
   min-height: 100vh;
   padding: 34rpx 26rpx 80rpx;
