@@ -110,13 +110,19 @@ const createPage = (file, params, options = {}) => {
     useDidHide(callback) { frame.hide = callback; },
     useUnload(callback) { frame.unload = callback; },
     useShareAppMessage() {},
-    navigateTo: async ({ url }) => { navigations.push(url); navigationMethods.push("navigateTo"); },
+    navigateTo: async ({ url }) => {
+      navigations.push(url);
+      navigationMethods.push("navigateTo");
+      if (options.navigateTo) return options.navigateTo({ url });
+    },
     redirectTo: async ({ url }) => {
       navigations.push(url);
       navigationMethods.push("redirectTo");
       if (options.redirectTo) return options.redirectTo({ url });
     },
-    reLaunch: async ({ url }) => { navigations.push(url); },
+    navigateBack: async () => { navigationMethods.push("navigateBack"); },
+    getCurrentPages: () => options.pageStack || [],
+    reLaunch: async ({ url }) => { navigations.push(url); navigationMethods.push("reLaunch"); },
     showToast() {}, showLoading() {}, hideLoading() {}, pageScrollTo() {},
     showModal: async (input) => {
       modalCalls.push(input);
@@ -494,8 +500,8 @@ async function testRoutes() {
       await byClass(tree, "check-in-button").props.onClick();
       assert.deepEqual(page.completedPending[0], { requestId: "0123456789abcdef0123456789abcdef", committed: true }, "完成练习只持久化本机完成状态");
       assert.equal(page.submittedPending.length, 0, "完成练习不能启动云端提交");
-      assert.equal(page.navigations.at(-1), "/pages/CheckInDetail/CheckInDetail?localId=0123456789abcdef0123456789abcdef");
-      assert.equal(page.navigationMethods.at(-1), "redirectTo", "本机完成后必须替换训练页并释放录音 owner");
+      assert.equal(page.navigations.at(-1), "/pages/CheckInDetail/CheckInDetail?localId=0123456789abcdef0123456789abcdef&fromPractice=1");
+      assert.equal(page.navigationMethods.at(-1), "navigateTo", "本机完成后必须保留原教材页，供原生返回箭头恢复");
     }
   }
 
@@ -545,7 +551,7 @@ async function testRoutes() {
     { bookId: "22", practice: "0" },
     {
       savedFilePath: "/saved/completed-before-navigation.mp3",
-      redirectTo: async () => { throw new Error("navigation failed"); },
+      navigateTo: async () => { throw new Error("navigation failed"); },
       pendingRemove: async () => { completedRemovalCalls += 1; return true; },
     },
   );

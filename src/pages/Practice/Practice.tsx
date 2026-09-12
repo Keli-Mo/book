@@ -1405,8 +1405,9 @@ function PracticeSession({
     applyRecordingMachine(resetRecordingMachine(recordingMachineRef.current));
     Taro.showToast({ title: "已保存到我的录音", icon: "success" });
     try {
-      await Taro.redirectTo({
-        url: `/pages/CheckInDetail/CheckInDetail?localId=${encodeURIComponent(pending.requestId)}`,
+      // 保留当前教材会话和翻页位置，详情页的原生返回箭头才能回到刚才的训练。
+      await Taro.navigateTo({
+        url: `/pages/CheckInDetail/CheckInDetail?localId=${encodeURIComponent(pending.requestId)}&fromPractice=1`,
       });
     } catch (_navigationError) {
       Taro.showToast({ title: "请到我的录音中查看", icon: "none" });

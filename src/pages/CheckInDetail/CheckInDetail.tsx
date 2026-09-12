@@ -66,6 +66,17 @@ export default function CheckInDetail() {
     }
   }, [values]);
 
+  const openPractice = () => {
+    const pages = Taro.getCurrentPages();
+    const previousPage = pages[pages.length - 2];
+    // 从刚完成的教材页进入时复用原会话，避免叠加训练页后两个页面争用同一个录音器。
+    // 分享链接不携带此标记；历史记录、独立分享及页面栈丢失时仍按录音上下文打开教材。
+    if (router.params?.fromPractice === "1" && previousPage?.route === "pages/Practice/Practice") {
+      return Taro.navigateBack({ delta: 1 });
+    }
+    return Taro.navigateTo({ url: practiceUrl || "/pages/BookLibrary/BookLibrary" });
+  };
+
   useShareAppMessage(() => {
     // 回调触发时再验一次期限，页面停留跨过期点也不能复活旧口令。
     if (!values || !values.id || !values.shareToken || values.expiresAtMs <= Date.now()) {
@@ -289,7 +300,7 @@ export default function CheckInDetail() {
       </View>
       <View className='check-in-actions device-actions'>
         {shareButton}
-        <Button className='check-in-actions__practice device-touch-target' onClick={() => Taro.navigateTo({ url: practiceUrl || "/pages/BookLibrary/BookLibrary" })}>
+        <Button className='check-in-actions__practice device-touch-target' onClick={openPractice}>
           {practiceUrl ? "我也来跟读" : "选择教材"}
         </Button>
       </View>
