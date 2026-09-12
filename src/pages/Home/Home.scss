@@ -85,10 +85,14 @@
   }
 
   &__title {
+    display: -webkit-box;
+    overflow: hidden;
     color: #17241f;
     font-size: 32rpx;
     font-weight: 800;
     line-height: 1.42;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   &__progress {
