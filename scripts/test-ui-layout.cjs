@@ -4,6 +4,7 @@ const path = require("node:path");
 const sass = require("sass");
 const postcss = require("postcss");
 const cssnano = require("cssnano");
+
 const failures = [];
 const root = path.resolve(__dirname, "..");
 const check = (label, run) => { try { run(); } catch (error) { failures.push(`${label}: ${error.message}`); } };
