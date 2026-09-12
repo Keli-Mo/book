@@ -37,6 +37,13 @@ const navigation = tree => {
   assert.equal(textOf(home).trim(), "", "首页按钮必须只有图标");
   return { back, home };
 };
+const assertNavigationShell = tree => {
+  const shell = byClass(tree, "check-in-detail-page");
+  const content = byClass(shell, "check-in-detail-page__content");
+  assert.ok(shell && content, "三态都必须使用无正文 padding 的公共页面外壳");
+  assert.ok(byClass(shell, "check-in-navigation"), "导航必须位于公共页面外壳");
+  assert.equal(byClass(content, "check-in-navigation"), undefined, "导航不能位于居中或限宽的正文容器内");
+};
 
 (async () => {
   assertPixelIcons(page("Home").render(), "首页");
@@ -45,19 +52,31 @@ const navigation = tree => {
   const config = fs.readFileSync(path.join(projectRoot, "src/pages/CheckInDetail/CheckInDetail.config.ts"), "utf8");
   assert.match(config, /navigationStyle\s*:\s*["']custom["']/, "详情页必须启用 custom navigation");
 
+  const unavailableCapsule = page("CheckInDetail", {
+    params: { localId: "pending" }, pendingItems: [],
+    taroOverrides: { getMenuButtonBoundingClientRect: () => { throw new Error("API unavailable"); } },
+  });
+  assert.doesNotThrow(() => navigation(unavailableCapsule.render()), "胶囊 API 不可用时应采用安全导航尺寸");
+
   const loading = page("CheckInDetail", { params: { localId: "pending" }, pendingItems: [] });
-  navigation(loading.render());
+  let stateTree = loading.render();
+  navigation(stateTree);
+  assertNavigationShell(stateTree);
 
   const failed = page("CheckInDetail", { params: { id: "missing", token: "bad" }, detailError: "录音已失效" });
   failed.render(); await settle();
-  navigation(failed.render());
+  stateTree = failed.render();
+  navigation(stateTree);
+  assertNavigationShell(stateTree);
 
   const stacked = page("CheckInDetail", {
     params: { localId: "ui-sample-3" }, pendingItems: [sampleRecording()],
     pageStack: [{ route: "pages/Practice/Practice" }, { route: "pages/CheckInDetail/CheckInDetail" }],
   });
   stacked.render(); await settle();
-  let controls = navigation(stacked.render());
+  stateTree = stacked.render();
+  assertNavigationShell(stateTree);
+  let controls = navigation(stateTree);
   await controls.back.props.onClick();
   assert.equal(stacked.navigationMethods.at(-1), "navigateBack", "有上一页时返回箭头应保留页面栈");
   await controls.home.props.onClick();
@@ -75,6 +94,9 @@ const navigation = tree => {
   assert.match(scss, /min-(?:width|height):\s*44px/i);
   assert.match(scss, /box-shadow:\s*none/, "纯图标导航必须显式取消阴影");
   assert.doesNotMatch(scss, /border-radius\s*:\s*50%/, "首页图标不应绘制圆形底色");
+  const detailScss = fs.readFileSync(path.join(projectRoot, "src/pages/CheckInDetail/CheckInDetail.scss"), "utf8");
+  assert.match(detailScss, /\.check-in-detail-page\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*100vh;/, "公共外壳必须从视口顶部按文档流排列导航与正文");
+  assert.match(detailScss, /\.check-in-detail\s*\{[\s\S]*?flex:\s*1;[\s\S]*?min-height:\s*0;/, "成功正文不能在导航之外再占满一个视口");
 
   console.log("UI 导航测试通过：真实图标固定 px，详情三态纯图标导航与页面栈退路正确。");
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => pages.forEach(item => item.dispose()));

@@ -29,3 +29,11 @@
 - 未运行构建，留给根任务统一执行。
 - 未修改或提交两个 project 配置，也未提交根任务的 `scripts/test-ui-layout.cjs` 和共享夹具。
 - Edge 截图仅作为受控组件/样式证据；微信原生返回、胶囊安全区和设备行为仍需真机验收。
+
+## Review 修复
+
+- RED（结构）：新增三态公共页面外壳断言，首次失败为“必须使用无正文 padding 的公共页面外壳”。
+- RED（运行时）：新增胶囊 API 抛错用例，首次失败为未捕获 `API unavailable`。
+- GREEN：导航提升到 `.check-in-detail-page` 视口外壳，加载、错误和成功正文统一放入 `.check-in-detail-page__content`；状态正文继续居中，但导航不再继承正文 padding、限宽或居中布局。
+- GREEN：胶囊 API 缺失或抛错时传 `undefined` 给 `calculateHomeNavigationMetrics`，使用其既有保守回退尺寸。
+- Fresh 验证输出：`test-ui-navigation.cjs`、`test-check-in-return-navigation.cjs`、`test-check-in-detail-runtime.cjs` 均通过；`test-responsive-page-contract.cjs` 输出“响应式页面契约通过”；变更文件 ESLint exit 0（仅 browserslist 过期提示）；兼容 TypeScript 命令 `npx tsc --noEmit --skipLibCheck --noUnusedLocals false --noUnusedParameters false` exit 0。

@@ -1,6 +1,6 @@
 import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidHide, useDidShow, useRouter, useShareAppMessage, useUnload } from "@tarojs/taro";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { stopAudioIfLoaded } from "@/features/listeningPractice/audioPlayback";
 import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
@@ -253,21 +253,26 @@ export default function CheckInDetail() {
     }
   };
 
+  const renderPage = (content: ReactNode) => (
+    <View className='check-in-detail-page'>
+      <CheckInNavigation onBack={goBack} />
+      {content}
+    </View>
+  );
+
   if (loading) {
-    return (
-      <View className={`check-in-state device-layout__content ${layoutClassName}`}>
-        <CheckInNavigation onBack={goBack} />
+    return renderPage(
+      <View className={`check-in-detail-page__content check-in-state device-layout__content ${layoutClassName}`}>
         <Text className='check-in-state__message'>正在读取录音…</Text>
-      </View>
+      </View>,
     );
   }
   if (!detail || !values) {
-    return (
-      <View className={`check-in-state device-layout__content ${layoutClassName}`}>
-        <CheckInNavigation onBack={goBack} />
+    return renderPage(
+      <View className={`check-in-detail-page__content check-in-state device-layout__content ${layoutClassName}`}>
         <Text className='check-in-state__title'>暂时无法打开这条录音</Text>
         <Text className='check-in-state__message'>{errorMessage}</Text>
-      </View>
+      </View>,
     );
   }
 
@@ -281,9 +286,8 @@ export default function CheckInDetail() {
     <Button className='check-in-actions__share device-touch-target' openType='share'>发送给朋友</Button>
   );
 
-  return (
-    <View className={`check-in-detail device-layout__content ${layoutClassName}`}>
-      <CheckInNavigation onBack={goBack} />
+  return renderPage(
+    <View className={`check-in-detail-page__content check-in-detail device-layout__content ${layoutClassName}`}>
       <View className='check-in-detail__success'>
         <Text className='check-in-detail__check'>✓</Text>
         <Text className='check-in-detail__title'>完成一次英语跟读</Text>
@@ -317,6 +321,6 @@ export default function CheckInDetail() {
           {practiceUrl ? "我也来跟读" : "选择教材"}
         </Button>
       </View>
-    </View>
+    </View>,
   );
 }

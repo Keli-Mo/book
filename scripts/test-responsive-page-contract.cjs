@@ -58,7 +58,7 @@ const pages = [
     config: "src/pages/CheckInDetail/CheckInDetail.config.ts",
     scss: "src/pages/CheckInDetail/CheckInDetail.scss",
     safe: [[".check-in-detail", 24]],
-    targets: ["check-in-state__button", "shared-recording__play", "check-in-actions__share", "check-in-actions__practice"],
+    targets: ["shared-recording__play", "check-in-actions__share", "check-in-actions__practice"],
   },
   {
     name: "我的打卡",
@@ -340,6 +340,15 @@ for (const page of pages) {
     });
   });
 }
+
+check("打卡详情自定义导航使用共享触控尺寸", () => {
+  const navigationAst = ast("src/pages/CheckInDetail/CheckInNavigation.tsx", ts.ScriptKind.TSX);
+  for (const className of ["check-in-navigation__back", "check-in-detail__home"]) {
+    const buttons = byClass(navigationAst, className);
+    assert.ok(buttons.length > 0, `缺少 .${className}`);
+    assert.ok(buttons.every((button) => classNames(button).has("device-touch-target")));
+  }
+});
 
 check("训练目录按钮使用共享触控尺寸", () => {
   ["practice-directory-close", "practice-directory-item"].forEach((className) => {

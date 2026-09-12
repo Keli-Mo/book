@@ -1,5 +1,15 @@
-.check-in-detail {
+.check-in-detail-page {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
+  background: #f4f7f5;
+
+  &__content { width: 100%; }
+}
+
+.check-in-detail {
+  flex: 1;
+  min-height: 0;
   padding: 42rpx 30rpx 80rpx;
   padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
   box-sizing: border-box;
@@ -90,7 +100,8 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
   padding: 50rpx;
   padding-bottom: calc(24PX + constant(safe-area-inset-bottom));
   box-sizing: border-box;

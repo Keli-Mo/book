@@ -11,10 +11,17 @@ type CheckInNavigationProps = {
 
 export default function CheckInNavigation({ onBack }: CheckInNavigationProps) {
   const layout = useDeviceLayout();
+  let menuButton;
+  try {
+    menuButton = Taro.getMenuButtonBoundingClientRect?.();
+  } catch (_error) {
+    // 独立入口、旧运行时或测试壳可能没有胶囊 API，交给纯函数使用保守尺寸。
+    menuButton = undefined;
+  }
   const metrics = calculateHomeNavigationMetrics(
     layout.windowWidth,
     layout.statusBarHeight,
-    Taro.getMenuButtonBoundingClientRect(),
+    menuButton,
   );
 
   return (
