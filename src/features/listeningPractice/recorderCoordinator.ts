@@ -261,6 +261,10 @@ export const createRecorderCoordinator = (options: RecorderCoordinatorOptions = 
     });
     const begin = add("interruptionBegin", () => {
       if (!capabilities?.canInterrupt || !["recording", "starting", "paused"].includes(phase)) return;
+      if (phase === "paused" && !pausePending && !resumePending && !systemPausePending) {
+        notify("onInterruptionBegin");
+        return;
+      }
       systemPausePending = true;
       notify("onInterruptionBegin");
       if (systemPausePending) armOperationWatchdog("system-pause", candidate!);

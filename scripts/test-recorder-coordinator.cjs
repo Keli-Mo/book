@@ -97,6 +97,46 @@ const { createRecorderCoordinator, getRecorderCoordinator } = loadCoordinator();
 assert.equal(typeof createRecorderCoordinator, "function");
 assert.equal(typeof getRecorderCoordinator, "function");
 
+const stablePauseNative = createNativeRecorder();
+const stablePauseScheduler = createFakeScheduler();
+const stablePauseCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => stablePauseNative.manager,
+  scheduler: stablePauseScheduler,
+  operationTimeoutMs: 25,
+});
+const stablePauseOwner = stablePauseCoordinator.acquire().owner;
+stablePauseOwner.start(options);
+stablePauseNative.emit("start");
+stablePauseOwner.pause();
+stablePauseNative.emit("pause");
+stablePauseNative.emit("interruptionBegin");
+stablePauseNative.emit("interruptionBegin");
+stablePauseScheduler.advance(100);
+assert.equal(stablePauseNative.calls.stop, 0, "已确认暂停后重复系统打断不应强制结束");
+assert.equal(stablePauseCoordinator.getPhase(), "paused");
+stablePauseNative.emit("interruptionEnd");
+assert.equal(stablePauseNative.calls.resume, 0, "中断结束不能自动继续");
+assert.equal(stablePauseOwner.resume().ok, true);
+stablePauseNative.emit("resume");
+assert.equal(stablePauseCoordinator.getPhase(), "recording");
+
+const pendingPauseNative = createNativeRecorder();
+const pendingPauseScheduler = createFakeScheduler();
+const pendingPauseCoordinator = createRecorderCoordinator({
+  getRecorderManager: () => pendingPauseNative.manager,
+  scheduler: pendingPauseScheduler,
+  operationTimeoutMs: 25,
+});
+const pendingPauseOwner = pendingPauseCoordinator.acquire().owner;
+pendingPauseOwner.start(options);
+pendingPauseNative.emit("start");
+pendingPauseOwner.pause();
+pendingPauseScheduler.advance(24);
+assert.equal(pendingPauseNative.calls.stop, 0, "pending pause 确认窗口内不得提前 stop");
+pendingPauseScheduler.advance(1);
+assert.equal(pendingPauseNative.calls.stop, 1, "pending pause 未收到确认必须触发安全 stop");
+assert.equal(pendingPauseCoordinator.getPhase(), "stopping");
+
 const primaryScheduler = createFakeScheduler();
 const coordinator = createRecorderCoordinator({ getRecorderManager: () => native.manager, scheduler: primaryScheduler, quietWindowMs: 10 });
 const first = coordinator.acquire();
