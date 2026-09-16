@@ -20,7 +20,7 @@ function harness(initial = [row(1)]) {
   const files = new Set(initial.map(r => r.recordingFileId).filter(Boolean));
   const metrics = { writes: 0, deletes: 0, queries: 0, conflicts: 0 };
   const env = { SHARE_CLEANUP_ENABLED: "true", SHARE_STORAGE_FILE_ID_PREFIX: prefix };
-  const controls = { context: { SOURCE: "wx_trigger", ENV: "test" }, deleteError: null,
+  const controls = { context: { SOURCE: "wx_trigger", ENV: "test" }, contextError: null, deleteError: null,
     deleteStatus: 0, deleteErrMsg: undefined, missingStatus: -503003, finalizeError: null, beforeMark: null,
     readError: null, queryError: null };
   const readMap = (name, tx) => tx ? tx[name] : name === "checkins" ? records : state;
@@ -59,7 +59,10 @@ function harness(initial = [row(1)]) {
       return result;
     },
   };
-  const cloud = { init() {}, DYNAMIC_CURRENT_ENV: "dynamic", database: () => db, getWXContext: () => controls.context,
+  const cloud = { init() {}, DYNAMIC_CURRENT_ENV: "dynamic", database: () => db, getWXContext: () => {
+    if (controls.contextError) throw controls.contextError;
+    return controls.context;
+  },
     async deleteFile({ fileList }) {
       metrics.deletes++;
       for (const fileID of fileList) {
@@ -195,6 +198,38 @@ test("逐条与外层清理错误只使用固定分类且不记录敏感字段",
   assert.equal(outerResult.ok, false); assert.equal(outerResult.code, "CLEANUP_FAILED");
   assertSafe(outerFailure, outerResult);
   assert.match(outerFailure.capturedLogs.at(-1), /code: 'CLEANUP_FAILED'/);
+});
+test("清理上下文读取失败也返回可安全构建的固定结果", async () => {
+  const secretMarker = "SYNTHETIC_CONTEXT_PRIVATE_VALUE";
+  const h = harness();
+  h.controls.contextError = Object.assign(new Error(`https://example.test/context?token=${secretMarker}`), {
+    code: `ARBITRARY_${secretMarker}`,
+  });
+  const result = await h.call();
+  assert.equal(result.ok, false); assert.equal(result.code, "CLEANUP_FAILED");
+  assert.equal(result.dryRun, true); assert.equal(result.scanned, 0); assert.equal(result.failed, 0);
+  assert.equal(JSON.stringify({ response: result, logs: h.capturedLogs }).includes(secretMarker), false);
+  assert.equal(h.capturedLogs.length, 1);
+  assert.match(h.capturedLogs[0], /code: 'CLEANUP_FAILED'/);
+  assert.equal(h.metrics.deletes + h.metrics.writes + h.metrics.queries, 0);
+});
+test("外部同名事务冲突 code 不得冒充内部固定分类", async () => {
+  const secretMarker = "SYNTHETIC_CONFLICT_PRIVATE_VALUE";
+  const externalError = () => Object.assign(new Error(`https://example.test/conflict?token=${secretMarker}`), {
+    code: "DATABASE_TRANSACTION_CONFLICT",
+  });
+
+  const read = harness(); read.controls.readError = externalError();
+  const readResult = await read.call();
+  assert.equal(readResult.ok, false); assert.equal(readResult.code, "CLEANUP_FAILED");
+  assert.equal(JSON.stringify({ response: readResult, logs: read.capturedLogs }).includes(secretMarker), false);
+  assert.match(read.capturedLogs.at(-1), /code: 'CLEANUP_FAILED'/);
+
+  const remove = harness(); remove.controls.deleteError = externalError();
+  const removeResult = await remove.call();
+  assert.equal(removeResult.ok, true); assert.equal(removeResult.failed, 1);
+  assert.equal(JSON.stringify({ response: removeResult, logs: remove.capturedLogs }).includes(secretMarker), false);
+  assert.match(remove.capturedLogs.at(-1), /code: 'CLEANUP_FAILED'/);
 });
 test("泛化404及权限未知码不能当作文件已不存在", async () => {
   for (const error of [{ code: 404, message: "not found" }, { errCode: -503002 }, { code: "TIMEOUT" }]) {

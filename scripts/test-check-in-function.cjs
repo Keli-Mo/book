@@ -18,7 +18,7 @@ function harness() {
   const records = new Map(), versions = new Map(), files = new Map();
   const capturedLogs = [];
   const metrics = { writes: 0, deletes: 0, downloads: 0, attempts: 0, conflicts: 0, signed: 0 };
-  const controls = { owner: "owner-openid", readError: null, downloadError: null, downloadStatus: 200,
+  const controls = { owner: "owner-openid", contextError: null, readError: null, downloadError: null, downloadStatus: 200,
     deleteStatus: 0, missingDeleteResult: null, deleteError: null, finalizeError: null, ownerOnlyQuery: false, forcedConflicts: 0,
     referenceQueryError: null, referenceQueryErrorOffset: 0, referenceQueryResult: undefined,
     referenceQueryDelayMs: 0, timeOffsetMs: 0 };
@@ -84,7 +84,10 @@ function harness() {
     throwOnNotFound = options.throwOnNotFound !== false;
     return db;
   },
-    getWXContext: () => ({ OPENID: controls.owner, ENV: "test" }),
+    getWXContext: () => {
+      if (controls.contextError) throw controls.contextError;
+      return { OPENID: controls.owner, ENV: "test" };
+    },
     async downloadFile({ fileID }) {
       metrics.downloads++;
       if (controls.downloadError) throw controls.downloadError;
@@ -109,11 +112,12 @@ function harness() {
     Date: class extends Date { static now() { return Date.now() + controls.timeOffsetMs; } },
     console: { error(...args) { capturedLogs.push(inspect(args)); } },
     require: name => name === "wx-server-sdk" ? cloud : require(name) });
-  const call = (action, payload = {}) => mod.exports.main({ ...payload, action });
+  const rawCall = event => mod.exports.main(event);
+  const call = (action, payload = {}) => rawCall({ ...payload, action });
   const prepare = async (payload = input()) => { const result = await call("prepare", payload);
     assert.equal(result.ok, true, `prepare 应成功：${JSON.stringify(result)}`); return result.data; };
   const upload = (p, content = bytes) => { const id = `cloud://test.bucket/${p.cloudPath}`; files.set(id, content); return id; };
-  return { call, prepare, upload, records, files, controls, metrics, capturedLogs };
+  return { call, rawCall, prepare, upload, records, files, controls, metrics, capturedLogs };
 }
 
 const cases = [];
@@ -472,6 +476,34 @@ test("各云端 action 的外部错误只返回并记录固定安全分类", asy
   const unknown = harness();
   const unknownResult = await unknown.call(`unknown-${secretMarker}`, { value: unsafeMessage });
   assertSafe(unknown, unknownResult, "INVALID_ARGUMENT", "提交的信息格式不正确，请重试");
+  assert.equal(unknown.capturedLogs.length, 1);
+  assert.match(unknown.capturedLogs[0], /action: 'unknown'/);
+  assert.match(unknown.capturedLogs[0], /code: 'INVALID_ARGUMENT'/);
+});
+test("SDK 上下文读取失败也经过固定错误出口", async () => {
+  const secretMarker = "SYNTHETIC_CONTEXT_PRIVATE_VALUE";
+  const h = harness();
+  h.controls.contextError = Object.assign(new Error(`https://example.test/context?token=${secretMarker}`), {
+    code: `ARBITRARY_${secretMarker}`,
+  });
+  const result = await h.call("prepare", input());
+  assert.equal(result.ok, false); assert.equal(result.code, "CHECK_IN_ERROR");
+  assert.equal(result.message, "云端服务暂时不可用，请稍后重试");
+  assert.equal(JSON.stringify({ response: result, logs: h.capturedLogs }).includes(secretMarker), false);
+  assert.equal(h.capturedLogs.length, 1);
+  assert.match(h.capturedLogs[0], /action: 'prepare'/);
+  assert.match(h.capturedLogs[0], /code: 'CHECK_IN_ERROR'/);
+  assert.equal(h.metrics.writes + h.metrics.downloads + h.metrics.deletes, 0);
+});
+test("null 事件归为固定参数错误且日志 action 为 unknown", async () => {
+  const h = harness();
+  const result = await h.rawCall(null);
+  assert.equal(result.ok, false); assert.equal(result.code, "INVALID_ARGUMENT");
+  assert.equal(result.message, "提交的信息格式不正确，请重试");
+  assert.equal(h.capturedLogs.length, 1);
+  assert.match(h.capturedLogs[0], /action: 'unknown'/);
+  assert.match(h.capturedLogs[0], /code: 'INVALID_ARGUMENT'/);
+  assert.equal(h.metrics.writes + h.metrics.downloads + h.metrics.deletes, 0);
 });
 test("Node SDK 下载仅 fileContent 成功，显式非 200 仍拒绝", async () => {
   for (const status of [undefined, 200, 403, 503]) {

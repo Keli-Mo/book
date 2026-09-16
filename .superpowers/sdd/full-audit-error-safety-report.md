@@ -27,6 +27,8 @@ $node='C:\Users\23237\.cache\codex-runtimes\codex-primary-runtime\dependencies\n
 
 测试捕获改为 `util.inspect` 后另做故障注入：临时把原始 Error 加回 checkIn/清理日志，两项聚焦测试均因检测到 `SYNTHETIC_PRIVATE_VALUE` 退出 1；恢复安全日志实现后再验证。
 
+独立复审补修继续按 TDD 执行。新增断言后，checkIn 测试以 3 项失败退出 1：未知 action 没有固定日志、`getWXContext()` 原始异常直接外抛、`event=null` 在 catch 中二次读取 action 再外抛；cleanup 测试以 2 项失败退出 1：上下文异常直接外抛、外部错误仅把 `code` 命名为 `DATABASE_TRANSACTION_CONFLICT` 即被误认成内部分类。
+
 ## GREEN 命令与输出
 
 ```powershell
@@ -40,8 +42,8 @@ $node='C:\Users\23237\.cache\codex-runtimes\codex-primary-runtime\dependencies\n
 
 最终输出：
 
-- checkIn 云函数协议：36/36；
-- 分享清理：12/12；
+- checkIn 云函数协议：38/38；
+- 分享清理：14/14；
 - 云开发错误提示脚本：通过；
 - 客户端打卡服务：14/14；
 - 本地分享生命周期集成：通过；
@@ -62,6 +64,7 @@ $node='C:\Users\23237\.cache\codex-runtimes\codex-primary-runtime\dependencies\n
 ## Commit
 
 - `fix: 脱敏云函数错误响应与诊断日志`（本报告随同该提交；最终哈希以 `git log -1` 为准）。
+- `fix: 补齐云函数入口错误脱敏`（独立复审补修；最终哈希以 `git log -1` 为准）。
 
 ## 自查与疑点
 
@@ -69,4 +72,5 @@ $node='C:\Users\23237\.cache\codex-runtimes\codex-primary-runtime\dependencies\n
 - 未访问真实数据、未调用云 API、未部署、未 push、未修改 IDE 配置。
 - 保留工作树已有 `project.config.json`、`project.private.config.json` 与其他未跟踪计划文件，不纳入暂存。
 - 现有成功响应、分享状态不确定时保留本地文件/状态、删除失败重试及墓碑收敛测试均继续通过。
+- 两个 `getWXContext()` 均已纳入安全 catch；checkIn 的 null/非对象事件固定归类 `INVALID_ARGUMENT`，未知 action 固定记录 `unknown`；清理只允许精确内部 Error.message 进入固定分类，任意同名外部 code 归入 `CLEANUP_FAILED`。
 - 应用层已阻断已覆盖路径的原始错误输出；平台自身日志留存、访问权限及运行环境仍需由发布负责人独立核验。

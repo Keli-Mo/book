@@ -13,7 +13,6 @@ const cleanupCodes = new Set([
   "CLEANUP_FAILED",
 ]);
 const safeCleanupCode = error => {
-  if (error?.code === "DATABASE_TRANSACTION_CONFLICT") return "DATABASE_TRANSACTION_CONFLICT";
   return typeof error?.message === "string" && cleanupCodes.has(error.message)
     ? error.message : "CLEANUP_FAILED";
 };
@@ -83,18 +82,20 @@ const cleanOne = async (id, prefix, now) => {
 };
 
 exports.main = async (event = {}) => {
-  const context = cloud.getWXContext();
-  // SDK 来源从平台上下文获取，event.Type/SOURCE 等客户端声明不参与授权。
-  if (context.SOURCE !== "wx_trigger" || context.OPENID) return { ok: false, code: "FORBIDDEN" };
-  const prefix = trustedPrefix(context.ENV);
-  const dryRun = process.env.SHARE_CLEANUP_ENABLED !== "true" || event.dryRun === true || !prefix;
-  const result = { ok: true, dryRun, scanned: 0, candidates: 0, validated: 0, deleted: 0, failed: 0, nextCursor: "",
-    ...(!prefix ? { code: "STORAGE_PREFIX_REQUIRED" } : {}) };
+  const result = { ok: true, dryRun: true, scanned: 0, candidates: 0, validated: 0, deleted: 0, failed: 0, nextCursor: "" };
   try {
+    const context = cloud.getWXContext();
+    // SDK 来源从平台上下文获取，event.Type/SOURCE 等客户端声明不参与授权。
+    if (context.SOURCE !== "wx_trigger" || context.OPENID) return { ok: false, code: "FORBIDDEN" };
+    const request = event && typeof event === "object" && !Array.isArray(event) ? event : {};
+    const prefix = trustedPrefix(context.ENV);
+    const dryRun = process.env.SHARE_CLEANUP_ENABLED !== "true" || request.dryRun === true || !prefix;
+    result.dryRun = dryRun;
+    if (!prefix) result.code = "STORAGE_PREFIX_REQUIRED";
     const stateDoc = db.collection("shareCleanupState").doc("v2");
     // dry-run 不写游标；可用返回的 nextCursor 分页审核，事件不能改变正式清理进度。
     const state = dryRun ? null : (await stateDoc.get()).data;
-    const cursor = dryRun ? (typeof event.cursor === "string" && /^[a-f0-9]{64}$/.test(event.cursor) ? event.cursor : "") : (state?.cursor || "");
+    const cursor = dryRun ? (typeof request.cursor === "string" && /^[a-f0-9]{64}$/.test(request.cursor) ? request.cursor : "") : (state?.cursor || "");
     const page = await db.collection("checkins").where({ shareVersion: 2,
       ...(cursor ? { _id: db.command.gt(cursor) } : {}) }).orderBy("_id", "asc").limit(PAGE_SIZE).get();
     result.scanned = page.data.length;

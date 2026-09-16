@@ -394,11 +394,19 @@ const removeCheckIn = async (event, openId) => {
 };
 
 exports.main = async (event = {}) => {
-  const { OPENID, ENV } = cloud.getWXContext();
-  if (!OPENID) return failure("无法识别当前微信用户", "UNAUTHENTICATED");
-
+  let action = "unknown";
   try {
-    switch (event.action) {
+    let requestedAction;
+    if (event && typeof event === "object" && !Array.isArray(event)) {
+      requestedAction = event.action;
+      action = knownActions.has(requestedAction) ? requestedAction : "unknown";
+    }
+    const { OPENID, ENV } = cloud.getWXContext();
+    if (!OPENID) return failure("无法识别当前微信用户", "UNAUTHENTICATED");
+    if (!event || typeof event !== "object" || Array.isArray(event)) {
+      reject("INVALID_ARGUMENT", publicMessages.INVALID_ARGUMENT);
+    }
+    switch (requestedAction) {
       case "prepare":
         return await prepareCheckIn(event, OPENID);
       case "commit":
@@ -414,12 +422,12 @@ exports.main = async (event = {}) => {
       case "remove":
         return await removeCheckIn(event, OPENID);
       default:
-        return failure(publicMessages.INVALID_ARGUMENT, "INVALID_ARGUMENT");
+        reject("INVALID_ARGUMENT", publicMessages.INVALID_ARGUMENT);
     }
   } catch (error) {
     const code = safeCode(error);
     console.error("checkIn 云函数执行失败", {
-      action: knownActions.has(event.action) ? event.action : "unknown",
+      action,
       code,
     });
     return failure(publicMessages[code], code);
