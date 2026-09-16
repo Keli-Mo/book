@@ -154,38 +154,48 @@ test("callback 上传返回原始 UploadTask 与独立结果 Promise", async () 
   assert.equal(await upload.result, "cloud://test.bucket/checkins/ok.mp3");
   assert.equal(h.calls.length, 0, "本层不自动 commit，由页面先持久化 fileID");
 });
-test("上传失败、同步异常、commit 不确定均保留原始错误且不删文件", async () => {
+test("上传失败与同步异常仍交由固定展示分类且不删文件", async () => {
   const h = harness(), prepared = { state: "upload-required", id: "id", cloudPath: "checkins/path.mp3" };
   const error = { errMsg: "uploadFile:fail timeout", code: "ETIMEDOUT" };
   const upload = h.api.startPreparedCheckInUpload("/saved/record.mp3", prepared); h.uploads[0].fail(error);
   await assert.rejects(upload.result, e => e === error);
   h.controls.throwUpload = error;
   const sync = h.api.startPreparedCheckInUpload("/saved/record.mp3", prepared); await assert.rejects(sync.result, e => e === error);
-  h.controls.error = error; await assert.rejects(h.api.commitCheckIn({ ...input, recordingFileId: "cloud://file" }), e => e === error);
-  assert.equal(h.deletes(), 0); assert.equal(h.calls.length, 1);
+  assert.equal(h.deletes(), 0); assert.equal(h.calls.length, 0);
 });
-test("结构化服务错误 code/message 保留且旧服务导出兼容", async () => {
-  const h = harness(); h.controls.response = { ok: false, code: "REQUEST_ID_CONFLICT", message: "同一请求对应另一录音" };
-  await assert.rejects(h.api.prepareCheckIn(input), e => e.code === "REQUEST_ID_CONFLICT" && e.message === "同一请求对应另一录音");
+test("云服务拒绝与结构化失败只保留白名单 code 和固定文案", async () => {
+  const secretMarker = "SYNTHETIC_PRIVATE_VALUE";
+  const unsafeMessage = `https://example.test/audio?token=${secretMarker}`;
+  const h = harness();
+  h.controls.error = Object.assign(new Error(unsafeMessage), { code: `UNKNOWN_${secretMarker}` });
+  await assert.rejects(h.api.commitCheckIn({ ...input, recordingFileId: "cloud://file" }), e =>
+    e.code === "CHECK_IN_ERROR" && e.message === "云端服务暂时不可用，请稍后重试" && !JSON.stringify(e).includes(secretMarker));
+  h.controls.error = Object.assign(new Error(unsafeMessage), { code: "ETIMEDOUT" });
+  await assert.rejects(h.api.commitCheckIn({ ...input, recordingFileId: "cloud://file" }), e =>
+    e.code === "ETIMEDOUT" && e.message === "网络请求超时，请稍后重试");
+  h.controls.error = null;
+  h.controls.response = { ok: false, code: "REQUEST_ID_CONFLICT", message: unsafeMessage };
+  await assert.rejects(h.api.prepareCheckIn(input), e =>
+    e.code === "REQUEST_ID_CONFLICT" && e.message === "分享请求不匹配，请重新进入后重试");
+  h.controls.response = { ok: false, code: `UNKNOWN_${secretMarker}`, message: unsafeMessage };
+  await assert.rejects(h.api.prepareCheckIn(input), e =>
+    e.code === "CHECK_IN_ERROR" && e.message === "云端服务暂时不可用，请稍后重试");
   h.controls.response = { ok: true, data: { id: "legacy", shareToken: "token" } };
   await h.api.createCheckIn({ ...input, recordingFileId: "cloud://file" });
   assert.equal(h.calls.at(-1).data.action, "create");
   for (const name of ["getCheckInDetail", "listMyCheckIns", "removeCheckIn", "uploadCheckInRecording", "removeUploadedRecording"])
     assert.equal(typeof h.api[name], "function");
 });
-test("可读协议错误保留 Error.code，码优先级稳定且不丢 0", async () => {
+test("可读协议错误仅按白名单分类且不输出原始 code/message", async () => {
   const h = harness();
-  const error = Object.assign(new Error("同一请求对应另一录音"), { code: "REQUEST_ID_CONFLICT" });
+  const secretMarker = "SYNTHETIC_PRIVATE_VALUE";
+  const error = Object.assign(new Error(`同一请求对应另一录音 ${secretMarker}`), { code: "REQUEST_ID_CONFLICT" });
   const readable = h.api.getReadableCloudError(error);
-  assert.match(readable, /REQUEST_ID_CONFLICT/); assert.match(readable, /同一请求对应另一录音/);
-  h.controls.response = { ok: false, code: "INVALID_FILE_ID", message: "录音路径不匹配" };
-  await assert.rejects(h.api.prepareCheckIn(input), e => /INVALID_FILE_ID/.test(h.api.getReadableCloudError(e)));
-  for (const message of ["协议调用失败", "uploadFile:fail"]) {
-    for (const fields of [{ errCode: 0, errno: 2, code: 3 }, { errno: 0, code: 3 }, { code: 0 }]) {
-      const text = h.api.getReadableCloudError(Object.assign(new Error(message), fields));
-      assert.match(text, /错误码 0/); assert.match(text, new RegExp(message));
-      assert.doesNotMatch(text, /错误码 [23]/);
-    }
+  assert.equal(readable, "分享请求不匹配，请重新进入后重试"); assert.doesNotMatch(readable, new RegExp(secretMarker));
+  for (const fields of [{ errCode: 0, errno: 2, code: 3 }, { errno: 0, code: 3 }, { code: 0 }, { code: `UNKNOWN_${secretMarker}` }]) {
+    const text = h.api.getReadableCloudError(Object.assign(new Error(`协议调用失败 ${secretMarker}`), fields));
+    assert.equal(text, "操作失败，请稍后重试");
+    assert.doesNotMatch(text, /错误码|SYNTHETIC_PRIVATE_VALUE/);
   }
 });
 (async () => { let failures = 0; for (const { name, run } of cases) {

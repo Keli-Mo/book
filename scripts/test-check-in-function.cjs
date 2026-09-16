@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const crypto = require("node:crypto");
+const { inspect } = require("node:util");
 const source = fs.readFileSync(path.join(__dirname, "../cloudfunctions/checkIn/index.js"), "utf8");
 const hash = (algo, value) => crypto.createHash(algo).update(value).digest("hex");
 const bytes = Buffer.from("one real recording");
@@ -15,6 +16,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 function harness() {
   const records = new Map(), versions = new Map(), files = new Map();
+  const capturedLogs = [];
   const metrics = { writes: 0, deletes: 0, downloads: 0, attempts: 0, conflicts: 0, signed: 0 };
   const controls = { owner: "owner-openid", readError: null, downloadError: null, downloadStatus: 200,
     deleteStatus: 0, missingDeleteResult: null, deleteError: null, finalizeError: null, ownerOnlyQuery: false, forcedConflicts: 0,
@@ -104,13 +106,14 @@ function harness() {
   };
   const mod = { exports: {} };
   vm.runInNewContext(source, { module: mod, exports: mod.exports, Buffer, URL,
-    Date: class extends Date { static now() { return Date.now() + controls.timeOffsetMs; } }, console: { error() {} },
+    Date: class extends Date { static now() { return Date.now() + controls.timeOffsetMs; } },
+    console: { error(...args) { capturedLogs.push(inspect(args)); } },
     require: name => name === "wx-server-sdk" ? cloud : require(name) });
   const call = (action, payload = {}) => mod.exports.main({ ...payload, action });
   const prepare = async (payload = input()) => { const result = await call("prepare", payload);
     assert.equal(result.ok, true, `prepare 应成功：${JSON.stringify(result)}`); return result.data; };
   const upload = (p, content = bytes) => { const id = `cloud://test.bucket/${p.cloudPath}`; files.set(id, content); return id; };
-  return { call, prepare, upload, records, files, controls, metrics };
+  return { call, prepare, upload, records, files, controls, metrics, capturedLogs };
 }
 
 const cases = [];
@@ -428,13 +431,47 @@ test("严格文件路径、存在性、大小与内容验证", async () => {
   h.upload(p, Buffer.alloc(bytes.length)); assert.equal((await h.call("commit", { ...input(), recordingFileId: expected })).ok, false);
   assert.equal(h.metrics.writes + h.metrics.deletes, 0);
 });
-test("数据库网络失败不是缺文档，下载错误原文保留", async () => {
-  const h = harness(); h.controls.readError = { code: "ECONNRESET", message: "database network failed" };
-  const r = await h.call("prepare", input()); assert.equal(r.code, "ECONNRESET"); assert.equal(r.message, "database network failed");
-  assert.equal(h.metrics.writes, 0); h.controls.readError = null;
-  const p = await h.prepare(), recordingFileId = h.upload(p); h.controls.downloadError = { code: "ETIMEDOUT", message: "storage timeout" };
-  const f = await h.call("commit", { ...input(), recordingFileId }); assert.equal(f.code, "ETIMEDOUT"); assert.equal(f.message, "storage timeout");
-  assert.equal(h.metrics.deletes + h.metrics.writes, 0); assert.equal(h.files.size, 1);
+test("各云端 action 的外部错误只返回并记录固定安全分类", async () => {
+  const secretMarker = "SYNTHETIC_PRIVATE_VALUE";
+  const unsafeMessage = `https://example.test/audio?token=${secretMarker}`;
+  const assertSafe = (h, result, code, message) => {
+    assert.equal(JSON.stringify({ response: result, logs: h.capturedLogs }).includes(secretMarker), false);
+    assert.equal(result.ok, false);
+    assert.equal(result.code, code);
+    assert.equal(result.message, message);
+  };
+
+  const prepare = harness();
+  prepare.controls.readError = { code: "ECONNRESET", message: unsafeMessage };
+  assertSafe(prepare, await prepare.call("prepare", input()), "ECONNRESET", "网络异常，请稍后重试");
+  assert.equal(prepare.metrics.writes, 0);
+
+  const commit = harness(), prepared = await commit.prepare(), recordingFileId = commit.upload(prepared);
+  commit.controls.downloadError = { code: `ARBITRARY_${secretMarker}`, errMsg: unsafeMessage };
+  assertSafe(commit, await commit.call("commit", { ...input(), recordingFileId }), "CHECK_IN_ERROR", "云端服务暂时不可用，请稍后重试");
+  assert.equal(commit.metrics.deletes + commit.metrics.writes, 0); assert.equal(commit.files.size, 1);
+
+  const detail = harness(); legacyFixture(detail); detail.controls.readError = new Error(unsafeMessage);
+  assertSafe(detail, await detail.call("detail", { id: "legacy" }), "CHECK_IN_ERROR", "云端服务暂时不可用，请稍后重试");
+
+  const list = harness(); list.controls.readError = unsafeMessage;
+  assertSafe(list, await list.call("listMine"), "CHECK_IN_ERROR", "云端服务暂时不可用，请稍后重试");
+
+  const remove = harness(), p = await remove.prepare(), file = remove.upload(p);
+  assert.equal((await remove.call("commit", { ...input(), recordingFileId: file })).ok, true);
+  remove.controls.deleteStatus = -1;
+  remove.controls.missingDeleteResult = { status: -1, errMsg: unsafeMessage, code: `ARBITRARY_${secretMarker}` };
+  remove.files.clear();
+  assertSafe(remove, await remove.call("remove", { id: p.id }), "FILE_DELETE_FAILED", "云录音删除未完成，请重试");
+
+  const finalize = harness(), q = await finalize.prepare(), finalFile = finalize.upload(q);
+  assert.equal((await finalize.call("commit", { ...input(), recordingFileId: finalFile })).ok, true);
+  finalize.controls.finalizeError = Object.assign(new Error(unsafeMessage), { code: "DATABASE_TRANSACTION_CONFLICT" });
+  assertSafe(finalize, await finalize.call("remove", { id: q.id }), "DATABASE_TRANSACTION_CONFLICT", "服务繁忙，请稍后重试");
+
+  const unknown = harness();
+  const unknownResult = await unknown.call(`unknown-${secretMarker}`, { value: unsafeMessage });
+  assertSafe(unknown, unknownResult, "INVALID_ARGUMENT", "提交的信息格式不正确，请重试");
 });
 test("Node SDK 下载仅 fileContent 成功，显式非 200 仍拒绝", async () => {
   for (const status of [undefined, 200, 403, 503]) {

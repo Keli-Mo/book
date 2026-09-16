@@ -4,6 +4,19 @@ const cloud = require("wx-server-sdk");
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database({ throwOnNotFound: false });
 const PAGE_SIZE = 50;
+const cleanupCodes = new Set([
+  "INVALID_SHARE_PATH",
+  "INVALID_SHARE_FILE_ID",
+  "FILE_DELETE_UNCONFIRMED",
+  "CLEANUP_STATE_CHANGED",
+  "DATABASE_TRANSACTION_CONFLICT",
+  "CLEANUP_FAILED",
+]);
+const safeCleanupCode = error => {
+  if (error?.code === "DATABASE_TRANSACTION_CONFLICT") return "DATABASE_TRANSACTION_CONFLICT";
+  return typeof error?.message === "string" && cleanupCodes.has(error.message)
+    ? error.message : "CLEANUP_FAILED";
+};
 
 // 旧无期限记录永不进入候选；删除中的新版仍要求原期限字段存在。
 const eligible = (record, now) => record?.shareVersion === 2 &&
@@ -21,7 +34,8 @@ const transaction = async operation => {
     try { return await db.runTransaction(operation, 0); } catch (error) {
       const conflict = error?.code === "DATABASE_TRANSACTION_CONFLICT" ||
         /\[ResourceUnavailable\.TransactionConflict\]/.test(error?.errMsg || error?.message || "");
-      if (!conflict || attempt >= 2) throw error;
+      if (!conflict) throw error;
+      if (attempt >= 2) throw new Error("DATABASE_TRANSACTION_CONFLICT");
     }
   }
 };
@@ -98,7 +112,7 @@ exports.main = async (event = {}) => {
       } catch (error) {
         result.failed++;
         // 不输出录音URL、口令或OPENID，失败记录保留引用，下轮重试。
-        console.error("分享清理未完成", { id: record._id, code: error?.code || error?.message || "UNKNOWN" });
+        console.error("分享清理未完成", { code: safeCleanupCode(error) });
       }
     }
     result.nextCursor = page.data.length === PAGE_SIZE ? page.data[page.data.length - 1]._id : "";
@@ -112,7 +126,8 @@ exports.main = async (event = {}) => {
     console.info("分享清理批次", result);
     return result;
   } catch (error) {
-    console.error("分享清理批次失败", { code: error?.code || error?.message || "UNKNOWN" });
-    return { ...result, ok: false, code: error?.code || "CLEANUP_FAILED" };
+    const code = safeCleanupCode(error);
+    console.error("分享清理批次失败", { code });
+    return { ...result, ok: false, code };
   }
 };

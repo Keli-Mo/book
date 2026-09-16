@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { inspect } = require("node:util");
 const root = path.join(__dirname, "../cloudfunctions/cleanupExpiredShares");
 const source = fs.existsSync(path.join(root, "index.js")) ? fs.readFileSync(path.join(root, "index.js"), "utf8") : "exports.main = async () => ({ ok: true });";
 const NOW = 1800000000000;
@@ -15,17 +16,20 @@ const row = (i, patch = {}) => {
 };
 function harness(initial = [row(1)]) {
   const records = new Map(initial.map(r => [r._id, structuredClone(r)])), state = new Map(), versions = new Map();
+  const capturedLogs = [];
   const files = new Set(initial.map(r => r.recordingFileId).filter(Boolean));
   const metrics = { writes: 0, deletes: 0, queries: 0, conflicts: 0 };
   const env = { SHARE_CLEANUP_ENABLED: "true", SHARE_STORAGE_FILE_ID_PREFIX: prefix };
   const controls = { context: { SOURCE: "wx_trigger", ENV: "test" }, deleteError: null,
-    deleteStatus: 0, missingStatus: -503003, finalizeError: null, beforeMark: null };
+    deleteStatus: 0, deleteErrMsg: undefined, missingStatus: -503003, finalizeError: null, beforeMark: null,
+    readError: null, queryError: null };
   const readMap = (name, tx) => tx ? tx[name] : name === "checkins" ? records : state;
   const write = (name, id, data) => { readMap(name).set(id, { ...structuredClone(data), _id: id });
     const key = `${name}/${id}`; versions.set(key, (versions.get(key) || 0) + 1); metrics.writes++; };
   const collection = (name, tx) => ({
     doc(id) { return {
-      async get() { if (tx) tx.reads.set(`${name}/${id}`, tx.versions.get(`${name}/${id}`) || 0);
+      async get() { if (controls.readError) throw controls.readError;
+        if (tx) tx.reads.set(`${name}/${id}`, tx.versions.get(`${name}/${id}`) || 0);
         return { data: structuredClone(readMap(name, tx).get(id) || null) }; },
       async set({ data }) {
         if (name === "checkins" && data.status === "deleted" && controls.finalizeError) throw controls.finalizeError;
@@ -35,6 +39,7 @@ function harness(initial = [row(1)]) {
     where(condition) { let size = 50;
       return { orderBy(key, direction) { assert.equal(key, "_id"); assert.equal(direction, "asc"); return this; },
         limit(n) { assert.ok(n <= 50); size = n; return this; }, async get() { metrics.queries++;
+          if (controls.queryError) throw controls.queryError;
           const data = [...readMap(name).values()].filter(r => Object.entries(condition).every(([key, val]) =>
             val && typeof val === "object" && "gt" in val ? r[key] > val.gt : r[key] === val))
             .sort((a, b) => a._id.localeCompare(b._id)).slice(0, size).map(r => structuredClone(r));
@@ -65,14 +70,15 @@ function harness(initial = [row(1)]) {
       return { fileList: fileList.map(fileID => {
         const status = files.has(fileID) ? controls.deleteStatus : controls.missingStatus;
         if (status === 0) files.delete(fileID);
-        return { fileID, status };
+        return { fileID, status, ...(controls.deleteErrMsg === undefined ? {} : { errMsg: controls.deleteErrMsg }) };
       }) };
     },
   };
   const mod = { exports: {} };
   vm.runInNewContext(source, { exports: mod.exports, module: mod, process: { env }, Date: class extends Date { static now() { return NOW; } },
-    console: { info() {}, error() {} }, require: name => name === "wx-server-sdk" ? cloud : require(path.join(root, name)) });
-  return { call: (event = {}) => mod.exports.main(event), records, state, files, metrics, controls, env };
+    console: { info() {}, error(...args) { capturedLogs.push(inspect(args)); } },
+    require: name => name === "wx-server-sdk" ? cloud : require(path.join(root, name)) });
+  return { call: (event = {}) => mod.exports.main(event), records, state, files, metrics, controls, env, capturedLogs };
 }
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
@@ -156,6 +162,39 @@ test("未知删除错误留引用，重试明确不存在后收敛", async () =>
   assert.equal(h.records.get(idFor(1)).status, "deletePending");
   h.controls.finalizeError = null; r = await h.call(); assert.equal(r.deleted, 1);
   assert.equal(h.records.get(idFor(1)).status, "deleted");
+});
+test("逐条与外层清理错误只使用固定分类且不记录敏感字段", async () => {
+  const secretMarker = "SYNTHETIC_PRIVATE_VALUE";
+  const unsafeMessage = `https://example.test/audio?token=${secretMarker}`;
+  const assertSafe = (h, result) => {
+    assert.equal(JSON.stringify({ response: result, logs: h.capturedLogs }).includes(secretMarker), false);
+  };
+
+  const returnedFailure = harness();
+  returnedFailure.controls.deleteStatus = -1;
+  returnedFailure.controls.deleteErrMsg = unsafeMessage;
+  const returnedResult = await returnedFailure.call();
+  assert.equal(returnedResult.failed, 1); assertSafe(returnedFailure, returnedResult);
+  assert.match(returnedFailure.capturedLogs.at(-1), /code: 'FILE_DELETE_UNCONFIRMED'/);
+
+  const thrownFailure = harness();
+  thrownFailure.controls.deleteError = { code: `ARBITRARY_${secretMarker}`, errMsg: unsafeMessage };
+  const thrownResult = await thrownFailure.call();
+  assert.equal(thrownResult.failed, 1); assertSafe(thrownFailure, thrownResult);
+  assert.match(thrownFailure.capturedLogs.at(-1), /code: 'CLEANUP_FAILED'/);
+
+  const finalFailure = harness();
+  finalFailure.controls.finalizeError = new Error(unsafeMessage);
+  const finalResult = await finalFailure.call();
+  assert.equal(finalResult.failed, 1); assertSafe(finalFailure, finalResult);
+  assert.match(finalFailure.capturedLogs.at(-1), /code: 'CLEANUP_FAILED'/);
+
+  const outerFailure = harness();
+  outerFailure.controls.readError = Object.assign(new Error(unsafeMessage), { code: `ARBITRARY_${secretMarker}` });
+  const outerResult = await outerFailure.call();
+  assert.equal(outerResult.ok, false); assert.equal(outerResult.code, "CLEANUP_FAILED");
+  assertSafe(outerFailure, outerResult);
+  assert.match(outerFailure.capturedLogs.at(-1), /code: 'CLEANUP_FAILED'/);
 });
 test("泛化404及权限未知码不能当作文件已不存在", async () => {
   for (const error of [{ code: 404, message: "not found" }, { errCode: -503002 }, { code: "TIMEOUT" }]) {

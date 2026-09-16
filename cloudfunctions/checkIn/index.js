@@ -11,6 +11,31 @@ const checkIns = db.collection("checkins");
 const success = (data) => ({ ok: true, data });
 const failure = (message, code = "CHECK_IN_ERROR") => ({ ok: false, code, message });
 const reject = (code, message) => { throw Object.assign(new Error(message), { code }); };
+const knownActions = new Set(["prepare", "commit", "create", "detail", "listMine", "shareStatus", "remove"]);
+const publicMessages = Object.freeze({
+  CHECK_IN_ERROR: "云端服务暂时不可用，请稍后重试",
+  INVALID_ARGUMENT: "提交的信息格式不正确，请重试",
+  ECONNRESET: "网络异常，请稍后重试",
+  ETIMEDOUT: "网络请求超时，请稍后重试",
+  DATABASE_TRANSACTION_CONFLICT: "服务繁忙，请稍后重试",
+  FILE_DELETE_FAILED: "云录音删除未完成，请重试",
+  FILE_REFERENCE_CONFLICT: "录音引用归属冲突，请联系管理员核验",
+  FILE_REFERENCE_CHECK_FAILED: "录音引用核验失败，请稍后重试",
+  FORBIDDEN: "无权操作这条录音",
+  REQUEST_ID_CONFLICT: "分享请求不匹配，请重新进入后重试",
+  REQUEST_DELETED: "该分享已删除，不能重新提交",
+  SHARE_EXPIRED: "分享已过期或失效",
+  SHARE_NOT_PREPARED: "请先准备分享后重试",
+  SHARE_NOT_COMMITTED: "分享尚未完成，请稍后重试",
+  INVALID_FILE_ID: "录音文件信息不匹配，请重试",
+  RECORDING_FILE_MISMATCH: "录音文件校验失败，请重试",
+  CLOUD_ENV_UNAVAILABLE: "云端服务配置暂不可用",
+});
+const safeCode = error => {
+  const candidate = error?.code ?? error?.errCode ?? error?.errno;
+  return typeof candidate === "string" && Object.prototype.hasOwnProperty.call(publicMessages, candidate)
+    ? candidate : "CHECK_IN_ERROR";
+};
 const digest = (algorithm, value) => crypto.createHash(algorithm).update(value).digest("hex");
 const SHARE_LIFETIME_MS = 30 * 86400000;
 const PENDING_LIFETIME_MS = 86400000;
@@ -20,24 +45,24 @@ const isExpired = record => record.shareVersion === 2 &&
 
 const requireText = (value, fieldName, maxLength) => {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${fieldName}不能为空`);
+    reject("INVALID_ARGUMENT", `${fieldName}不能为空`);
   }
   if (value.length > maxLength) {
-    throw new Error(`${fieldName}长度超出限制`);
+    reject("INVALID_ARGUMENT", `${fieldName}长度超出限制`);
   }
   return value.trim();
 };
 
 const requireInteger = (value, fieldName, min, max) => {
   if (!Number.isInteger(value) || value < min || value > max) {
-    throw new Error(`${fieldName}格式不正确`);
+    reject("INVALID_ARGUMENT", `${fieldName}格式不正确`);
   }
   return value;
 };
 
 const requireDurationMs = (value) => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error("录音时长格式不正确");
+    reject("INVALID_ARGUMENT", "录音时长格式不正确");
   }
   // 部分真机返回带小数的毫秒值，入库前统一为整数，避免误拒绝有效录音。
   return requireInteger(Math.round(value), "录音时长", 500, 300000);
@@ -122,7 +147,8 @@ const runTransaction = async (operation) => {
     } catch (error) {
       const conflict = error?.code === "DATABASE_TRANSACTION_CONFLICT" ||
         /\[ResourceUnavailable\.TransactionConflict\]/.test(error?.errMsg || error?.message || "");
-      if (!conflict || attempt >= 2) throw error;
+      if (!conflict) throw error;
+      if (attempt >= 2) reject("DATABASE_TRANSACTION_CONFLICT", "transaction conflict");
     }
   }
 };
@@ -346,7 +372,7 @@ const removeCheckIn = async (event, openId) => {
     const removed = await cloud.deleteFile({ fileList: [record.recordingFileId] });
     const fileResult = removed.fileList?.find(file => file.fileID === record.recordingFileId);
     if (!fileResult || (fileResult.status !== 0 && !isStorageFileAbsent(fileResult))) {
-      reject("FILE_DELETE_FAILED", fileResult?.errMsg || "云录音删除未完成，请重试");
+      reject("FILE_DELETE_FAILED", publicMessages.FILE_DELETE_FAILED);
     }
   } catch (error) {
     // 每次只删除这一文件：已删后最终写墓碑失败，重试收到明确不存在也可继续收敛。
@@ -388,11 +414,14 @@ exports.main = async (event = {}) => {
       case "remove":
         return await removeCheckIn(event, OPENID);
       default:
-        return failure("不支持的打卡操作");
+        return failure(publicMessages.INVALID_ARGUMENT, "INVALID_ARGUMENT");
     }
   } catch (error) {
-    console.error("checkIn 云函数执行失败", { action: event.action, error });
-    return failure(error?.message || error?.errMsg || "云端服务暂时不可用",
-      error?.code ?? error?.errCode ?? error?.errno ?? "CHECK_IN_ERROR");
+    const code = safeCode(error);
+    console.error("checkIn 云函数执行失败", {
+      action: knownActions.has(event.action) ? event.action : "unknown",
+      code,
+    });
+    return failure(publicMessages[code], code);
   }
 };
