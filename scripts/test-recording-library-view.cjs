@@ -27,5 +27,8 @@ assert.equal(result.length, 2, "同一 share.id 的云记录必须去重");
 assert.equal(result[0].kind, "local", "本地录音优先展示");
 assert.equal(result[0].localId, "a".repeat(32));
 assert.equal(result[1].kind, "cloud");
+const retryRows = mergeRecordingLibrary(local, [{ ...cloud[0], status: "deletePending" }]);
+assert.equal(retryRows.length, 2, "有本机副本时待删除云记录仍需独立重试入口");
+assert.ok(retryRows.some(row => row.kind === "cloud" && row.cloud.status === "deletePending"));
 
 console.log("录音库合并运行时测试通过：本地优先且云记录按 share.id 去重。");

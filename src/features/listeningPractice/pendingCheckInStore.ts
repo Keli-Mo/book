@@ -1,6 +1,9 @@
 export const PENDING_CHECK_IN_STORAGE_KEY = "pending-check-ins-v1";
-export const MAX_PENDING_COUNT = 500;
 export const MAX_PENDING_FILE_BYTES = 100 * 1024 * 1024;
+export const RECORDING_CAPACITY_RESERVE_BYTES = 10 * 1024 * 1024;
+export const MAX_RECORDING_FILE_BYTES = 8 * 1024 * 1024;
+export const PENDING_RECORDING_BYTES = MAX_PENDING_FILE_BYTES - RECORDING_CAPACITY_RESERVE_BYTES;
+export const RECORDING_START_USED_BYTES = PENDING_RECORDING_BYTES - MAX_RECORDING_FILE_BYTES;
 
 export type RecordingShare = {
   id: string;
@@ -50,6 +53,7 @@ export type SavedPendingRecordingFile = {
 };
 
 export type PendingCheckInFileAdapter = {
+  usageBytes(): number | Promise<number>;
   save(tempFilePath: string):
     | SavedPendingRecordingFile
     | Promise<SavedPendingRecordingFile>;
@@ -167,10 +171,9 @@ const isQuotaFailure = (error: unknown) => {
   return /quota|storage.?full|space/i.test(text);
 };
 
-const capacityMessage = (countExceeded: boolean) =>
-  countExceeded
-    ? "本地录音已满（最多 500 条），请清理历史录音"
-    : "本地录音已满（总计最多 100MiB），请清理历史录音";
+const capacityMessage = () => "本地录音空间不足，请先整理历史录音";
+const capacityUnknownMessage = "无法检查本地录音空间，请稍后重试";
+const capacityCalibrationUnknownMessage = "录音已保存，但无法核实本地录音空间，请先整理历史录音";
 
 /**
  * 待上传项只持久化已由 saveFile 移入本地文件系统的路径；临时路径只在本次会话内保留。
@@ -337,16 +340,21 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     return { item: freezeItem(item), persisted: false, message };
   };
 
-  const hasCapacityFor = (fileSizeBytes: number) => {
-    const recoverableItems = persistedItems.filter((item) => item.recoverable);
-    const bytes = recoverableItems.reduce(
-      (total, item) => total + item.fileSizeBytes,
-      0,
-    );
-    return {
-      countExceeded: recoverableItems.length >= MAX_PENDING_COUNT,
-      byteExceeded: bytes + fileSizeBytes > MAX_PENDING_FILE_BYTES,
-    };
+  const readUsageBytes = async () => {
+    const bytes = await adapters.file.usageBytes();
+    if (!isNonNegativeInteger(bytes)) throw new Error("invalid recording usage");
+    return bytes;
+  };
+
+  const checkCanStartRecording = async () => {
+    try {
+      return await readUsageBytes() <= RECORDING_START_USED_BYTES
+        ? { allowed: true, message: "" }
+        : { allowed: false, message: capacityMessage() };
+    } catch (error) {
+      diagnose("capacity.read.failed", { error });
+      return { allowed: false, message: capacityUnknownMessage };
+    }
   };
 
   const saveRecordingInternal = async (
@@ -362,16 +370,26 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     }
     const initialItem = retryItem || createItem(input, input.tempFilePath, false);
 
-    const capacity = hasCapacityFor(input.fileSizeBytes);
-    if (capacity.countExceeded || capacity.byteExceeded) {
-      return createTemporaryResult(
-        initialItem,
-        capacityMessage(capacity.countExceeded),
-      );
+    const alreadySaved = savedTemporaryIds.has(initialItem.requestId);
+    // saveFile 已成功的重试只补写索引，不新增持久文件；保存前容量门闩仅限制会增加占用的操作。
+    if (!alreadySaved) {
+      let usageBytes: number;
+      try {
+        usageBytes = await readUsageBytes();
+      } catch (error) {
+        diagnose("capacity.read.failed", { requestId: initialItem.requestId, error });
+        return createTemporaryResult(initialItem, capacityUnknownMessage, "failed");
+      }
+      if (usageBytes + input.fileSizeBytes > PENDING_RECORDING_BYTES) {
+        return createTemporaryResult(
+          initialItem,
+          capacityMessage(),
+        );
+      }
     }
 
     let saved: SavedPendingRecordingFile;
-    if (savedTemporaryIds.has(initialItem.requestId)) {
+    if (alreadySaved) {
       saved = { savedFilePath: initialItem.localPath, fileSizeBytes: initialItem.fileSizeBytes, contentSha1: initialItem.contentSha1 };
     } else {
       try {
@@ -413,7 +431,13 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     // 先保存移动后的真实路径；后续索引失败也不能丢失阶段和内容基准。
     savedTemporaryIds.add(item.requestId);
     temporaryItems.set(item.requestId, { ...item, recoverable: false });
-    const actualCapacity = hasCapacityFor(item.fileSizeBytes);
+    let actualCapacityMessage = "";
+    try {
+      if (await readUsageBytes() > PENDING_RECORDING_BYTES) actualCapacityMessage = capacityMessage();
+    } catch (error) {
+      diagnose("capacity.calibration.failed", { requestId: item.requestId, error });
+      actualCapacityMessage = capacityCalibrationUnknownMessage;
+    }
     try {
       const nextItems = [...persistedItems, item];
       await persistItems(nextItems);
@@ -425,7 +449,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       return {
         item: freezeItem(item),
         persisted: true,
-        message: actualCapacity.byteExceeded ? capacityMessage(false) : "",
+        message: actualCapacityMessage,
       };
     } catch (_error) {
       // 已移动的文件仍可用于当前会话，不把未写入元数据的路径伪装成可恢复记录。
@@ -579,7 +603,8 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       persistedItems = nextItems;
       metadataDirty = false;
       return freezeItem(nextItem);
-    } catch (_error) {
+    } catch (error) {
+      diagnose("share.metadata.write.failed", { requestId, error });
       return null;
     }
   };
@@ -687,6 +712,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     cleanup,
     saveRecording,
     retrySave,
+    checkCanStartRecording,
     update,
     remove,
     markUploaded,

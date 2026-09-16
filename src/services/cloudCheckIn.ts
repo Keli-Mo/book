@@ -38,6 +38,7 @@ export type CommitCheckInInput = PrepareCheckInInput & { recordingFileId: string
 
 export interface CheckInSummary {
   id: string;
+  status?: "deletePending";
   shareToken: string;
   /** 新版分享由服务端给出期限；旧记录缺失时继续兼容。 */
   expiresAtMs?: number;
@@ -70,6 +71,12 @@ const ensureCloudAvailable = () => {
   }
 };
 
+const shareResponseError = (code = "SHARE_RESPONSE_INVALID") => Object.assign(
+  new Error(code === "SHARE_PROTOCOL_MISMATCH"
+    ? "checkIn 云函数未返回新版分享协议，请核对并部署支持 shareVersion:2 的版本"
+    : "checkIn 云函数返回的分享数据格式无效"), { code },
+);
+
 const callCheckInFunction = async <T>(data: Record<string, unknown>) => {
   ensureCloudAvailable();
   const response = await wx.cloud.callFunction({
@@ -78,6 +85,10 @@ const callCheckInFunction = async <T>(data: Record<string, unknown>) => {
   });
   const result = response.result as CloudFunctionResponse<T> | undefined;
 
+  // 新版分享的空包/畸形成功包也属于响应异常；保留明确的服务端业务失败码及旧调用语义。
+  if (data.shareVersion === 2 && (!result || typeof result.ok !== "boolean" || (result.ok && result.data === undefined))) {
+    throw shareResponseError();
+  }
   if (!result?.ok || result.data === undefined) {
     throw Object.assign(new Error(result?.message || "云端打卡服务暂时不可用"), {
       code: result?.code ?? "CHECK_IN_ERROR",
@@ -109,9 +120,26 @@ export const getCheckInRecordingInfo = (filePath: string): Promise<{
   });
 });
 
-/** prepare 不上传文件；v2 会幂等预留分享记录，已提交时返回既有结果。 */
-export const prepareCheckIn = (input: PrepareCheckInInput) =>
-  callCheckInFunction<PreparedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), shareVersion: 2, action: "prepare" });
+const isNonEmptyText = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+
+/** TS 类型不能校验线上回包；期限必须来自服务器，不能在本机猜测补齐。 */
+const validateCreatedShare = (value: unknown): CreatedCheckIn => {
+  const share = value as Partial<CreatedCheckIn> | null;
+  if (!share || !isNonEmptyText(share.id) || !isNonEmptyText(share.shareToken)) throw shareResponseError();
+  if (share.expiresAtMs === undefined) throw shareResponseError("SHARE_PROTOCOL_MISMATCH");
+  if (typeof share.expiresAtMs !== "number" || !Number.isSafeInteger(share.expiresAtMs) || share.expiresAtMs <= 0) throw shareResponseError();
+  return { id: share.id, shareToken: share.shareToken, expiresAtMs: share.expiresAtMs };
+};
+
+/** prepare 不上传文件；先校验 v2 专用路径，防止旧云函数忽略版本后创建无期限分享。 */
+export const prepareCheckIn = async (input: PrepareCheckInInput): Promise<PreparedCheckIn> => {
+  const prepared = await callCheckInFunction<PreparedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), shareVersion: 2, action: "prepare" });
+  if (prepared?.state === "committed") return { state: "committed", ...validateCreatedShare(prepared) };
+  if (prepared?.state !== "upload-required" || !isNonEmptyText(prepared.id) || !isNonEmptyText(prepared.cloudPath)) throw shareResponseError();
+  if (prepared.cloudPath.startsWith("checkins/")) throw shareResponseError("SHARE_PROTOCOL_MISMATCH");
+  if (!/^expiring-shares-v2\/.+/.test(prepared.cloudPath)) throw shareResponseError();
+  return prepared;
+};
 
 /** 返回原生 UploadTask，进度/取消交给页面；上传结果先持久化，再由页面调用 commit。 */
 export const startPreparedCheckInUpload = (filePath: string, prepared: PreparedCheckInUpload): {
@@ -136,8 +164,22 @@ export const startPreparedCheckInUpload = (filePath: string, prepared: PreparedC
 };
 
 /** commit 响应不确定时保留本地/云文件，重试复用原请求，不在本层删除或自动重试。 */
-export const commitCheckIn = (input: CommitCheckInInput) =>
-  callCheckInFunction<CreatedCheckIn>({ ...input, requestId: input.requestId.toLowerCase(), shareVersion: 2, action: "commit" });
+export const commitCheckIn = async (input: CommitCheckInInput): Promise<CreatedCheckIn> =>
+  validateCreatedShare(await callCheckInFunction<unknown>({ ...input, requestId: input.requestId.toLowerCase(), shareVersion: 2, action: "commit" }));
+
+/** 用户只看简短分类；底层错误原文可能含 fileID、签名 URL，不能直接放进 toast。 */
+export const getShareFailureMessage = (error: unknown): string => {
+  const details = error as { code?: unknown; errCode?: unknown; errno?: unknown; errMsg?: unknown; message?: unknown } | undefined;
+  const code = details?.code ?? details?.errCode ?? details?.errno;
+  if (code === "SHARE_PROTOCOL_MISMATCH") return "分享服务版本不匹配，请联系开发者";
+  if (code === "SHARE_RESPONSE_INVALID") return "分享服务返回异常，请稍后重试";
+  if (code === "STORAGE_PREFIX_REQUIRED") return "分享服务配置未完成，请联系开发者";
+  if (code === "PENDING_PERSIST_FAILED") return "本机状态保存失败，录音仍保留，请重试";
+  if (code === "SHARE_EXPIRED" || code === "REQUEST_DELETED") return "分享已失效，请再次点击生成新分享";
+  const text = `${code ?? ""} ${details?.errMsg ?? details?.message ?? ""}`;
+  if (/network|timeout|timed.?out|offline|connection|econn|enet/i.test(text)) return "网络异常，录音仍保留，请重试";
+  return "分享失败，本机录音仍保留";
+};
 
 /** 兼容旧页面的随机路径上传；新幂等流程使用 prepare + startPreparedCheckInUpload。 */
 export const uploadCheckInRecording = async (
@@ -175,6 +217,12 @@ export const getCheckInDetail = (id: string, shareToken?: string) =>
 
 export const listMyCheckIns = () =>
   callCheckInFunction<CheckInSummary[]>({ action: "listMine" });
+
+export const getCheckInShareStatus = async (id: string, shareRequestId: string): Promise<{ state: "active" | "deleted" | "expired" | "missing" | "invalid" }> => {
+  const result = await callCheckInFunction<{ state: "active" | "deleted" | "expired" | "missing" | "invalid" }>({ action: "shareStatus", id, shareRequestId: shareRequestId.toLowerCase() });
+  if (!result || !["active", "deleted", "expired", "missing", "invalid"].includes(result.state)) throw shareResponseError();
+  return { state: result.state };
+};
 
 export const removeCheckIn = (id: string) =>
   callCheckInFunction<{ id: string }>({ action: "remove", id });

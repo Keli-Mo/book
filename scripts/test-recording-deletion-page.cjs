@@ -8,7 +8,7 @@ const record = {
   durationMs: 1000, fileSizeBytes: 4096, status: "local", updatedAtMs: 100,
 };
 
-async function fixture({ remove = async () => true, confirm = true, sharing = false } = {}) {
+async function fixture({ remove = async () => true, confirm = true, sharing = false, local = [record], listCloud = async () => [], removeCloud = async () => {} } = {}) {
   const logs = [], toasts = [];
   let calls = 0, cloudDeletes = 0;
   const page = createPage("src/pages/MyCheckIns/MyCheckIns.tsx", {}, {
@@ -16,11 +16,11 @@ async function fixture({ remove = async () => true, confirm = true, sharing = fa
     showToast: input => toasts.push(input),
     overrides: {
       "@/features/listeningPractice/pendingCheckInRuntime": {
-        getPendingCheckInStore: () => ({ ready: async () => {}, cleanup: async () => {}, list: () => [record], remove: async () => { calls++; return remove(); } }),
+        getPendingCheckInStore: () => ({ ready: async () => {}, cleanup: async () => {}, list: () => local, remove: async () => { calls++; return remove(); } }),
         logRecordingDiagnostic: (...args) => logs.push(args),
       },
       "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => ({ isSubmitting: () => sharing }) },
-      "@/services/cloudCheckIn": { listMyCheckIns: async () => [], removeCheckIn: async () => { cloudDeletes++; } },
+      "@/services/cloudCheckIn": { listMyCheckIns: listCloud, removeCheckIn: async () => { cloudDeletes++; return removeCloud(); } },
     },
   });
   page.render(); page.show(); await settle();
@@ -30,6 +30,43 @@ async function fixture({ remove = async () => true, confirm = true, sharing = fa
 }
 
 (async () => {
+  const cloudRecord = { id: "cloud-delete", ...record.context, createdAt: 1, durationMs: 1000, shareToken: "token", status: "deletePending" };
+  const pending = await fixture({ local: [], listCloud: async () => [cloudRecord] });
+  let pendingTree = pending.page.render();
+  assert.equal(byClass(pendingTree, "check-in-list-card__open").props.disabled, true, "待删除云录音不能回听或分享");
+  assert.equal(textOf(byClass(pendingTree, "check-in-list-card__delete")), "重试");
+  await pending.click(); assert.equal(pending.hasCard(), false); pending.page.dispose();
+
+  let finishRefresh, finishDelete, loads = 0;
+  const stale = new Promise(resolve => { finishRefresh = resolve; });
+  const deleting = new Promise(resolve => { finishDelete = resolve; });
+  const racing = await fixture({ local: [], listCloud: () => ++loads === 1 ? Promise.resolve([cloudRecord]) : stale, removeCloud: () => deleting });
+  racing.page.show(); await settle();
+  const deletion = racing.click(), duplicate = racing.click(); await settle();
+  assert.equal(racing.cloudDeletes(), 1, "云删除重复点击只发一次请求");
+  assert.equal(racing.page.modalCalls.length, 1);
+  finishDelete(); await Promise.all([deletion, duplicate]);
+  finishRefresh([cloudRecord]); await settle();
+  assert.equal(racing.hasCard(), false, "旧刷新返回不能恢复已删云卡片");
+  racing.page.dispose();
+
+  let finishOld, reloads = 0;
+  const oldResult = new Promise(resolve => { finishOld = resolve; });
+  const returning = await fixture({ local: [], listCloud: () => ++reloads === 1 ? oldResult : Promise.resolve([]) });
+  returning.page.hide(); returning.page.show(); await settle();
+  finishOld([cloudRecord]); await settle();
+  assert.equal(returning.hasCard(), false, "离页前旧请求不能污染返回后的页面");
+  returning.page.dispose();
+
+  let finishLocalDelete;
+  const lateDelete = new Promise(resolve => { finishLocalDelete = resolve; });
+  const returnedLocal = await fixture({ remove: () => lateDelete });
+  const localAttempt = returnedLocal.click(); await settle();
+  returnedLocal.page.hide(); returnedLocal.page.show(); await settle();
+  finishLocalDelete(true); await localAttempt;
+  assert.equal(returnedLocal.hasCard(), true, "上一轮页面的本地删除回调不得覆盖返回后的新快照");
+  returnedLocal.page.dispose();
+
   const success = await fixture();
   await success.click();
   assert.equal(success.hasCard(), false);

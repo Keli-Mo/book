@@ -154,8 +154,6 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     originLeft: 0,
     originTop: 0
   });
-  const [isTablet, setIsTablet] = useState(false);
-
   const renderPageNumber = () => {
     switch (bookPageStrategyMap[id]) {
       // case PageNumberingStrategy.EXCLUDE_COVER_AND_TOC:
@@ -182,22 +180,6 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   deviceInfo.then((res) => {
     // 记录设备型号（原有逻辑）
     setSystemInfo(res.model)
-
-    // === 新增：判断是否为“大屏/平板” ===
-    // 依据：1) 型号包含 iPad/Pad/Tablet；2) 任一可视宽/高 >= 900；3) 像素密度下的“较短边”也很宽
-    const model = (res.model || "").toLowerCase()
-    const isModelTablet =
-      model.includes("iPad") || model.includes("pad") || model.includes("tablet")
-
-    const sw = Number(res.screenWidth || res.windowWidth || 0)
-    const sh = Number(res.screenHeight || res.windowHeight || 0)
-    const shortest = Math.min(sw, sh)
-
-    // 900 这个阈值在安卓常见大平板上比较稳妥；若你们目标设备更大/更小，可按需微调
-    const isLargeBySize = sw >= 1000 || sh >= 1000 || shortest >= 1000
-
-    // 给后面样式判断用：把 “是否平板” 写到一个 state 或直接 memo
-    setIsTablet(isModelTablet || isLargeBySize)
   })
 
   // 循环播放（原有逻辑）
@@ -224,10 +206,6 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
   const handlePageTap = () => {
     setShowTopBar(!showTopBar);
     setShowBottomBar(!showBottomBar);
-  };
-
-  const goBack = () => {
-    Taro.navigateBack({ delta: 1 });
   };
 
   // 查看目录

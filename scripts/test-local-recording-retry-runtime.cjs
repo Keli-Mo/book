@@ -21,7 +21,7 @@ const button = (tree, label) => elements(tree).find(node => node.type === "Butto
     const permission = new Promise(resolve => { allowPermission = resolve; });
     const store = mod.exports.createPendingCheckInStore({
       storage: { get: () => [], set: async () => { writes++; if (failure !== "file" && writes === 1) throw new Error("metadata failed"); await gate; } },
-      file: { save: async () => { saves++; if (failure === "file" && saves === 1) throw new Error("save failed"); return { savedFilePath: "/saved/retry.mp3" }; }, exists: () => true, remove: () => { throw new Error("不得删除"); } },
+      file: { usageBytes: () => 0, save: async () => { saves++; if (failure === "file" && saves === 1) throw new Error("save failed"); return { savedFilePath: "/saved/retry.mp3" }; }, exists: () => true, remove: () => { throw new Error("不得删除"); } },
       clock: { now: () => 100 }, random: { hex: () => "a".repeat(32) },
     });
     const saved = await store.saveRecording({ tempFilePath: "/tmp/retry.mp3", durationMs: 2000, fileSizeBytes: 20,
@@ -30,7 +30,7 @@ const button = (tree, label) => elements(tree).find(node => node.type === "Butto
       ...(failure === "permission" ? { getSetting: () => permission } : {}),
       overrides: {
         "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => store },
-        "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => ({ isSubmitting: () => false, submit: () => { uploads++; throw new Error("不得隐式上传"); } }) },
+        "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => ({ isSubmitting: () => false, getActive: () => undefined, submit: () => { uploads++; throw new Error("不得隐式上传"); } }) },
       },
     });
     page.render(); await settle(); let tree = page.render(); await settle(); tree = page.render();

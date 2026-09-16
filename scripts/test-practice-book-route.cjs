@@ -283,6 +283,7 @@ const createPage = (file, params, options = {}) => {
     ready: options.pendingReady || (async () => {}),
     cleanup: options.pendingCleanup || (async () => {}),
     list: () => pendingItems,
+    checkCanStartRecording: options.capacityCheck || (async () => ({ allowed: true, message: "" })),
     saveRecording(input) {
       savedRecordings.push(input);
       if (options.saveRecording) return options.saveRecording(input);
@@ -317,6 +318,8 @@ const createPage = (file, params, options = {}) => {
     },
   };
   const submissionCoordinator = {
+    isSubmitting: () => false,
+    getActive: () => undefined,
     submit(pending) {
       submittedPending.push(pending);
       const index = pendingItems.findIndex((item) => item.requestId === pending.requestId);
@@ -1238,6 +1241,40 @@ async function testRoutes() {
     "后台失效的启动请求不得移走或清空旧 pending 录音",
   );
 
+  const hiddenCapacity = deferred();
+  const hiddenCapacityPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { pendingItems: [oldPending], capacityCheck: () => hiddenCapacity.promise },
+  );
+  let hiddenCapacityTree = hiddenCapacityPage.render();
+  hiddenCapacityTree = hiddenCapacityPage.render();
+  await settle();
+  hiddenCapacityTree = hiddenCapacityPage.render();
+  const capacityReRecord = elements(hiddenCapacityTree).find((node) => node.type === "Button" && textOf(node) === "重新录制");
+  const capacityAttempt = capacityReRecord.props.onClick();
+  hiddenCapacityPage.hide();
+  hiddenCapacity.resolve({ allowed: true, message: "" });
+  await capacityAttempt;
+  assert.equal(hiddenCapacityPage.permissionChecks.length, 0, "容量检查未结束就离页不得继续请求权限或开麦");
+  assert.equal(hiddenCapacityPage.stateValues().some((value) => value?.requestId === oldPending.requestId), true, "失效容量检查不得清空旧录音");
+  hiddenCapacityPage.dispose();
+
+  const insufficientPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { pendingItems: [oldPending], capacityCheck: async () => ({ allowed: false, message: "本地录音空间不足，请先清理历史录音" }) },
+  );
+  let insufficientTree = insufficientPage.render();
+  insufficientTree = insufficientPage.render();
+  await settle();
+  insufficientTree = insufficientPage.render();
+  await elements(insufficientTree).find((node) => node.type === "Button" && textOf(node) === "重新录制").props.onClick();
+  assert.equal(insufficientPage.recorderActions.length, 0, "容量不足不得开麦");
+  assert.equal(insufficientPage.permissionChecks.length, 0, "容量不足无需请求麦克风权限");
+  assert.equal(insufficientPage.stateValues().some((value) => value?.requestId === oldPending.requestId), true, "容量不足必须保留旧录音");
+  insufficientPage.dispose();
+
   const replacedOwnerPermission = deferred();
   const replacedOwnerPage = createPage(
     "src/pages/Practice/Practice.tsx",
@@ -1312,6 +1349,7 @@ async function testRoutes() {
   concurrentPermissionTree = concurrentPermissionPage.render();
   const concurrentButton = byClass(concurrentPermissionTree, "record-button");
   const firstConcurrentAttempt = concurrentButton.props.onClick();
+  await settle();
   await concurrentButton.props.onClick();
   concurrentPermissionPage.recorderHandlers.Start();
   concurrentPermissionTree = concurrentPermissionPage.render();
@@ -1548,7 +1586,7 @@ async function testHistory(fields, valid, overrides = {}) {
   assert.equal(page.navigations.at(-1), valid ? `/pages/Practice/Practice?bookId=${encodeURIComponent(fields.bookId)}&practice=${fields.practiceIndex}` : "/pages/BookLibrary/BookLibrary");
 }
 
-module.exports = { createPage, elements, textOf, byClass, buildBookPracticeBundle };
+module.exports = { createPage, elements, textOf, byClass, buildBookPracticeBundle, load };
 if (require.main === module) {
   testRoutes()
     .catch((error) => { console.error(error); process.exitCode = 1; })

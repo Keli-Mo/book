@@ -32,6 +32,24 @@ const input = { requestId: "A".repeat(32), durationMs: 1200, fileSizeBytes: 1000
   sectionTitle: "导入", imageUrl: "https://example.test/4.png" };
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
+
+test("分享核验只接受明确的状态枚举，不上传且拒绝畸形成功包", async () => {
+  const h = harness();
+  assert.equal(typeof h.api.getCheckInShareStatus, "function");
+  for (const state of ["active", "deleted", "expired", "missing", "invalid"]) {
+    h.controls.response.data = { state };
+    assert.deepEqual(plain(await h.api.getCheckInShareStatus("id", "A".repeat(32))), { state });
+  }
+  assert.deepEqual(plain(h.calls[0].data), { action: "shareStatus", id: "id", shareRequestId: "a".repeat(32) });
+  for (const data of [null, {}, { state: "unknown" }, { state: false }]) {
+    h.controls.response.data = data;
+    await assert.rejects(h.api.getCheckInShareStatus("id", "a".repeat(32)), error => error.code === "SHARE_RESPONSE_INVALID");
+  }
+  assert.equal(h.uploads.length, 0); assert.equal(h.deletes(), 0);
+  h.controls.response = { ok: false, code: "SHARE_STATUS_UNAVAILABLE", message: "暂时无法核验分享，请稍后重试" };
+  await assert.rejects(h.api.getCheckInShareStatus("id", "a".repeat(32)), error => error.code === "SHARE_STATUS_UNAVAILABLE");
+  assert.equal(h.uploads.length, 0); assert.equal(h.deletes(), 0);
+});
 test("新协议与原生 SHA1 接口存在", async () => {
   const { api } = harness();
   for (const name of ["prepareCheckIn", "commitCheckIn", "getCheckInRecordingInfo", "startPreparedCheckInUpload"])
@@ -57,14 +75,74 @@ test("文件信息原生回调数据无效时明确拒绝，不能被当成可�
 });
 test("prepare/commit 保留快照、规范 requestId，不自动上传删除", async () => {
   const h = harness(); const before = plain(input);
+  h.controls.response.data = { state: "upload-required", id: "id", cloudPath: "expiring-shares-v2/owner/record.mp3" };
   await h.api.prepareCheckIn(input);
   assert.equal(h.calls[0].data.action, "prepare"); assert.equal(h.calls[0].data.requestId, "a".repeat(32));
   assert.equal(h.calls[0].data.shareVersion, 2);
   assert.equal(h.calls[0].data.contentSha1, input.contentSha1); assert.equal(h.uploads.length, 0);
+  h.controls.response.data = { id: "id", shareToken: "token", expiresAtMs: 1_800_000_000_000 };
   await h.api.commitCheckIn({ ...input, recordingFileId: "cloud://test.bucket/checkins/path.mp3" });
   assert.equal(h.calls[1].data.action, "commit"); assert.equal(h.calls[1].data.recordingFileId, "cloud://test.bucket/checkins/path.mp3");
   assert.equal(h.calls[1].data.shareVersion, 2);
   assert.deepEqual(input, before); assert.equal(h.deletes(), 0);
+});
+
+test("旧云函数的上传路径在上传前拒绝，不创建无期限分享", async () => {
+  const h = harness();
+  h.controls.response.data = { state: "upload-required", id: "id", cloudPath: "checkins/owner/record.mp3" };
+  await assert.rejects(h.api.prepareCheckIn(input), e => e.code === "SHARE_PROTOCOL_MISMATCH");
+  assert.equal(h.uploads.length, 0);
+  assert.equal(h.deletes(), 0);
+});
+
+test("prepare 已提交与 commit 缺失有效期均报告协议不匹配，不伪造期限", async () => {
+  for (const action of ["prepare", "commit"]) {
+    const h = harness();
+    h.controls.response.data = { id: "id", shareToken: "token", ...(action === "prepare" ? { state: "committed" } : {}) };
+    const call = () => action === "prepare" ? h.api.prepareCheckIn(input) : h.api.commitCheckIn({ ...input, recordingFileId: "cloud://file" });
+    await assert.rejects(call(), e => e.code === "SHARE_PROTOCOL_MISMATCH");
+    h.controls.response.data.expiresAtMs = 1_800_000_000_000;
+    assert.equal((await call()).expiresAtMs, 1_800_000_000_000);
+    assert.equal(h.deletes(), 0);
+  }
+});
+
+test("云端成功包仍需校验状态、编号、口令和期限类型", async () => {
+  const h = harness();
+  for (const data of [null, [], {}, { state: "unknown" }, { state: "upload-required", id: "", cloudPath: "expiring-shares-v2/a.mp3" },
+    { state: "upload-required", id: "id", cloudPath: "https://unexpected.test/audio.mp3" }]) {
+    h.controls.response.data = data;
+    await assert.rejects(h.api.prepareCheckIn(input), e => e.code === "SHARE_RESPONSE_INVALID");
+  }
+  for (const patch of [{ id: " " }, { shareToken: null }, { expiresAtMs: "1800000000000" }, { expiresAtMs: -1 }, { expiresAtMs: NaN }, { expiresAtMs: 1.5 }]) {
+    h.controls.response.data = { id: "id", shareToken: "token", expiresAtMs: 1_800_000_000_000, ...patch };
+    await assert.rejects(h.api.commitCheckIn({ ...input, recordingFileId: "cloud://file" }), e => e.code === "SHARE_RESPONSE_INVALID");
+  }
+});
+
+test("新版分享缺响应包或成功包缺 data 属于响应异常，不能混为一般失败", async () => {
+  const h = harness();
+  for (const response of [undefined, null, {}, { ok: true }, { ok: "true", data: {} }]) {
+    h.controls.response = response;
+    await assert.rejects(h.api.prepareCheckIn(input), e => e.code === "SHARE_RESPONSE_INVALID");
+    await assert.rejects(h.api.commitCheckIn({ ...input, recordingFileId: "cloud://file" }), e => e.code === "SHARE_RESPONSE_INVALID");
+  }
+});
+
+test("分享提示分类且不向用户泄露云端原文或口令", async () => {
+  const h = harness();
+  for (const [error, expected] of [
+    [{ code: "SHARE_PROTOCOL_MISMATCH" }, /版本不匹配/],
+    [{ code: "SHARE_RESPONSE_INVALID" }, /返回异常/],
+    [{ code: "PENDING_PERSIST_FAILED" }, /本机状态保存失败/],
+    [{ errMsg: "request:fail network disconnected token=secret" }, /网络异常/],
+    [{ code: "STORAGE_PREFIX_REQUIRED" }, /服务配置/],
+    [{ code: "UNKNOWN", message: "https://private.test/audio?token=secret" }, /分享失败/],
+  ]) {
+    const title = h.api.getShareFailureMessage(error);
+    assert.match(title, expected);
+    assert.doesNotMatch(title, /secret|private\.test|cloud:\/\//);
+  }
 });
 test("callback 上传返回原始 UploadTask 与独立结果 Promise", async () => {
   const h = harness();

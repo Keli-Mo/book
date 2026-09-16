@@ -59,6 +59,8 @@ let removeError = null;
 let disappearDuringRemove = false;
 let saveError = null;
 let storageError = null;
+let savedFileListError = null;
+let savedFileEntries = [];
 const wx = {
   getStorageSync(key) {
     return saved.get(key);
@@ -92,6 +94,10 @@ const wx = {
   },
   getFileSystemManager() {
     return {
+      getSavedFileList({ success, fail }) {
+        if (savedFileListError) fail(savedFileListError);
+        else success({ fileList: savedFileEntries });
+      },
       access({ path: filePath, success, fail }) {
         if (accessError) fail(accessError);
         else if (files.has(filePath)) success({});
@@ -120,6 +126,14 @@ const runtime = compile(
 );
 
 (async () => {
+  savedFileEntries = [
+    { filePath: "wxfile://store/orphan.mp3", size: 80 * 1024 * 1024, createTime: 1 },
+    { filePath: "wxfile://store/orphan.mp3", size: 80 * 1024 * 1024, createTime: 1 },
+    { filePath: "wxfile://store/indexed.mp3", size: 2 * 1024 * 1024, createTime: 2 },
+  ];
+  assert.equal(await runtime.getLocalRecordingUsageBytes(), 82 * 1024 * 1024, "未索引 saveFile 也计入且重复路径只统计一次");
+  savedFileEntries = [];
+
   const first = runtime.getPendingCheckInStore();
   assert.strictEqual(
     first,
@@ -183,6 +197,13 @@ const runtime = compile(
     assert.equal(files.has(result.item.localPath), true);
     assert.deepEqual(removedPaths, alreadyRemoved);
   }
+
+  savedFileEntries = [{ filePath: "wxfile://store/bad.mp3", size: -1, createTime: 1 }];
+  await assert.rejects(() => runtime.getLocalRecordingUsageBytes(), /invalid/i, "无效原生大小不能按 0 统计");
+  savedFileListError = { errMsg: "getSavedFileList:fail unsupported" };
+  await assert.rejects(() => runtime.getLocalRecordingUsageBytes(), "统计 API 失败必须向容量门闩报告未知");
+  savedFileListError = null;
+  savedFileEntries = [];
   accessError = null;
 
   assert.equal(await first.remove(result.item.requestId), true);

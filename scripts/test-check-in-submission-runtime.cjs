@@ -17,6 +17,8 @@ const compiled = ts.transpileModule(fs.readFileSync(sourcePath, "utf8"), {
 });
 
 const pendingStore = { name: "shared-pending-store" };
+const diagnosticLogs = [];
+const logRecordingDiagnostic = (...args) => diagnosticLogs.push(args);
 const cloud = {
   getCheckInRecordingInfo() {},
   prepareCheckIn() {},
@@ -39,7 +41,7 @@ vm.runInNewContext(compiled.outputText, {
       };
     }
     if (name === "./pendingCheckInRuntime") {
-      return { getPendingCheckInStore: () => pendingStore };
+      return { getPendingCheckInStore: () => pendingStore, logRecordingDiagnostic };
     }
     if (name === "@/services/cloudCheckIn") return cloud;
     throw new Error(`unexpected import: ${name}`);
@@ -60,6 +62,7 @@ assert.strictEqual(
   cloud.startPreparedCheckInUpload,
 );
 assert.strictEqual(capturedAdapters.commitCheckIn, cloud.commitCheckIn);
+assert.strictEqual(capturedAdapters.diagnose, logRecordingDiagnostic, "提交日志必须接入已有脱敏输出，不能直接 console 原始响应");
 assert.equal(typeof capturedAdapters.scheduler.setTimeout, "function");
 assert.equal(typeof capturedAdapters.scheduler.clearTimeout, "function");
 

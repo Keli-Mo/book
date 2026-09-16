@@ -25,20 +25,26 @@ function html(node) {
   const extra=tag==='img'?`;object-fit:${p.mode==='aspectFill'?'cover':'contain'}`:tag==='scroll-view'?`;overflow-${p.scrollY?'y':'x'}:auto`:'';
   return `<${tag} ${attrs} style="${esc(styleText(p.style)+extra)}">${['input','img'].includes(tag)?'':html(p.children)+`</${tag}>`}`;
 }
-const cases=[['Home','recent'],['Home','empty'],['BookLibrary','all'],['BookLibrary','empty'],['Practice','idle'],['Practice','recording'],['Practice','paused'],['Practice','saved'],['Practice','save-failed'],['Practice','directory'],['Practice','error'],['CheckInDetail','local'],['CheckInDetail','playing'],['CheckInDetail','loading'],['CheckInDetail','error'],['MyCheckIns','records'],['MyCheckIns','empty'],['MyCheckIns','offline']];
+const cases=[['Home','recent'],['Home','empty'],['BookLibrary','all'],['BookLibrary','empty'],['Practice','idle'],['Practice','recording'],['Practice','paused'],['Practice','saved'],['Practice','save-failed'],['Practice','directory'],['Practice','error'],['CheckInDetail','local'],['CheckInDetail','playing'],['CheckInDetail','loading'],['CheckInDetail','error'],['CheckInDetail','shared'],['MyCheckIns','records'],['MyCheckIns','empty'],['MyCheckIns','offline'],['MyCheckIns','delete-pending']];
 async function surface(name,state,profile) {
   const item=sampleRecording('7');
+  const shareId='b'.repeat(64);
+  const sharedItem={...item,shareRequestId:'a'.repeat(32),share:{id:shareId,shareToken:'ui-test-token',expiresAtMs:Date.now()+30*86400000}};
   const options={profile,params:{},pendingItems:[]};
   if(name==='Home'&&state==='recent') options.history={version:1,bookId:'20',practiceIndex:0};
   if(name==='BookLibrary') options.params={series:'all'};
   if(name==='Practice') options.params={bookId:state==='error'?'missing-book':'3',practice:'0'};
   if(name==='Practice'&&state==='saved') options.savedFilePath='/ui-fixture/saved.mp3';
   if(name==='CheckInDetail') {
-    options.params={localId:item.requestId};options.pendingItems=[item];
+    options.params={localId:item.requestId};options.pendingItems=[state==='shared'?sharedItem:item];
     if(state==='error') options.pendingItems=[];
     if(state==='loading') options.overrides={'@/features/listeningPractice/pendingCheckInRuntime':{getPendingCheckInStore:()=>({list:()=>[],ready:()=>new Promise(()=>{})})}};
   }
-  if(name==='MyCheckIns') {options.pendingItems=state==='empty'?[]:[item,sampleRecording('13'),sampleRecording('20')]; options.cloudError=state==='offline';}
+  if(name==='MyCheckIns') {
+    options.pendingItems=state==='empty'?[]:state==='delete-pending'?[sharedItem]:[item,sampleRecording('13'),sampleRecording('20')];
+    if(state==='delete-pending') options.cloudRecords=[{...item.context,id:shareId,shareToken:'',status:'deletePending',durationMs:item.durationMs,createdAt:item.completedAtMs,expiresAtMs:1}];
+    options.cloudError=state==='offline';
+  }
   const app=createUiPage(name,options);
   try {
     app.render();app.show();await settle();let tree=app.render();
@@ -63,6 +69,12 @@ async function surface(name,state,profile) {
     if(name==='Practice'&&state==='save-failed') assert.match(html(tree),/录音保存失败/,'存储失败场景必须实际显示失败与重试入口');
     if(name==='Practice'&&state==='paused') assert.ok(byClass(tree,'record-button--resume'),'暂停场景必须显示继续录音按钮');
     if(name==='CheckInDetail'&&state==='playing') assert.match(html(tree),/0:03/,'播放场景必须实际显示当前秒数');
+    if(name==='CheckInDetail'&&state==='shared') assert.ok(byClass(tree,'shared-recording__repair'),'已分享本机录音必须显示分享修复入口');
+    if(name==='MyCheckIns'&&state==='delete-pending') {
+      const rendered=html(tree);
+      assert.match(rendered,/待删除/,'云端待删录音必须显示待删除状态');
+      assert.match(rendered,/重试/,'云端待删录音必须显示重试入口');
+    }
     return html(tree);
   } finally {app.dispose();}
 }
@@ -134,6 +146,12 @@ async function surface(name,state,profile) {
         if(largeIcons.length) errors.push(`图标随屏宽放大:${largeIcons.length}`);
         const tab=$('.home-tabs');
         if(tab){if(parseFloat(getComputedStyle(tab).paddingBottom)<bottomInset)errors.push('底栏未预留模拟安全区');const end=box(tab).bottom-parseFloat(getComputedStyle(tab).paddingBottom);for(const el of document.querySelectorAll('.home-tabs__item > text:not(.at-icon)')) if(box(el).bottom>end+1) errors.push('底栏文字超出安全内容区');}
+        const overflowingDeleteLabels=[...document.querySelectorAll('.check-in-list-card__delete')].filter(el=>{
+          const range=document.createRange();range.selectNodeContents(el);
+          const textBox=range.getBoundingClientRect(),buttonBox=box(el),style=getComputedStyle(el);
+          return textBox.left<buttonBox.left+parseFloat(style.paddingLeft)-0.5||textBox.right>buttonBox.right-parseFloat(style.paddingRight)+0.5;
+        });
+        if(overflowingDeleteLabels.length) errors.push(`删除按钮文字越界:${overflowingDeleteLabels.length}`);
         const preview=$('.check-in-list-card__preview');if(padSurface&&preview&&box(preview).width>100) errors.push('Pad封面flex-basis仍随rpx放大');
         const empty=$('.my-check-ins-state__button');if(empty&&box(empty).bottom>window.innerHeight) errors.push('空态按钮首屏不可见');
         const sheet=$('.practice-directory-sheet');const scroll=$('.practice-directory-scroll');if(sheet&&scroll&&box(scroll).bottom>box(sheet).bottom-parseFloat(getComputedStyle(sheet).paddingBottom)+1) errors.push('目录滚动区越过面板底部');

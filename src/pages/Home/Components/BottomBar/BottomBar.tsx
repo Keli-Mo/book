@@ -1,7 +1,6 @@
 
 import React from "react";
 import { AtTabBar } from "taro-ui";
-import { Tabs } from "@tarojs/components";
 
 export const BottomBar: React.FC = () => {
   return (

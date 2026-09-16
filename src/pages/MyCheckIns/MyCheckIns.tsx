@@ -20,25 +20,32 @@ export default function MyCheckIns() {
   const [cloudNotice, setCloudNotice] = useState("");
   const visibleRef = useRef(false);
   const deletingLocalRef = useRef(new Set<string>());
+  const deletingCloudRef = useRef(new Set<string>());
+  const deletedCloudRef = useRef(new Set<string>());
+  const pageEpochRef = useRef(0);
+  const refreshRef = useRef(0);
   const libraryRecords = useMemo(
     () => mergeRecordingLibrary(localRecords, cloudRecords),
     [cloudRecords, localRecords],
   );
 
   const loadRecords = useCallback(async () => {
+    const epoch = pageEpochRef.current;
+    const refresh = ++refreshRef.current;
+    const isCurrent = () => visibleRef.current && pageEpochRef.current === epoch && refreshRef.current === refresh;
     await pendingStore.ready();
     await pendingStore.cleanup();
-    if (!visibleRef.current) return;
+    if (!isCurrent()) return;
     // 本地先落屏；云端失败只影响旧记录补充，不能遮住本机录音。
     setLocalRecords([...pendingStore.list()]);
     try {
       const cloud = await listMyCheckIns();
-      if (visibleRef.current) {
-        setCloudRecords(cloud);
+      if (isCurrent()) {
+        setCloudRecords(cloud.filter(record => !deletedCloudRef.current.has(record.id)));
         setCloudNotice("");
       }
     } catch (_error) {
-      if (visibleRef.current) setCloudNotice("云端历史暂时无法刷新，本机录音仍可使用");
+      if (isCurrent()) setCloudNotice("云端历史暂时无法刷新，本机录音仍可使用");
     }
   }, []);
 
@@ -46,10 +53,13 @@ export default function MyCheckIns() {
     visibleRef.current = true;
     void loadRecords();
   });
-  useDidHide(() => { visibleRef.current = false; });
-  useUnload(() => { visibleRef.current = false; });
+  useDidHide(() => { visibleRef.current = false; pageEpochRef.current += 1; });
+  useUnload(() => { visibleRef.current = false; pageEpochRef.current += 1; });
 
   const deleteLocal = async (localId: string) => {
+    if (!visibleRef.current) return;
+    const epoch = pageEpochRef.current;
+    const isCurrent = () => visibleRef.current && pageEpochRef.current === epoch;
     if (deletingLocalRef.current.has(localId)) {
       logRecordingDiagnostic("delete.duplicate_ignored", { requestId: localId });
       return;
@@ -67,7 +77,7 @@ export default function MyCheckIns() {
         confirmText: "删除",
         confirmColor: "#d9573f",
       });
-      if (!confirmation.confirm) {
+      if (!confirmation.confirm || !isCurrent()) {
         logRecordingDiagnostic("delete.cancelled", { requestId: localId });
         return;
       }
@@ -76,31 +86,41 @@ export default function MyCheckIns() {
         return;
       }
       if (!await pendingStore.remove(localId)) {
-        if (visibleRef.current) Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
+        if (isCurrent()) Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
         return;
       }
-      if (visibleRef.current) setLocalRecords((items) => items.filter((item) => item.requestId !== localId));
+      if (isCurrent()) setLocalRecords((items) => items.filter((item) => item.requestId !== localId));
     } catch (error) {
       logRecordingDiagnostic("delete.unexpected.failed", { requestId: localId, error });
-      if (visibleRef.current) Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
+      if (isCurrent()) Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
     } finally {
       deletingLocalRef.current.delete(localId);
     }
   };
 
   const deleteCloud = async (record: CheckInSummary) => {
-    const confirmation = await Taro.showModal({
-      title: "删除云端录音？",
-      content: "云端录音和旧分享链接会失效；本机保存的录音不会删除。",
-      confirmText: "删除",
-      confirmColor: "#d9573f",
-    });
-    if (!confirmation.confirm) return;
+    if (!visibleRef.current || deletingCloudRef.current.has(record.id)) return;
+    deletingCloudRef.current.add(record.id);
+    const epoch = pageEpochRef.current;
+    const isCurrent = () => visibleRef.current && pageEpochRef.current === epoch;
     try {
+      const confirmation = await Taro.showModal({
+        title: "删除云端录音？",
+        content: "云端录音和旧分享链接会失效；本机保存的录音不会删除。",
+        confirmText: "删除",
+        confirmColor: "#d9573f",
+      });
+      if (!confirmation.confirm || !isCurrent()) return;
       await removeCheckIn(record.id);
-      setCloudRecords((items) => items.filter((item) => item.id !== record.id));
+      deletedCloudRef.current.add(record.id);
+      if (isCurrent()) setCloudRecords((items) => items.filter((item) => item.id !== record.id));
     } catch (_error) {
-      Taro.showToast({ title: "云端删除失败", icon: "none" });
+      if (isCurrent()) {
+        Taro.showToast({ title: "云端删除失败，请重试", icon: "none" });
+        void loadRecords();
+      }
+    } finally {
+      deletingCloudRef.current.delete(record.id);
     }
   };
 
@@ -138,8 +158,8 @@ export default function MyCheckIns() {
                   <Text className='pending-check-in-status__warning'>临时文件，关闭小程序后可能无法恢复</Text>
                 )}
                 <View className='check-in-list-card__actions'>
-                  <Button className='check-in-list-card__open device-touch-target' onClick={() => Taro.navigateTo({ url: detailUrl })}>回听 / 分享</Button>
-                  <Button className='check-in-list-card__delete device-touch-target' onClick={() => local ? deleteLocal(local.requestId) : deleteCloud(cloud!)}>删除</Button>
+                  <Button className='check-in-list-card__open device-touch-target' disabled={cloud?.status === "deletePending"} onClick={() => cloud?.status !== "deletePending" && Taro.navigateTo({ url: detailUrl })}>{cloud?.status === "deletePending" ? "待删除" : "回听 / 分享"}</Button>
+                  <Button className='check-in-list-card__delete device-touch-target' onClick={() => local ? deleteLocal(local.requestId) : deleteCloud(cloud!)}>{cloud?.status === "deletePending" ? "重试" : "删除"}</Button>
                 </View>
               </View>
             </View>;

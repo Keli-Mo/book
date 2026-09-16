@@ -51,7 +51,7 @@ function createUiPage(name, options = {}) {
     overrides: {
       "taro-ui/lib/components/icon": iconModule,
       "@/hooks/useDeviceLayout": { useDeviceLayout: () => profile },
-      "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => ({ isSubmitting: () => false }) },
+      "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => ({ isSubmitting: () => false, getActive: () => undefined }) },
       "@/services/cloudCheckIn": {
         listMyCheckIns: async () => { if (options.cloudError) throw new Error("network unavailable"); return options.cloudRecords || []; },
         getCheckInDetail: async () => { if (options.detailError) throw new Error(options.detailError); return options.detail; },

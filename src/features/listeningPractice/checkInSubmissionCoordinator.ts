@@ -76,6 +76,7 @@ export type CheckInSubmissionCoordinatorAdapters = {
     clearTimeout(handle: unknown): void;
   };
   clock: { now(): number };
+  diagnose?(stage: string, details: { requestId: string; error?: unknown }): void;
 };
 
 type SubmitOptions = { onProgress?: (progress: SubmissionProgress) => void };
@@ -117,6 +118,9 @@ const normalizeProgress = (value: unknown) => {
  */
 export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCoordinatorAdapters) => {
   const activeByRequest = new Map<string, CheckInSubmissionHandle>();
+  const diagnose = (stage: string, requestId: string, error?: unknown) => {
+    try { adapters.diagnose?.(stage, { requestId, error }); } catch (_error) { /* 诊断失败不能改变分享结果。 */ }
+  };
 
   const submit = (pending: PendingCheckIn, options: SubmitOptions = {}): CheckInSubmissionHandle => {
     const requestKey = pending.requestId.toLowerCase();
@@ -278,7 +282,9 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
         const prepared = await adapters.prepareCheckIn(payload);
         if (prepared.state === "committed") {
           let shared: PendingCheckIn | null = null;
-          try { shared = await adapters.pendingStore.markShared(pending.requestId, prepared, shareRequestId); } catch (_error) { shared = null; }
+          try { shared = await adapters.pendingStore.markShared(pending.requestId, prepared, shareRequestId); }
+          catch (error) { diagnose("share.local_write.failed", pending.requestId, error); }
+          diagnose(shared ? "share.ready" : "share.local_write.pending", pending.requestId);
           phase = "done";
           return { state: "committed", id: prepared.id, shareToken: prepared.shareToken, expiresAtMs: prepared.expiresAtMs, cleanupPending: !shared };
         }
@@ -299,7 +305,9 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
           try {
             const created = await adapters.commitCheckIn({ ...payload, recordingFileId: cloudFileId });
             let shared: PendingCheckIn | null = null;
-            try { shared = await adapters.pendingStore.markShared(pending.requestId, created, shareRequestId); } catch (_error) { shared = null; }
+            try { shared = await adapters.pendingStore.markShared(pending.requestId, created, shareRequestId); }
+            catch (error) { diagnose("share.local_write.failed", pending.requestId, error); }
+            diagnose(shared ? "share.ready" : "share.local_write.pending", pending.requestId);
             phase = "done";
             return { state: "committed", id: created.id, shareToken: created.shareToken, expiresAtMs: created.expiresAtMs, cleanupPending: !shared };
           } catch (error) {
@@ -314,6 +322,7 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
           }
         }
       } catch (error) {
+        diagnose(cancelled ? "share.cancelled" : `share.${phase}.failed`, pending.requestId, error);
         phase = "done";
         const terminalShareCode = String(errorCode(error) || "").toUpperCase();
         if ((terminalShareCode === "SHARE_EXPIRED" || terminalShareCode === "REQUEST_DELETED") && shareRequestId) {
@@ -349,5 +358,6 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
   };
 
   const isSubmitting = (requestId: string) => activeByRequest.has(requestId.toLowerCase());
-  return { submit, isSubmitting };
+  const getActive = (requestId: string) => activeByRequest.get(requestId.toLowerCase());
+  return { submit, isSubmitting, getActive };
 };

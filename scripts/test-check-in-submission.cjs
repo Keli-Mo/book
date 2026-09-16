@@ -90,6 +90,7 @@ function harness(overrides = {}) {
     async markShareExpired(requestId, expected) { calls.push(["markShareExpired", requestId, expected]); const current = values.get(requestId); if (!current || current.shareRequestId !== expected) return false; values.set(requestId, { ...current, shareRequestId: undefined, share: undefined }); return true; },
   };
   const api = {
+    diagnose: overrides.diagnose,
     pendingStore: store,
     getRecordingInfo: async filePath => { calls.push(["info", filePath]); if (controls.infoError) throw controls.infoError; if (controls.infoPromise) return controls.infoPromise; return controls.recordingInfo; },
     prepareCheckIn: async input => { calls.push(["prepare", plain(input)]); if (controls.prepareError) throw controls.prepareError; if (controls.preparePromise) return controls.preparePromise; return controls.prepared; },
@@ -124,6 +125,27 @@ function harness(overrides = {}) {
 
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
+
+test("getActive 只读采用同一个在途 handle，完成后清除且查询不启动提交", async () => {
+  const gate = deferred(), h = harness({ preparePromise: gate.promise });
+  assert.equal(h.coordinator.getActive(item().requestId), undefined);
+  assert.equal(h.calls.length, 0);
+  const handle = h.submit(item());
+  assert.equal(h.coordinator.getActive(item().requestId.toUpperCase()), handle);
+  gate.resolve({ state: "committed", id: "existing", shareToken: "token", expiresAtMs: 9999 });
+  await handle.promise;
+  assert.equal(h.coordinator.getActive(item().requestId), undefined);
+  assert.equal(h.calls.filter(call => call[0] === "prepare").length, 1);
+  assert.equal(h.uploads.length, 0);
+});
+
+test("日志回调异常不影响分享成功或原始错误", async () => {
+  const diagnose = () => { throw new Error("console unavailable"); };
+  const success = harness({ diagnose });
+  assert.equal((await success.submit(item()).promise).state, "committed");
+  const failed = harness({ diagnose, prepareError: networkError });
+  assert.equal((await failed.submit(item()).promise).error, networkError);
+});
 
 test("实际文件指纹和规范 request/snapshot 贯穿提交", async () => {
   const h = harness(); const result = await h.submit(item({ requestId: "ABCDEF0123456789ABCDEF0123456789" })).promise;

@@ -74,7 +74,7 @@ exports.main = async (event = {}) => {
   if (context.SOURCE !== "wx_trigger" || context.OPENID) return { ok: false, code: "FORBIDDEN" };
   const prefix = trustedPrefix(context.ENV);
   const dryRun = process.env.SHARE_CLEANUP_ENABLED !== "true" || event.dryRun === true || !prefix;
-  const result = { ok: true, dryRun, scanned: 0, candidates: 0, deleted: 0, failed: 0, nextCursor: "",
+  const result = { ok: true, dryRun, scanned: 0, candidates: 0, validated: 0, deleted: 0, failed: 0, nextCursor: "",
     ...(!prefix ? { code: "STORAGE_PREFIX_REQUIRED" } : {}) };
   try {
     const stateDoc = db.collection("shareCleanupState").doc("v2");
@@ -88,8 +88,14 @@ exports.main = async (event = {}) => {
     for (const record of page.data) {
       if (!eligible(record, now)) continue;
       result.candidates++;
-      if (dryRun) continue;
-      try { if (await cleanOne(record._id, prefix, now)) result.deleted++; } catch (error) {
+      // 缺少可信前缀时只能统计，不能把候选声明为已校验通过。
+      if (!prefix) continue;
+      try {
+        // 预演也走真实路径/环境检查；正式删除仍在事务内重读校验以防扫描竞态。
+        fileFor(record, prefix);
+        result.validated++;
+        if (!dryRun && await cleanOne(record._id, prefix, now)) result.deleted++;
+      } catch (error) {
         result.failed++;
         // 不输出录音URL、口令或OPENID，失败记录保留引用，下轮重试。
         console.error("分享清理未完成", { id: record._id, code: error?.code || error?.message || "UNKNOWN" });

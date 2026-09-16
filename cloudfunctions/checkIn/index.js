@@ -137,6 +137,30 @@ const validateFileId = (fileId, binding, envId) => {
   return value;
 };
 
+const assertFileReferences = async (recordingFileId, openId) => {
+  if (typeof recordingFileId !== "string" || !recordingFileId || typeof openId !== "string" || !openId) {
+    reject("FILE_REFERENCE_CONFLICT", "录音引用无法核验，请联系管理员");
+  }
+  // 仅服务端协议的完整路径携带 owner 摘要；平铺旧路径不提供任何归属证明。
+  // 即使协议文件尚未 commit、还没有本人记录，也不能经旧别名读删其他 owner 的文件。
+  const protocolPath = /^cloud:\/\/[\w-]+\.[\w-]+\/(?:checkins|expiring-shares-v2)\/([a-f0-9]{64})\/[a-f0-9]{32}-[a-f0-9]{64}\.mp3$/.exec(recordingFileId);
+  if (protocolPath && protocolPath[1] !== digest("sha256", openId)) {
+    reject("FILE_REFERENCE_CONFLICT", "录音引用归属冲突，请联系管理员核验");
+  }
+  // 不过滤墓碑/期限：旧别名也可能指向协议文件；不能只检查旧记录或第一页。
+  // 查询失败直接向上抛出，禁止以空引用集继续签名、下载、删除或写墓碑。
+  for (let offset = 0; ; offset += 100) {
+    let query = checkIns.where({ recordingFileId });
+    if (offset) query = query.skip(offset);
+    const result = await query.limit(100).get();
+    if (!Array.isArray(result?.data)) reject("FILE_REFERENCE_CHECK_FAILED", "录音引用核验失败，请稍后重试");
+    if (result.data.some(record => !record || record._openid !== openId)) {
+      reject("FILE_REFERENCE_CONFLICT", "录音引用归属冲突，请联系管理员核验");
+    }
+    if (result.data.length < 100) return;
+  }
+};
+
 const commitCheckIn = async (event, openId, envId) => {
   const binding = bindRequest(event, openId);
   const previous = (await checkIns.doc(binding.id).get()).data;
@@ -148,6 +172,7 @@ const commitCheckIn = async (event, openId, envId) => {
     return success(existing);
   }
   // 文件检查在事务外完成；仅 URL 或客户端“上传成功”声明不足以证明文件有效。
+  await assertFileReferences(recordingFileId, openId);
   const downloaded = await cloud.downloadFile({ fileID: recordingFileId });
   // Node SDK 成功结果可能仅含 fileContent；有 HTTP 状态时仍拒绝非 200。
   if ((downloaded.statusCode !== undefined && downloaded.statusCode !== 200) || !Buffer.isBuffer(downloaded.fileContent) ||
@@ -190,25 +215,6 @@ const toPublicSummary = (record) => ({
   ...(record.shareVersion === 2 ? { expiresAtMs: record.expiresAtMs } : {}),
 });
 
-const createCheckIn = async (event, openId) => {
-  const recordingFileId = requireText(event.recordingFileId, "录音文件", 500);
-  if (!recordingFileId.startsWith("cloud://") || !/\/checkins\//.test(recordingFileId)) {
-    throw new Error("录音文件路径不合法");
-  }
-
-  const record = {
-    // _openid 由云函数上下文写入，客户端无法冒充其他用户。
-    _openid: openId,
-    shareToken: crypto.randomBytes(16).toString("hex"),
-    recordingFileId,
-    ...normalizeSnapshot(event),
-    createdAt: db.serverDate(),
-  };
-
-  const result = await checkIns.add({ data: record });
-  return success({ id: result._id, shareToken: record.shareToken });
-};
-
 const getDetail = async (event, openId) => {
   const id = requireText(event.id, "打卡编号", 100);
   const result = await checkIns.doc(id).get();
@@ -227,7 +233,8 @@ const getDetail = async (event, openId) => {
     return failure("分享链接无效或已经失效");
   }
 
-  // Node SDK 的 maxAge 单位为秒；不足一秒时不再签发，避免向上取整越过期限。
+  await assertFileReferences(record.recordingFileId, record._openid);
+  // 引用分页可能耗时，核验后再算 maxAge（秒）；不足一秒不签发，避免越过期限。
   const maxAge = record.shareVersion === 2 ? Math.min(300, Math.floor((record.expiresAtMs - Date.now()) / 1000)) : null;
   if (maxAge !== null && !(maxAge > 0)) return failure("分享已过期", "SHARE_EXPIRED");
   const fileResult = await cloud.getTempFileURL({
@@ -250,11 +257,58 @@ const listMine = async (openId) => {
     let query = checkIns.where({ _openid: openId }).orderBy("createdAt", "desc");
     if (offset) query = query.skip(offset);
     const result = await query.limit(100).get();
-    visible.push(...result.data.filter(record => record.status !== "deletePending" && record.status !== "deleted" &&
-      !(record.shareVersion === 2 && (record.status !== "active" || isExpired(record)))));
+    visible.push(...result.data.filter(record => record.status === "deletePending" ||
+      (record.status !== "deleted" && record.status !== "pending" &&
+        !(record.shareVersion === 2 && (record.status !== "active" || isExpired(record))))));
     if (result.data.length < 100) break;
   }
-  return success(visible.slice(0, 50).map(toPublicSummary));
+  return success(visible.slice(0, 50).map(record => record.status === "deletePending"
+    ? { ...toPublicSummary(record), status: "deletePending", shareToken: "" }
+    : toPublicSummary(record)));
+};
+
+// 只在本机录音 owner 主动修复链接时读取；不签回 URL，不修改记录或删除防重墓碑。
+const getShareStatus = async (event, openId) => {
+  try {
+    const id = requireText(event.id, "打卡编号", 100);
+    const shareRequestId = requireText(event.shareRequestId, "分享代次", 32).toLowerCase();
+    const record = (await checkIns.doc(id).get()).data;
+    if (record === null) return success({ state: "missing" });
+    if (!record || typeof record !== "object") return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
+    if (record._openid !== openId) return failure("只能核验自己的分享", "FORBIDDEN");
+    if (record.requestId !== shareRequestId) return failure("分享代次不匹配", "SHARE_GENERATION_MISMATCH");
+    if (record.status === "deleted" || record.status === "deletePending") return success({ state: "deleted" });
+    if (isExpired(record)) return success({ state: "expired" });
+    if (record.status !== "active") return failure("分享尚未完成", "SHARE_NOT_COMMITTED");
+    await assertFileReferences(record.recordingFileId, openId);
+    try {
+      // SDK 签出地址不证明文件存在；downloadFile 才验证可读取。
+      const downloaded = await cloud.downloadFile({ fileID: record.recordingFileId });
+      // wx-server-sdk 成功包明确包含 statusCode:200；畸形或自相矛盾的回包不能证明文件损坏。
+      if (downloaded?.statusCode !== 200 ||
+          [downloaded.errCode, downloaded.code, downloaded.errno].some(code => code !== undefined && code !== 0) ||
+          (downloaded.errMsg !== undefined && downloaded.errMsg !== "downloadFile:ok") ||
+          !Buffer.isBuffer(downloaded.fileContent)) {
+        return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
+      }
+      if (!Number.isSafeInteger(record.fileSizeBytes) || record.fileSizeBytes <= 0 ||
+          typeof record.contentSha1 !== "string" || !/^[a-f0-9]{40}$/.test(record.contentSha1)) {
+        return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
+      }
+      if (downloaded.fileContent.length !== record.fileSizeBytes || digest("sha1", downloaded.fileContent) !== record.contentSha1) {
+        return success({ state: "invalid" });
+      }
+    } catch (error) {
+      // 4.0.2 明确缺失码；403、超时、STORAGE_REQUEST_FAIL 及通用文案均不能失效本机状态。
+      const code = error?.errCode ?? error?.code;
+      if (code === -503003 || code === "STORAGE_FILE_NONEXIST") return success({ state: "missing" });
+      return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
+    }
+    return success({ state: isExpired(record) ? "expired" : "active" });
+  } catch (_error) {
+    // SDK 错误可能包含签名 URL，核验路径不输出原始错误或文件标识。
+    return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
+  }
 };
 
 const isStorageFileAbsent = (result) => {
@@ -274,6 +328,7 @@ const removeCheckIn = async (event, openId) => {
   // 尚未提交的新分享没有可删除文件，也不能提前写删除墓碑。
   if (record.status === "pending") return failure("分享尚未提交，不能删除", "SHARE_NOT_COMMITTED");
 
+  await assertFileReferences(record.recordingFileId, record._openid);
   if (record.requestId) {
     // 幂等记录先写墓碑，阻止删除过程中或删除后的迟到 commit 复活录音。
     await runTransaction(async transaction => {
@@ -323,11 +378,13 @@ exports.main = async (event = {}) => {
       case "commit":
         return await commitCheckIn(event, OPENID, ENV);
       case "create":
-        return await createCheckIn(event, OPENID);
+        return failure("旧版新增已停用，请升级客户端后重试", "LEGACY_CREATE_DISABLED");
       case "detail":
         return await getDetail(event, OPENID);
       case "listMine":
         return await listMine(OPENID);
+      case "shareStatus":
+        return await getShareStatus(event, OPENID);
       case "remove":
         return await removeCheckIn(event, OPENID);
       default:

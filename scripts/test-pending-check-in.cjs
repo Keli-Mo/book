@@ -31,8 +31,9 @@ vm.runInNewContext(compiled.outputText, {
 });
 
 const {
-  MAX_PENDING_COUNT,
   MAX_PENDING_FILE_BYTES,
+  PENDING_RECORDING_BYTES,
+  RECORDING_START_USED_BYTES,
   createPendingCheckInStore,
 } = moduleContainer.exports;
 
@@ -57,6 +58,7 @@ const createAdapters = ({
   storageGetBehavior,
   existingPaths,
   removeBehavior,
+  usageBehavior,
 } = {}) => {
   let savedRecords = JSON.parse(JSON.stringify(records));
   const calls = { save: [], remove: [], set: 0 };
@@ -76,6 +78,10 @@ const createAdapters = ({
       },
     },
     file: {
+      async usageBytes() {
+        if (usageBehavior) return usageBehavior();
+        return savedRecords.reduce((total, item) => total + item.fileSizeBytes, 0);
+      },
       async save(tempPath) {
         calls.save.push(tempPath);
         if (saveBehavior) return saveBehavior(tempPath, calls.save.length);
@@ -135,7 +141,32 @@ const createBarrier = () => {
 
 (async () => {
   assert.equal(MAX_PENDING_FILE_BYTES, 100 * MIB, "本地录音库总预算应为 100MiB");
-  assert.equal(MAX_PENDING_COUNT, 500, "本地录音库最多保留 500 条元数据");
+  assert.equal(PENDING_RECORDING_BYTES, 90 * MIB, "固定保留 10MiB，不可被录音侵占");
+  assert.equal(RECORDING_START_USED_BYTES, 82 * MIB, "开麦前还须预留一条 8MiB 文件上限");
+
+  const atStartBoundary = createPendingCheckInStore(createAdapters({ usageBehavior: () => 82 * MIB }).adapters);
+  const boundaryResult = await atStartBoundary.checkCanStartRecording();
+  assert.equal(boundaryResult.allowed, true, "恰好 82MiB 仍可开麦");
+  assert.equal(boundaryResult.message, "");
+  const overStartBoundary = createPendingCheckInStore(createAdapters({ usageBehavior: () => 82 * MIB + 1 }).adapters);
+  assert.equal((await overStartBoundary.checkCanStartRecording()).allowed, false, "超过 82MiB 一字节必须拦截开麦");
+
+  for (const invalidUsage of [() => { throw new Error("stat failed"); }, () => -1, () => 1.5, () => NaN]) {
+    const unknown = createPendingCheckInStore(createAdapters({ usageBehavior: invalidUsage }).adapters);
+    const result = await unknown.checkCanStartRecording();
+    assert.equal(result.allowed, false, "统计失败或大小无效不能按 0 处理");
+    assert.match(result.message, /无法检查本地录音空间/);
+  }
+
+  const manyRecords = Array.from({ length: 501 }, (_, index) => pending({ requestId: hex(index + 1000), localPath: `/saved/many-${index}.mp3`, fileSizeBytes: 1 }));
+  const manyAdapters = createAdapters({ records: manyRecords, usageBehavior: () => 501 });
+  const manyStore = createPendingCheckInStore(manyAdapters.adapters);
+  assert.equal((await manyStore.saveRecording(recording({ fileSizeBytes: 1 }))).persisted, true, "空间足够时 501 条之后仍可保存");
+
+  const orphanUsage = createPendingCheckInStore(createAdapters({ records: [], usageBehavior: () => 90 * MIB }).adapters);
+  const orphanBlocked = await orphanUsage.saveRecording(recording({ fileSizeBytes: 1 }));
+  assert.equal(orphanBlocked.persisted, false, "未被索引引用的实际文件仍须计入容量");
+  assert.match(orphanBlocked.message, /整理历史录音/);
 
   const pathSwitch = createAdapters({ existingPaths: ["/tmp/current.mp3"] });
   const store = createPendingCheckInStore(pathSwitch.adapters);
@@ -171,6 +202,51 @@ const createBarrier = () => {
   assert.equal(actualRestarted.list()[0].fileSizeBytes, 4097);
   assert.equal(actualRestarted.list()[0].contentSha1, "a".repeat(40));
 
+  let calibrationReads = 0;
+  const unknownCalibration = createAdapters({
+    existingPaths: ["/tmp/calibration.mp3"],
+    usageBehavior: () => {
+      calibrationReads += 1;
+      if (calibrationReads === 1) return 0;
+      throw new Error("post-save stat failed");
+    },
+    saveBehavior: async () => ({ savedFilePath: "/saved/calibration.mp3", fileSizeBytes: 4097, contentSha1: "e".repeat(40) }),
+  });
+  const calibrationResult = await createPendingCheckInStore(unknownCalibration.adapters).saveRecording(
+    recording({ tempFilePath: "/tmp/calibration.mp3", fileSizeBytes: 4096 }),
+  );
+  assert.equal(calibrationResult.persisted, true, "保存后统计失败仍必须持久化已落盘恢复路径");
+  assert.equal(calibrationResult.item.localPath, "/saved/calibration.mp3");
+  assert.match(calibrationResult.message, /无法核实本地录音空间/, "保存后未知容量不得伪装成正常");
+
+  for (const retryCapacity of ["unknown", "over-limit"]) {
+    let usageReads = 0;
+    const movedRetry = createAdapters({
+      existingPaths: [`/tmp/moved-${retryCapacity}.mp3`],
+      usageBehavior: () => {
+        usageReads += 1;
+        if (usageReads <= 2) return usageReads === 1 ? 0 : 20;
+        if (retryCapacity === "unknown") throw new Error("retry stat failed");
+        return 91 * MIB;
+      },
+      saveBehavior: async () => ({ savedFilePath: `/saved/moved-${retryCapacity}.mp3`, fileSizeBytes: 20, contentSha1: "f".repeat(40) }),
+      storageSetBehavior: async (_records, count) => {
+        if (count === 1) throw new Error("first metadata write failed");
+      },
+    });
+    const movedStore = createPendingCheckInStore(movedRetry.adapters);
+    const firstAttempt = await movedStore.saveRecording(recording({ tempFilePath: `/tmp/moved-${retryCapacity}.mp3`, fileSizeBytes: 20 }));
+    assert.equal(firstAttempt.persisted, false);
+    assert.equal(firstAttempt.item.localPath, `/saved/moved-${retryCapacity}.mp3`);
+    const retried = await movedStore.retrySave(firstAttempt.item.requestId);
+    assert.equal(retried.persisted, true, `已移动路径在容量 ${retryCapacity} 时仍须补写索引`);
+    assert.equal(retried.item.localPath, `/saved/moved-${retryCapacity}.mp3`, "补索引必须复用原 savedPath");
+    assert.equal(movedRetry.calls.set, 2, "索引失败后的重试必须发生第二次元数据写入");
+    assert.equal(movedRetry.calls.save.length, 1, "已移动路径不得再次 saveFile");
+    assert.equal(movedRetry.calls.remove.length, 0, "补索引不得为满足容量删除文件");
+    assert.match(retried.message, retryCapacity === "unknown" ? /无法核实本地录音空间/ : /空间不足/);
+  }
+
   const legacyMetadata = createAdapters({ records: [pending()] });
   const legacyStore = createPendingCheckInStore(legacyMetadata.adapters);
   await legacyStore.ready();
@@ -197,16 +273,17 @@ const createBarrier = () => {
   assert.equal(reboundFailureStore.list()[0].contentSha1, undefined);
 
   const correctedCapacity = createAdapters({
-    records: [pending({ fileSizeBytes: 99 * MIB })],
-    saveBehavior: async () => ({ savedFilePath: "/saved/corrected.mp3", fileSizeBytes: MIB + 1, contentSha1: "d".repeat(40) }),
+    records: [pending({ fileSizeBytes: 89 * MIB })],
+    saveBehavior: async () => ({ savedFilePath: "/saved/corrected.mp3", fileSizeBytes: 2 * MIB, contentSha1: "d".repeat(40) }),
     existingPaths: ["/saved/existing.mp3", "/saved/corrected.mp3"],
+    usageBehavior: (() => { const values = [89 * MIB, 91 * MIB, 91 * MIB]; return () => values.shift() ?? 91 * MIB; })(),
   });
   const correctedCapacityStore = createPendingCheckInStore(correctedCapacity.adapters);
   const correctedSaved = await correctedCapacityStore.saveRecording(recording({ fileSizeBytes: MIB }));
   assert.equal(correctedSaved.persisted, true, "实测越限也必须保住已保存文件的恢复元数据");
   assert.equal(correctedSaved.item.localPath, "/saved/corrected.mp3");
-  assert.equal(correctedSaved.item.fileSizeBytes, MIB + 1);
-  assert.match(correctedSaved.message, /100MiB/);
+  assert.equal(correctedSaved.item.fileSizeBytes, 2 * MIB);
+  assert.match(correctedSaved.message, /空间不足/);
   const blockedByActualSize = await correctedCapacityStore.saveRecording(recording({ fileSizeBytes: 1 }));
   assert.equal(blockedByActualSize.persisted, false, "后续容量判断必须使用修正后的实际字节数");
   assert.equal(correctedCapacity.calls.save.length, 1);
@@ -231,18 +308,21 @@ const createBarrier = () => {
     "非有限原生文件大小必须拒绝",
   );
 
-  const exactCapacity = createAdapters({ existingPaths: ["/tmp/exact.mp3"] });
+  const exactCapacity = createAdapters({
+    existingPaths: ["/tmp/exact.mp3"],
+    usageBehavior: (() => { const values = [0, 90 * MIB, 90 * MIB]; return () => values.shift() ?? 90 * MIB; })(),
+  });
   const exactStore = createPendingCheckInStore(exactCapacity.adapters);
   const exact = await exactStore.saveRecording(
-    recording({ tempFilePath: "/tmp/exact.mp3", fileSizeBytes: 100 * MIB }),
+    recording({ tempFilePath: "/tmp/exact.mp3", fileSizeBytes: 90 * MIB }),
   );
-  assert.equal(exact.persisted, true, "恰好 100MiB 应允许保存");
+  assert.equal(exact.persisted, true, "恰好 90MiB 应允许保存并保留 10MiB 安全余量");
   const over = await exactStore.saveRecording(
     recording({ tempFilePath: "/tmp/over.mp3", fileSizeBytes: 1 }),
   );
   assert.equal(over.persisted, false);
   assert.equal(over.item.recoverable, false);
-  assert.match(over.message, /清理历史录音/);
+  assert.match(over.message, /整理历史录音/);
   assert.equal(exactCapacity.calls.save.length, 1, "预判容量超限不得移动临时文件");
 
   const countBoundary = createAdapters({
@@ -252,8 +332,7 @@ const createBarrier = () => {
   countBoundary.adapters.random.hex = () => hex(501);
   const countStore = createPendingCheckInStore(countBoundary.adapters);
   const countOver = await countStore.saveRecording(recording({ fileSizeBytes: 1 }));
-  assert.equal(countOver.persisted, false, "第 501 条不得再持久保存");
-  assert.match(countOver.message, /最多 500 条/);
+  assert.equal(countOver.persisted, true, "容量足够时第 501 条短录音仍可持久保存");
 
   const cleanupNow = 1_900_000_000_000;
   const cleanup = createAdapters({
@@ -488,6 +567,24 @@ const createBarrier = () => {
   const shareRestart = createPendingCheckInStore(shareAdapters.adapters);
   await shareRestart.ready();
   assert.equal(shareRestart.list()[0].shareRequestId, hex(192), "新代写入成功后重启仍保持");
+  assert.equal(await shareRestart.markShareExpired(hex(91), hex(191)), false, "迟到核验不得清掉另一代分享");
+  assert.equal(shareRestart.list()[0].shareRequestId, hex(192));
+  assert.equal(await shareRestart.markShareExpired(hex(91), hex(192)), true);
+  assert.equal(shareRestart.list()[0].shareRequestId, undefined);
+  assert.equal(shareAdapters.existing.has("/saved/existing.mp3"), true);
+  assert.equal(shareAdapters.calls.remove.length, 0);
+  const invalidatedRestart = createPendingCheckInStore(shareAdapters.adapters);
+  await invalidatedRestart.ready();
+  assert.equal(invalidatedRestart.list()[0].shareRequestId, undefined, "主动失效必须持久化后才报告成功");
+  const failingExpiry = createAdapters({
+    records: [pending({ requestId: hex(93), shareRequestId: hex(193), cloudFileId: "cloud://original", share: { id: "original", shareToken: "original-token", expiresAtMs: expiry } })],
+    storageSetBehavior: async () => { throw new Error("metadata quota exceeded"); },
+  });
+  const failingExpiryStore = createPendingCheckInStore(failingExpiry.adapters);
+  assert.equal(await failingExpiryStore.markShareExpired(hex(93), hex(193)), false);
+  assert.equal(failingExpiryStore.list()[0].share.id, "original");
+  assert.equal(failingExpiryStore.list()[0].cloudFileId, "cloud://original");
+  assert.equal(failingExpiry.calls.remove.length, 0);
 
   const uppercaseGeneration = createAdapters({
     records: [pending({ requestId: "B".repeat(32), shareRequestId: "A".repeat(32) })],

@@ -16,6 +16,10 @@ const network = [];
 const sha1 = bytes => crypto.createHash("sha1").update(bytes).digest("hex");
 let sequence = 0;
 let uploadedBytes;
+const listSavedFiles = () => fs.readdirSync(folder).filter(name => /^saved-\d+\.mp3$/.test(name)).map(name => {
+  const filePath = path.join(folder, name);
+  return { filePath, size: fs.statSync(filePath).size };
+});
 const wx = {
   getStorageSync: key => metadata.get(key),
   setStorageSync: (key, value) => metadata.set(key, JSON.parse(JSON.stringify(value))),
@@ -35,6 +39,9 @@ const wx = {
     } catch (error) { fail(error); }
   },
   getFileSystemManager: () => ({
+    getSavedFileList({ success, fail }) {
+      try { success({ fileList: listSavedFiles() }); } catch (error) { fail(error); }
+    },
     access({ path: filePath, success, fail }) { fs.existsSync(filePath) ? success({}) : fail({}); },
     unlink({ filePath, success, fail }) {
       try { fs.unlinkSync(filePath); success({}); } catch (error) { fail(error); }
@@ -98,6 +105,7 @@ const load = relative => {
   assert.equal(saved.persisted, true);
   assert.equal(fs.existsSync(tempFilePath), false);
   assert.equal(saved.item.fileSizeBytes, 4097, "保存后的实际文件大小应替代回调大小");
+  assert.equal(await runtime.getLocalRecordingUsageBytes(), 4097, "容量来自已保存文件的磁盘实测大小");
   assert.equal(saved.item.contentSha1, sha1(fs.readFileSync(saved.item.localPath)));
   const shareReady = await store.beginShare(saved.item.requestId);
   assert.equal((await coordinator.submit(shareReady).promise).state, "committed");
@@ -118,7 +126,8 @@ const load = relative => {
   metadata.set(PENDING_CHECK_IN_STORAGE_KEY, [legacyRecord]);
   const restoredStore = createPendingCheckInStore({
     storage: { get: key => metadata.get(key), set: (key, value) => metadata.set(key, JSON.parse(JSON.stringify(value))) },
-    file: { exists: fs.existsSync, remove: fs.unlinkSync, save: () => { throw new Error("旧文件不应重录或重存"); } },
+    file: { usageBytes: () => listSavedFiles().reduce((total, file) => total + file.size, 0),
+      exists: fs.existsSync, remove: fs.unlinkSync, save: () => { throw new Error("旧文件不应重录或重存"); } },
     clock: { now: Date.now }, random: { hex: () => "c".repeat(32) },
   });
   await restoredStore.ready();

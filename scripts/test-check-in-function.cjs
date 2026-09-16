@@ -17,7 +17,9 @@ function harness() {
   const records = new Map(), versions = new Map(), files = new Map();
   const metrics = { writes: 0, deletes: 0, downloads: 0, attempts: 0, conflicts: 0, signed: 0 };
   const controls = { owner: "owner-openid", readError: null, downloadError: null, downloadStatus: 200,
-    deleteStatus: 0, missingDeleteResult: null, deleteError: null, finalizeError: null, ownerOnlyQuery: false, forcedConflicts: 0 };
+    deleteStatus: 0, missingDeleteResult: null, deleteError: null, finalizeError: null, ownerOnlyQuery: false, forcedConflicts: 0,
+    referenceQueryError: null, referenceQueryErrorOffset: 0, referenceQueryResult: undefined,
+    referenceQueryDelayMs: 0, timeOffsetMs: 0 };
   let throwOnNotFound = true;
   const put = (id, data) => { records.set(id, structuredClone({ ...data, _id: id })); versions.set(id, (versions.get(id) || 0) + 1); metrics.writes++; };
   const collection = tx => ({
@@ -25,6 +27,7 @@ function harness() {
     doc(id) { return {
       async get() {
         if (controls.readError) throw controls.readError;
+        if (controls.readResult !== undefined) return controls.readResult;
         if (tx) tx.reads.set(id, tx.versions.get(id) || 0);
         const data = (tx ? tx.snapshot : records).get(id);
         if (!data && throwOnNotFound) throw new Error(`document with _id ${id} does not exist`);
@@ -43,6 +46,11 @@ function harness() {
       let limit = Infinity, offset = 0;
       return { orderBy() { return this; }, skip(n) { offset = n; return this; }, limit(n) { limit = n; return this; }, async get() {
         if (controls.readError) throw controls.readError;
+        if (condition.recordingFileId) {
+          controls.timeOffsetMs += controls.referenceQueryDelayMs;
+          if (controls.referenceQueryError && offset >= controls.referenceQueryErrorOffset) throw controls.referenceQueryError;
+          if (controls.referenceQueryResult !== undefined) return controls.referenceQueryResult;
+        }
         return { data: [...records.values()].filter(record => Object.entries(condition).every(([key, value]) =>
           value && value.notIn ? !value.notIn.includes(record[key]) : record[key] === value))
           .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(offset, offset + limit).map(v => structuredClone(v)) };
@@ -78,8 +86,9 @@ function harness() {
     async downloadFile({ fileID }) {
       metrics.downloads++;
       if (controls.downloadError) throw controls.downloadError;
+      if ("downloadResult" in controls) return controls.downloadResult;
       if (!files.has(fileID)) throw Object.assign(new Error("file not uploaded"), { code: "FILE_NOT_FOUND" });
-      return { fileContent: files.get(fileID), ...(controls.downloadStatus === undefined ? {} : { statusCode: controls.downloadStatus }) };
+      return { fileContent: files.get(fileID), errMsg: "downloadFile:ok", ...(controls.downloadStatus === undefined ? {} : { statusCode: controls.downloadStatus }) };
     },
     async getTempFileURL({ fileList }) { metrics.signed++; metrics.lastSign = plain(fileList); return { fileList: fileList.map(item => {
       const fileID = typeof item === "string" ? item : item.fileID;
@@ -94,7 +103,8 @@ function harness() {
     }) }; },
   };
   const mod = { exports: {} };
-  vm.runInNewContext(source, { module: mod, exports: mod.exports, Buffer, URL, console: { error() {} },
+  vm.runInNewContext(source, { module: mod, exports: mod.exports, Buffer, URL,
+    Date: class extends Date { static now() { return Date.now() + controls.timeOffsetMs; } }, console: { error() {} },
     require: name => name === "wx-server-sdk" ? cloud : require(name) });
   const call = (action, payload = {}) => mod.exports.main({ ...payload, action });
   const prepare = async (payload = input()) => { const result = await call("prepare", payload);
@@ -105,6 +115,193 @@ function harness() {
 
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
+
+for (const [label, patch] of [
+  ["缺少 HTTP 状态", {}],
+  ["成功 HTTP 与权限 errCode 矛盾", { statusCode: 200, errCode: -503002 }],
+  ["零 errCode 与失败 code 矛盾", { statusCode: 200, errCode: 0, code: "STORAGE_REQUEST_FAIL" }],
+  ["成功 HTTP 与 errno 矛盾", { statusCode: 200, errno: -1 }],
+  ["成功 HTTP 与失败 errMsg 矛盾", { statusCode: 200, errMsg: "downloadFile:fail storage permission denied" }],
+  ["非数值 HTTP 状态", { statusCode: "200" }],
+]) test(`分享核验拒绝${label}，不误判损坏`, async () => {
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event), recordingFileId = h.upload(p);
+  await h.call("commit", { ...event, recordingFileId });
+  const before = plain([...h.records]);
+  for (const fileContent of [Buffer.alloc(0), Buffer.alloc(bytes.length, 1), bytes]) {
+    h.controls.downloadResult = { fileContent, ...patch };
+    const result = await h.call("shareStatus", { id: p.id, shareRequestId: event.requestId });
+    assert.equal(result.ok, false, "SDK 未明确成功，不可返回 active/missing/invalid");
+    assert.equal(result.code, "SHARE_STATUS_UNAVAILABLE");
+    assert.deepEqual(plain([...h.records]), before); assert.equal(h.metrics.deletes, 0);
+  }
+});
+
+test("本人主动核验分享：真实文件读取、明确失效、未知错误保留状态", async () => {
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
+  const recordingFileId = h.upload(p);
+  await h.call("commit", { ...event, recordingFileId });
+  const probe = () => h.call("shareStatus", { id: p.id, shareRequestId: event.requestId });
+  const writes = h.metrics.writes;
+  const active = await probe();
+  assert.equal(active.ok, true, "本人主动核验应返回可用状态");
+  assert.deepEqual(plain(active.data), { state: "active" });
+  for (const content of [Buffer.alloc(0), Buffer.alloc(bytes.length, 1)]) {
+    h.files.set(recordingFileId, content);
+    assert.deepEqual(plain((await probe()).data), { state: "invalid" }, "明确大小或摘要不匹配可以主动恢复");
+  }
+  h.files.set(recordingFileId, bytes);
+  for (const error of [{ errCode: -503003 }, { code: "STORAGE_FILE_NONEXIST" }]) {
+    h.controls.downloadError = error;
+    assert.deepEqual(plain((await probe()).data), { state: "missing" });
+  }
+  for (const error of [{ errCode: -503002 }, { code: "ETIMEDOUT" }, { code: "STORAGE_REQUEST_FAIL", message: "Status:404 Url:https://secret?token=private" }, { message: "storage file not exists" }]) {
+    h.controls.downloadError = error;
+    const result = await probe();
+    assert.equal(result.ok, false);
+    assert.doesNotMatch(JSON.stringify(result), /secret|private|https:/);
+  }
+  h.controls.downloadError = null;
+  for (const status of ["deletePending", "deleted"]) {
+    h.records.get(p.id).status = status;
+    assert.deepEqual(plain((await probe()).data), { state: "deleted" });
+  }
+  h.records.get(p.id).status = "active"; h.records.get(p.id).expiresAtMs = 1;
+  assert.deepEqual(plain((await probe()).data), { state: "expired" });
+  h.controls.owner = "visitor";
+  assert.equal((await probe()).code, "FORBIDDEN");
+  h.controls.owner = "owner-openid"; h.records.delete(p.id);
+  assert.deepEqual(plain((await probe()).data), { state: "missing" });
+  for (const readResult of [{}, { data: undefined }, { data: false }]) {
+    h.controls.readResult = readResult;
+    assert.equal((await probe()).ok, false, "只有 SDK 明确 data:null 可以判为记录缺失");
+  }
+  assert.equal(h.metrics.writes, writes); assert.equal(h.metrics.deletes, 0);
+});
+
+test("分享核验也必须先阻止跨 owner 文件引用，网络读取失败不能判缺失", async () => {
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event), recordingFileId = h.upload(p);
+  await h.call("commit", { ...event, recordingFileId });
+  const downloads = h.metrics.downloads;
+  h.records.set("foreign-alias", { _id: "foreign-alias", _openid: "other", recordingFileId });
+  const probe = () => h.call("shareStatus", { id: p.id, shareRequestId: event.requestId });
+  assert.equal((await probe()).ok, false); assert.equal(h.metrics.downloads, downloads);
+  h.records.delete("foreign-alias"); h.controls.readError = { code: "ETIMEDOUT" };
+  assert.equal((await probe()).ok, false); assert.equal(h.metrics.downloads, downloads);
+});
+const legacyFixture = (h, patch = {}) => {
+  const record = { bookId: "3", bookTitle: "CASA", practiceId: "3-page-4", practiceIndex: 0,
+    pageNumber: 4, sectionTitle: "课程导入", imageUrl: "https://example.test/page-4.png", durationMs: 3200,
+    _id: "legacy", _openid: "owner-openid", shareToken: "legacy-share-token",
+    recordingFileId: "cloud://test.bucket/checkins/legacy.mp3", createdAt: "2025-01-01", ...patch };
+  h.records.set(record._id, record);
+  h.files.set(record.recordingFileId, bytes);
+  return record;
+};
+test("旧 create 一律禁用且鉴权优先、无任何副作用", async () => {
+  const h = harness(), before = plain(h.metrics);
+  for (const payload of [{ ...input(), recordingFileId: "cloud://test.bucket/checkins/legacy.mp3" }, {},
+    { recordingFileId: "invalid", _openid: "other-owner" }]) {
+    assert.equal((await h.call("create", payload)).code, "LEGACY_CREATE_DISABLED");
+  }
+  h.controls.owner = "";
+  assert.equal((await h.call("create", input())).code, "UNAUTHENTICATED");
+  assert.equal(h.records.size, 0); assert.deepEqual(h.metrics, before);
+});
+test("旧文件跨 owner 引用时双方详情及删除均拒绝，所有状态参与核验", async () => {
+  for (const status of [undefined, "active", "pending", "deletePending", "deleted"]) {
+    const h = harness(), first = legacyFixture(h);
+    legacyFixture(h, { _id: "alias", _openid: "other-owner", ...(status ? { status } : {}) });
+    const before = plain([...h.records]);
+    for (const [id, owner] of [[first._id, first._openid], ["alias", "other-owner"]]) {
+      // 墓碑和 pending 自己的详情/删除仍遵循原状态规则；有效的另一行必须发现它们。
+      if (id === "alias" && status && status !== "active") continue;
+      h.controls.owner = owner;
+      assert.equal((await h.call("detail", { id })).code, "FILE_REFERENCE_CONFLICT");
+      h.controls.owner = "visitor";
+      assert.equal((await h.call("detail", { id, shareToken: first.shareToken })).code, "FILE_REFERENCE_CONFLICT");
+      h.controls.owner = owner;
+      assert.equal((await h.call("remove", { id })).code, "FILE_REFERENCE_CONFLICT");
+    }
+    assert.deepEqual(plain([...h.records]), before); assert.equal(h.files.size, 1);
+    assert.equal(h.metrics.signed + h.metrics.deletes + h.metrics.writes, 0);
+  }
+});
+test("引用核验读取全部分页，后页跨 owner 冲突或错误均失败关闭", async () => {
+  for (const mode of ["conflict", "error", "malformed"]) {
+    const h = harness(), first = legacyFixture(h);
+    for (let i = 0; i < 105; i++) legacyFixture(h, { _id: `same-owner-${i}`, createdAt: "2026-01-01" });
+    if (mode === "conflict") legacyFixture(h, { _id: "older-alias", _openid: "other-owner", createdAt: "2020-01-01" });
+    if (mode === "error") {
+      h.controls.referenceQueryError = { code: "ECONNRESET", message: "reference query failed" };
+      h.controls.referenceQueryErrorOffset = 100;
+    }
+    if (mode === "malformed") h.controls.referenceQueryResult = { data: null };
+    const before = plain([...h.records]);
+    for (const action of ["detail", "remove"]) {
+      const result = await h.call(action, { id: first._id });
+      assert.equal(result.ok, false, `${mode}: ${action} 必须失败关闭`);
+      if (mode === "conflict") assert.equal(result.code, "FILE_REFERENCE_CONFLICT");
+      if (mode === "error") assert.equal(result.code, "ECONNRESET");
+    }
+    assert.deepEqual(plain([...h.records]), before); assert.equal(h.files.size, 1);
+    assert.equal(h.metrics.signed + h.metrics.deletes + h.metrics.writes, 0);
+  }
+});
+test("协议文件存在旧别名时 commit 下载、双方详情与删除均拒绝", async () => {
+  for (const shareVersion of [1, 2]) {
+    const h = harness(), event = input({ shareVersion }), p = await h.prepare(event), recordingFileId = h.upload(p);
+    legacyFixture(h, { _id: "alias", _openid: "other-owner", recordingFileId });
+    const beforeCommit = plain(h.metrics);
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).code, "FILE_REFERENCE_CONFLICT");
+    assert.deepEqual(h.metrics, beforeCommit);
+    h.records.delete("alias");
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
+    legacyFixture(h, { _id: "alias", _openid: "other-owner", recordingFileId });
+    const before = plain([...h.records]), metrics = plain(h.metrics);
+    for (const [id, owner] of [[p.id, "owner-openid"], ["alias", "other-owner"]]) {
+      h.controls.owner = owner;
+      for (const action of ["detail", "remove"]) assert.equal((await h.call(action, { id })).code, "FILE_REFERENCE_CONFLICT");
+    }
+    assert.deepEqual(plain([...h.records]), before); assert.deepEqual(h.metrics, metrics); assert.equal(h.files.size, 1);
+  }
+});
+test("commit 引用查询失败不下载、不激活预留，重试成功", async () => {
+  for (const shareVersion of [1, 2]) {
+    const h = harness(), event = input({ shareVersion }), p = await h.prepare(event), recordingFileId = h.upload(p);
+    h.controls.referenceQueryError = { code: "ETIMEDOUT", message: "reference query timeout" };
+    const before = plain([...h.records]), metrics = plain(h.metrics);
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).code, "ETIMEDOUT");
+    assert.deepEqual(plain([...h.records]), before); assert.deepEqual(h.metrics, metrics); assert.equal(h.files.size, 1);
+    h.controls.referenceQueryError = null;
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
+  }
+});
+test("协议 owner 路径即使尚无本人记录也不能被旧别名读取或删除", async () => {
+  for (const shareVersion of [1, 2]) {
+    const h = harness(), p = await h.prepare(input({ shareVersion })), recordingFileId = h.upload(p);
+    const alias = legacyFixture(h, { _id: "alias", _openid: "other-owner", recordingFileId });
+    h.controls.owner = "other-owner";
+    const before = plain([...h.records]), metrics = plain(h.metrics);
+    for (const action of ["detail", "remove"]) {
+      assert.equal((await h.call(action, { id: alias._id })).code, "FILE_REFERENCE_CONFLICT");
+    }
+    assert.deepEqual(plain([...h.records]), before); assert.deepEqual(h.metrics, metrics); assert.equal(h.files.size, 1);
+  }
+});
+test("引用核验期间到期的分享不签 URL，未到期则按核验后余量签名", async () => {
+  for (const remainingMs of [2000, 10000]) {
+    const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
+    assert.equal((await h.call("commit", { ...event, recordingFileId: h.upload(p) })).ok, true);
+    h.records.get(p.id).expiresAtMs = Date.now() + remainingMs;
+    h.controls.referenceQueryDelayMs = 3000;
+    const result = await h.call("detail", { id: p.id });
+    if (remainingMs === 2000) {
+      assert.equal(result.code, "SHARE_EXPIRED"); assert.equal(h.metrics.signed, 0);
+    } else {
+      assert.equal(result.ok, true); assert.ok(h.metrics.lastSign[0].maxAge <= 7);
+    }
+  }
+});
 test("尚未提交的分享不能删除且无副作用", async () => {
   const h = harness();
   const p = await h.prepare(input({ shareVersion: 2 }));
@@ -149,7 +346,10 @@ test("新版过期或墓碑永不复活，过期详情不签URL", async () => {
     assert.equal((await h.call("prepare", event)).ok, false);
     assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, false);
     assert.equal((await h.call("detail", { id: p.id })).code, "SHARE_EXPIRED");
-    assert.equal(h.metrics.signed, 0); assert.deepEqual(plain((await h.call("listMine")).data), []);
+    assert.equal(h.metrics.signed, 0);
+    const listed = (await h.call("listMine")).data;
+    if (status === "deletePending") assert.deepEqual(plain(listed.map(row => [row.id, row.status, row.shareToken])), [[p.id, "deletePending", ""]]);
+    else assert.deepEqual(plain(listed), []);
   }
 });
 test("新版签名URL不超过剩余有效期且最多300秒", async () => {
@@ -296,13 +496,13 @@ test("列表复用 owner/时间查询，服务端隐藏墓碑并保留 50 条旧
   h.records.set("active", { ...input(), _id: "active", _openid: "owner-openid", status: "active", createdAt: "100" });
   h.records.set("foreign", { ...input(), _id: "foreign", _openid: "other", createdAt: "101" });
   const listed = await h.call("listMine"); assert.equal(listed.ok, true, listed.message);
-  assert.deepEqual(plain(listed.data.map(record => record.id)), ["active", ...Array.from({ length: 49 }, (_, i) => `row-${59-i}`)]);
+  assert.deepEqual(plain(listed.data.map(record => record.id)), ["active", ...Array.from({ length: 13 }, (_, i) => `row-${84-i*2}`), ...Array.from({ length: 36 }, (_, i) => `row-${59-i}`)]);
 });
 test("超过100条新版失效记录不遮蔽较旧的历史", async () => {
   const h = harness(); h.controls.ownerOnlyQuery = true;
   for (let i = 0; i < 260; i++) h.records.set(`expired-${i}`, {
     _id: `expired-${i}`, _openid: "owner-openid", shareVersion: 2,
-    status: ["active", "pending", "deleted", "deletePending"][i % 4],
+    status: ["active", "pending", "deleted"][i % 3],
     expiresAtMs: 1, pendingExpiresAtMs: 1, createdAt: `z${String(i).padStart(3, "0")}`,
   });
   h.records.set("legacy", { ...input(), _id: "legacy", _openid: "owner-openid", createdAt: "a" });
@@ -316,26 +516,32 @@ test("事务冲突有限重试且无重复下载/中间写入", async () => {
   assert.equal((await k.call("commit", { ...input(), recordingFileId: k.upload(q) })).ok, false);
   assert.ok(k.metrics.attempts <= 4); assert.equal(k.metrics.writes, 0);
 });
-test("删除失败墓碑隐藏、可重试且迟到 commit 不复活", async () => {
+test("删除失败对本人可见可重试、对访客不可见且迟到 commit 不复活", async () => {
   const h = harness(), p = await h.prepare(), event = { ...input(), recordingFileId: h.upload(p) };
   assert.equal((await h.call("commit", event)).ok, true);
   h.controls.owner = "visitor"; assert.equal((await h.call("remove", { id: p.id })).ok, false); assert.equal(h.metrics.deletes, 0);
   h.controls.owner = "owner-openid"; h.controls.deleteStatus = -1;
   assert.equal((await h.call("remove", { id: p.id })).ok, false); assert.equal(h.records.get(p.id).status, "deletePending");
   assert.equal(h.files.size, 1); assert.equal((await h.call("detail", { id: p.id })).ok, false);
+  assert.equal((await h.call("listMine")).data.find(row => row.id === p.id)?.status, "deletePending");
+  h.records.get(p.id).expiresAtMs = 1;
+  assert.equal((await h.call("listMine")).data.find(row => row.id === p.id)?.status, "deletePending", "待删除记录过期仍保留重试入口");
+  h.controls.owner = "visitor";
   assert.deepEqual(plain((await h.call("listMine")).data), []);
+  assert.equal((await h.call("detail", { id: p.id, shareToken: h.records.get(p.id).shareToken })).ok, false);
+  h.controls.owner = "owner-openid";
   assert.equal((await h.call("commit", event)).code, "REQUEST_DELETED"); assert.equal((await h.call("prepare", input())).code, "REQUEST_DELETED");
   h.controls.deleteStatus = 0; assert.equal((await h.call("remove", { id: p.id })).ok, true);
   assert.equal(h.records.get(p.id).status, "deleted"); assert.equal(h.files.size, 0);
   const count = h.metrics.deletes; assert.equal((await h.call("remove", { id: p.id })).ok, true); assert.equal(h.metrics.deletes, count);
   assert.equal((await h.call("commit", event)).code, "REQUEST_DELETED");
 });
-test("旧 create/detail/list/remove 与无 status 记录兼容", async () => {
-  const h = harness(), created = await h.call("create", { ...input(), recordingFileId: "cloud://test.bucket/checkins/legacy.mp3" });
-  assert.equal(created.ok, true); const id = created.data.id;
+test("已有旧 fixture 的 owner、口令、列表及本人删除重试兼容", async () => {
+  const h = harness(), record = legacyFixture(h), id = record._id;
   assert.equal((await h.call("detail", { id })).data.durationMs, 3200);
   h.controls.owner = "visitor"; assert.equal((await h.call("detail", { id })).ok, false);
-  assert.equal((await h.call("detail", { id, shareToken: created.data.shareToken })).ok, true);
+  assert.equal((await h.call("detail", { id, shareToken: "wrong-token" })).ok, false);
+  assert.equal((await h.call("detail", { id, shareToken: record.shareToken })).ok, true);
   assert.equal((await h.call("remove", { id })).ok, false); assert.deepEqual(plain((await h.call("listMine")).data), []);
   h.controls.owner = "owner-openid"; assert.equal((await h.call("listMine")).data.length, 1);
   h.controls.deleteStatus = -1; assert.equal((await h.call("remove", { id })).ok, false); assert.ok(h.records.has(id));

@@ -6,9 +6,9 @@ import { stopAudioIfLoaded } from "@/features/listeningPractice/audioPlayback";
 import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import type { CheckInSubmissionHandle } from "@/features/listeningPractice/checkInSubmissionCoordinator";
 import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
-import { getPendingCheckInStore } from "@/features/listeningPractice/pendingCheckInRuntime";
+import { getPendingCheckInStore, logRecordingDiagnostic } from "@/features/listeningPractice/pendingCheckInRuntime";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
-import { getCheckInDetail, getReadableCloudError, type CheckInDetail as CloudDetail } from "@/services/cloudCheckIn";
+import { getCheckInDetail, getCheckInShareStatus, getReadableCloudError, getShareFailureMessage, type CheckInDetail as CloudDetail } from "@/services/cloudCheckIn";
 import { sharedImage } from "@/constant";
 import { formatCheckInTime, formatPlaybackDurationLabel } from "@/utils/checkInFormat";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
@@ -31,6 +31,8 @@ export default function CheckInDetail() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackPositionMs, setPlaybackPositionMs] = useState(0);
   const [sharing, setSharing] = useState(false);
+  const [checkingShare, setCheckingShare] = useState(false);
+  const checkingShareRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [expiryTick, setExpiryTick] = useState(0);
@@ -134,6 +136,19 @@ export default function CheckInDetail() {
     const latest = pendingStore.list().find((item) => item.requestId === localId);
     if (latest) setDetail({ source: "local", pending: latest, recordingUrl: latest.localPath });
     setSharing(submissionCoordinator.isSubmitting(localId));
+    const handle = submissionCoordinator.getActive(localId);
+    if (!handle || submissionRef.current === handle) return;
+    submissionRef.current = handle;
+    void handle.promise.then((result) => {
+      if (!mountedRef.current || submissionRef.current !== handle) return;
+      submissionRef.current = null;
+      setSharing(false);
+      if (!visibleRef.current) return;
+      const current = pendingStore.list().find((item) => item.requestId === localId);
+      if (current) setDetail({ source: "local", pending: current, recordingUrl: current.localPath });
+      if (result.state !== "committed") Taro.showToast({ title: getShareFailureMessage(result.error), icon: "none" });
+      else if (result.cleanupPending) Taro.showToast({ title: "分享已生成，本机状态未同步，请重试", icon: "none" });
+    });
   });
   useUnload(leavePage);
 
@@ -210,13 +225,13 @@ export default function CheckInDetail() {
   };
 
   const prepareShare = async () => {
-    if (!localId || sharing || savingRef.current || hasValidShare || !visibleRef.current || detail?.source !== "local" || !detail.pending.recoverable) return;
+    if (!localId || sharing || checkingShareRef.current || savingRef.current || hasValidShare || !visibleRef.current || detail?.source !== "local" || !detail.pending.recoverable) return;
     const attempt = shareAttemptRef.current + 1;
     shareAttemptRef.current = attempt;
     setSharing(true);
     try {
       const snapshot = await pendingStore.beginShare(localId);
-      if (!snapshot) throw new Error("分享代次保存失败");
+      if (!snapshot) throw Object.assign(new Error("分享代次保存失败"), { code: "PENDING_PERSIST_FAILED" });
       // beginShare 也可能跨过离页；用户手势失效后绝不能补启动上传。
       if (!mountedRef.current || !visibleRef.current || shareAttemptRef.current !== attempt) return;
       const handle = submissionCoordinator.submit(snapshot);
@@ -232,11 +247,11 @@ export default function CheckInDetail() {
       }
       if (!visibleRef.current || shareAttemptRef.current !== attempt) return;
       if (result.state !== "committed") {
-        Taro.showToast({ title: result.state === "cancelled" ? "已取消分享" : "分享失败，本机录音仍保留", icon: "none" });
+        Taro.showToast({ title: result.state === "cancelled" ? "已取消分享" : getShareFailureMessage(result.error), icon: "none" });
         return;
       }
       if (result.cleanupPending) {
-        Taro.showToast({ title: "分享已生成，但本机状态保存失败，请重试", icon: "none" });
+        Taro.showToast({ title: "分享已生成，本机状态未同步，请重试", icon: "none" });
         return;
       }
       const latest = pendingStore.list().find((item) => item.requestId === localId);
@@ -246,10 +261,39 @@ export default function CheckInDetail() {
       }
       setDetail({ source: "local", pending: latest, recordingUrl: latest.localPath });
       Taro.showToast({ title: "分享已准备好", icon: "success" });
-    } catch (_error) {
-      if (mountedRef.current && visibleRef.current && shareAttemptRef.current === attempt) Taro.showToast({ title: "分享准备失败，本机录音仍保留", icon: "none" });
+    } catch (error) {
+      logRecordingDiagnostic("share.prepare.failed", { requestId: localId, error });
+      if (mountedRef.current && visibleRef.current && shareAttemptRef.current === attempt) Taro.showToast({ title: getShareFailureMessage(error), icon: "none" });
     } finally {
       if (mountedRef.current) setSharing(false);
+    }
+  };
+
+  const checkShare = async () => {
+    if (detail?.source !== "local" || !detail.pending.share || !detail.pending.shareRequestId ||
+        sharing || checkingShareRef.current || savingRef.current || !visibleRef.current) return;
+    const { share, shareRequestId } = detail.pending;
+    checkingShareRef.current = true;
+    setCheckingShare(true);
+    try {
+      const status = await getCheckInShareStatus(share.id, shareRequestId);
+      if (!mountedRef.current || !visibleRef.current) return;
+      if (status.state === "active") {
+        Taro.showToast({ title: "分享仍有效，可发送给朋友", icon: "none" });
+        return;
+      }
+      const invalidated = await pendingStore.markShareExpired(localId, shareRequestId);
+      if (!mountedRef.current || !visibleRef.current) return;
+      const latest = pendingStore.list().find((item) => item.requestId === localId);
+      if (latest) setDetail({ source: "local", pending: latest, recordingUrl: latest.localPath });
+      // 晚到核验不得清除另一代新分享；持久化失败仍保留原文件与引用。
+      if (invalidated) Taro.showToast({ title: "旧分享已失效，请再次点击分享", icon: "none" });
+      else if (latest?.shareRequestId === shareRequestId) Taro.showToast({ title: "本机状态保存失败，请重试", icon: "none" });
+    } catch (_error) {
+      if (mountedRef.current && visibleRef.current) Taro.showToast({ title: "暂时无法核验，请稍后重试", icon: "none" });
+    } finally {
+      checkingShareRef.current = false;
+      if (mountedRef.current) setCheckingShare(false);
     }
   };
 
@@ -279,7 +323,7 @@ export default function CheckInDetail() {
   const shareButton = hasValidShare ? (
     <Button className='check-in-actions__share device-touch-target' openType='share'>发送给朋友</Button>
   ) : detail.source === "local" ? (
-    <Button className='check-in-actions__share device-touch-target' loading={sharing} disabled={sharing || saving || !detail.pending.recoverable} onClick={prepareShare}>
+    <Button className='check-in-actions__share device-touch-target' loading={sharing} disabled={sharing || checkingShare || saving || !detail.pending.recoverable} onClick={prepareShare}>
       {sharing ? "正在准备分享…" : "分享给朋友"}
     </Button>
   ) : (
@@ -313,6 +357,9 @@ export default function CheckInDetail() {
             <Text className='shared-recording__privacy'>录音保存失败，请重试保存；关闭小程序后可能无法恢复</Text>
             <Button className='shared-recording__retry device-touch-target' loading={saving} disabled={saving || sharing} onClick={retrySaveRecording}>重试保存</Button>
           </View>
+        )}
+        {detail.source === "local" && detail.pending.share && detail.pending.shareRequestId && (
+          <Button className='check-in-actions__practice shared-recording__privacy shared-recording__repair device-touch-target' loading={checkingShare} disabled={checkingShare || sharing || saving} onClick={checkShare}>链接打不开？检查分享</Button>
         )}
       </View>
       <View className='check-in-actions device-actions'>

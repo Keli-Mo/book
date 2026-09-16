@@ -26,7 +26,7 @@ export const mergeRecordingLibrary = (
       sortTimeMs: pending.completedAtMs ?? pending.createdAtMs ?? pending.updatedAtMs,
     })),
     ...cloudItems
-      .filter((cloud) => !sharedCloudIds.has(cloud.id))
+      .filter((cloud) => cloud.status === "deletePending" || !sharedCloudIds.has(cloud.id))
       .map((cloud) => ({ kind: "cloud" as const, cloud, sortTimeMs: toTimeMs(cloud.createdAt) })),
   ].sort((left, right) => right.sortTimeMs - left.sortTimeMs);
 };

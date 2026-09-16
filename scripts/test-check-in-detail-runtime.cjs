@@ -1,6 +1,7 @@
 /* eslint-disable import/no-commonjs */
 const assert = require("node:assert/strict");
-const { createPage, byClass, textOf } = require("./test-practice-book-route.cjs");
+const { createPage, byClass, textOf, load } = require("./test-practice-book-route.cjs");
+const { getShareFailureMessage } = load("src/services/cloudCheckIn.ts");
 
 const settle = async () => { for (let index = 0; index < 8; index += 1) await Promise.resolve(); };
 const deferred = () => {
@@ -23,30 +24,113 @@ const makePending = (share) => ({
   completedAtMs: 2,
   ...(share ? { share } : {}),
 });
-const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmitting = () => false, timers } = {}) => {
+const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmitting = () => false, getActive = () => undefined, probe, expire, timers } = {}) => {
   const items = [pending];
+  const toasts = [], diagnostics = [];
   let cloudCalls = 0;
   const store = {
     ready: async () => {},
     list: () => items,
     beginShare: beginShare || (async () => items[0]),
+    markShareExpired: expire || (async (id, generation) => {
+      if (items[0].requestId !== id || items[0].shareRequestId !== generation) return false;
+      items[0] = { ...items[0], share: undefined, shareRequestId: undefined, cloudFileId: "" };
+      return true;
+    }),
   };
-  const coordinator = { submit: submit || (() => { throw new Error("不应上传"); }), isSubmitting };
+  const coordinator = { submit: submit || (() => { throw new Error("不应上传"); }), isSubmitting, getActive };
   const page = createPage("src/pages/CheckInDetail/CheckInDetail.tsx", { localId }, {
+    showToast: ({ title }) => toasts.push(title),
     ...(timers ? { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout } : {}),
     overrides: {
-      "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => store },
+      "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => store, logRecordingDiagnostic: (stage, details) => diagnostics.push({ stage, ...details }) },
       "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => coordinator },
       "@/services/cloudCheckIn": {
         getCheckInDetail: async () => { cloudCalls += 1; throw new Error("本地详情不得访问云端"); },
         getReadableCloudError: (error) => error.message,
+        getShareFailureMessage,
+        getCheckInShareStatus: async (...args) => { cloudCalls += 1; return probe(...args); },
       },
     },
   });
-  return { page, items, get cloudCalls() { return cloudCalls; } };
+  return { page, items, toasts, diagnostics, get cloudCalls() { return cloudCalls; } };
 };
 
 (async () => {
+  for (const state of ["active", "deleted", "expired", "missing", "invalid", "network", "unavailable", "persist-failed", "new-generation"]) {
+    const share = { id: "old-cloud", shareToken: "old-token", expiresAtMs: Date.now() + 60_000 };
+    const pending = { ...makePending(share), shareRequestId: "b".repeat(32) };
+    let uploads = 0;
+    const checked = createLocalPage({ pending,
+      probe: async (id, generation) => {
+        assert.equal(id, share.id); assert.equal(generation, pending.shareRequestId);
+        if (state === "network") throw { code: "ETIMEDOUT", message: "https://secret?token=private" };
+        if (state === "unavailable") throw { code: "SHARE_STATUS_UNAVAILABLE", message: "暂时无法核验分享，请稍后重试" };
+        if (state === "new-generation") checked.items[0] = { ...pending, shareRequestId: "c".repeat(32), share: { ...share, id: "new-cloud" } };
+        return { state: ["persist-failed", "new-generation"].includes(state) ? "missing" : state };
+      },
+      ...(state === "persist-failed" ? { expire: async () => false } : {}),
+      submit: () => { uploads++; return { promise: Promise.resolve({ state: "failed", error: { code: "ETIMEDOUT" } }), cancel: () => false }; },
+    });
+    checked.page.render(); await settle();
+    let tree = checked.page.render();
+    assert.equal(checked.cloudCalls, 0, "不能在打开本机录音时自动核验");
+    const repair = byClass(tree, "shared-recording__repair");
+    assert.ok(repair, "已有链接需要主动核验入口");
+    await repair.props.onClick();
+    tree = checked.page.render();
+    assert.equal(uploads, 0, "核验与失效均不能自动上传");
+    assert.equal(checked.items[0].localPath, pending.localPath);
+    assert.doesNotMatch(JSON.stringify(checked.toasts), /private|secret/);
+    if (["deleted", "expired", "missing", "invalid"].includes(state)) {
+      assert.equal(checked.items[0].share, undefined);
+      assert.equal(byClass(tree, "check-in-actions__share").props.disabled, false);
+      await byClass(tree, "check-in-actions__share").props.onClick();
+      assert.equal(uploads, 1, "仅再次明确点击分享才可开始提交");
+    } else {
+      assert.equal(checked.items[0].share.id, state === "new-generation" ? "new-cloud" : "old-cloud");
+      assert.equal(byClass(tree, "check-in-actions__share").props.openType, "share");
+    }
+    checked.page.dispose();
+  }
+  for (const state of ["committed", "failed"]) {
+    const completion = deferred();
+    const handle = { promise: completion.promise, cancel: () => false };
+    let submissions = 0;
+    const reopened = createLocalPage({ isSubmitting: () => true, getActive: () => handle,
+      submit: () => { submissions++; return { promise: Promise.resolve({ state: "failed", error: { code: "ETIMEDOUT" } }), cancel: () => false }; },
+    });
+    reopened.page.render(); reopened.page.show(); await settle();
+    assert.equal(byClass(reopened.page.render(), "check-in-actions__share").props.loading, true);
+    if (state === "committed") reopened.items[0] = makePending({ id: "existing", shareToken: "token", expiresAtMs: Date.now() + 60_000 });
+    completion.resolve({ state, cleanupPending: false, error: { code: "ETIMEDOUT" } });
+    await settle();
+    const button = byClass(reopened.page.render(), "check-in-actions__share");
+    assert.notEqual(button.props.loading, true, "重开页面应接收原任务完成或失败并解除 loading");
+    assert.equal(state === "committed" ? button.props.openType : button.props.disabled, state === "committed" ? "share" : false);
+    assert.equal(submissions, 0, "采用旧任务不能调用 submit 启动观察任务");
+    if (state === "failed") {
+      await button.props.onClick();
+      assert.equal(submissions, 1, "重开采用旧任务失败后，明确点击仍可重试");
+    }
+    reopened.page.dispose();
+  }
+  for (const [code, title] of [["SHARE_PROTOCOL_MISMATCH", /版本不匹配/], ["ETIMEDOUT", /网络异常/], ["PENDING_PERSIST_FAILED", /本机状态保存失败/]]) {
+    const failure = createLocalPage({ submit: () => ({ promise: Promise.resolve({ state: "failed", error: { code, message: "private-token" } }), cancel: () => false }) });
+    failure.page.render(); await settle();
+    await byClass(failure.page.render(), "check-in-actions__share").props.onClick();
+    assert.match(failure.toasts.at(-1), title, "页面应使用真实错误分类，而非泛化或误报成功");
+    assert.doesNotMatch(failure.toasts.at(-1), /private-token/);
+    assert.equal(byClass(failure.page.render(), "check-in-actions__share").props.loading, false);
+    failure.page.dispose();
+  }
+  const localFailure = createLocalPage({ beginShare: async () => null });
+  localFailure.page.render(); await settle();
+  await byClass(localFailure.page.render(), "check-in-actions__share").props.onClick();
+  assert.match(localFailure.toasts.at(-1), /本机状态保存失败/);
+  assert.ok(localFailure.diagnostics.some(log => log.stage === "share.prepare.failed" && log.error.code === "PENDING_PERSIST_FAILED"));
+  localFailure.page.dispose();
+
   const local = createLocalPage();
   local.page.render(); await settle();
   let tree = local.page.render();

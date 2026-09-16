@@ -53,7 +53,7 @@ import {
   type RecorderTerminalSink,
 } from "@/features/listeningPractice/recorderCoordinator";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
-import { getPendingCheckInStore } from "@/features/listeningPractice/pendingCheckInRuntime";
+import { getPendingCheckInStore, logRecordingDiagnostic } from "@/features/listeningPractice/pendingCheckInRuntime";
 import {
   useDeviceLayout,
   type DeviceLayoutState,
@@ -1255,6 +1255,23 @@ function PracticeSession({
       attemptId,
     };
     if (!canStartRecordingNow(request)) return;
+
+    let capacity: { allowed: boolean; message: string };
+    try {
+      capacity = await getPendingCheckInStore().checkCanStartRecording();
+    } catch (error) {
+      logRecordingDiagnostic("capacity.check.failed", { error });
+      if (canStartRecordingNow(request)) {
+        Taro.showToast({ title: "无法检查本地录音空间，请稍后重试", icon: "none" });
+      }
+      return;
+    }
+    // 只读容量检查期间页面、教材或会话可能已经变化；失效点击不得继续获取权限。
+    if (!canStartRecordingNow(request)) return;
+    if (!capacity.allowed) {
+      Taro.showToast({ title: capacity.message || "无法检查本地录音空间，请稍后重试", icon: "none" });
+      return;
+    }
 
     stopAudioIfLoaded(recordingAudioRef.current);
     let permission: "granted" | "request" | "open-settings";

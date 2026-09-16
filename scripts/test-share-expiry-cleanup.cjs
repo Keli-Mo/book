@@ -95,6 +95,7 @@ test("未配置或错误可信前缀阻断删除，不构造猜测bucket", async
     const h = harness([row(1, { status: "pending", recordingFileId: undefined, expiresAtMs: undefined, pendingExpiresAtMs: NOW - 1 })]);
     h.env.SHARE_STORAGE_FILE_ID_PREFIX = value;
     const r = await h.call(); assert.equal(r.dryRun, true); assert.equal(r.code, "STORAGE_PREFIX_REQUIRED");
+    assert.equal(r.validated, 0, "没有可信前缀时不能宣称候选已校验通过");
     assert.equal(h.metrics.deletes + h.metrics.writes, 0);
   }
 });
@@ -107,6 +108,38 @@ test("只清理新版到期记录，错误路径和旧无期限记录留存", as
   assert.equal(r.deleted, 1); assert.equal(r.failed, 2); assert.equal(h.records.get(idFor(1)).status, "deleted");
   for (let i = 2; i <= 7; i++) assert.equal(h.records.get(idFor(i)).status, "active");
   assert.equal(h.files.size, 6);
+});
+test("只读预演同样校验路径和文件归属，不能把不安全候选报为通过", async () => {
+  const initial = [row(1), row(2, { cloudPath: "textbooks/book.mp3" }),
+    row(3, { recordingFileId: "cloud://foreign.bucket/recording.mp3" }),
+    row(4, { expiresAtMs: NOW + 1 }), row(5, { shareVersion: undefined })];
+  const h = harness(initial);
+  const before = JSON.stringify([...h.records]);
+  const r = await h.call({ dryRun: true });
+  assert.equal(r.dryRun, true);
+  assert.equal(r.candidates, 3);
+  assert.equal(r.validated, 1, "仅一条到期记录通过路径/环境检查");
+  assert.equal(r.failed, 2, "不安全路径和跨桶 fileID 必须在预演报错");
+  assert.equal(r.deleted, 0);
+  assert.equal(h.metrics.writes + h.metrics.deletes, 0);
+  assert.equal(JSON.stringify([...h.records]), before);
+  assert.equal(h.files.size, 5);
+});
+test("预演精确处理到期边界并只读翻页，不改正式清理游标", async () => {
+  const h = harness(Array.from({ length: 51 }, (_, i) => row(i + 1, { expiresAtMs: NOW })));
+  h.records.set(idFor(52), row(52, { expiresAtMs: NOW + 1 }));
+  h.state.set("v2", { cursor: idFor(9), revision: 2 });
+  const first = await h.call({ dryRun: true });
+  assert.equal(first.scanned, 50);
+  assert.equal(first.validated, 50);
+  assert.equal(first.nextCursor, idFor(50));
+  const second = await h.call({ dryRun: true, cursor: first.nextCursor });
+  assert.equal(second.scanned, 2);
+  assert.equal(second.validated, 1);
+  assert.equal(second.candidates, 1);
+  assert.equal(second.nextCursor, "");
+  assert.deepEqual(h.state.get("v2"), { cursor: idFor(9), revision: 2 });
+  assert.equal(h.metrics.writes + h.metrics.deletes, 0);
 });
 test("小批持久游标扫多页并回绕，旧记录不占分页", async () => {
   const h = harness(Array.from({ length: 121 }, (_, i) => row(i + 1)));

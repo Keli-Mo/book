@@ -100,6 +100,40 @@ const removeLocalFile = async (filePath: string, kind: "saved" | "temporary") =>
   }
 };
 
+/** saveFile 管理区的实际占用；包含尚未写入或已经脱离索引的文件。 */
+export const getLocalRecordingUsageBytes = () =>
+  new Promise<number>((resolve, reject) => {
+    const manager = wx.getFileSystemManager();
+    if (typeof manager.getSavedFileList !== "function") {
+      reject(new Error("getSavedFileList unsupported"));
+      return;
+    }
+    manager.getSavedFileList({
+      success: ({ fileList }) => {
+        try {
+          if (!Array.isArray(fileList)) throw new Error("invalid saved file list");
+          const seen = new Set<string>();
+          let total = 0;
+          for (const entry of fileList) {
+            const filePath = entry?.filePath;
+            const size = entry?.size;
+            if (typeof filePath !== "string" || filePath.length === 0 || !Number.isSafeInteger(size) || size < 0) {
+              throw new Error("invalid saved file metadata");
+            }
+            if (seen.has(filePath)) continue;
+            seen.add(filePath);
+            total += size;
+            if (!Number.isSafeInteger(total)) throw new Error("invalid saved file usage");
+          }
+          resolve(total);
+        } catch (error) {
+          reject(error);
+        }
+      },
+      fail: reject,
+    });
+  });
+
 /** 请求编号只负责去重，不承担分享鉴权；四段随机数足够避免本机录音碰撞。 */
 const createRequestId = () =>
   Array.from({ length: 4 }, () =>
@@ -114,6 +148,7 @@ const pendingCheckInStore = createPendingCheckInStore({
     set: (key, value) => wx.setStorageSync(key, value),
   },
   file: {
+    usageBytes: getLocalRecordingUsageBytes,
     save: saveLocalFile,
     exists: fileExists,
     remove: removeLocalFile,

@@ -14,10 +14,33 @@ class TestDate extends Date {
   static now() { return now; }
 }
 const metadata = new Map(), localFiles = new Map(), cloudFiles = new Map(), documents = new Map();
-const counters = { upload: 0, cloudCall: 0, localRemove: 0 };
+const counters = { upload: 0, cloudCall: 0, localRemove: 0, signed: 0 };
 let sequence = 0;
+let currentOpenId = 'student';
 let dropNextCommitResponse = false;
+let responseMode = '';
+let failShareWrite = false;
+let referenceQueryError = null;
+let probeDownloadError = null;
+let probeDownloadResult;
+const diagnostics = [];
+const diagnose = (stage, details) => diagnostics.push({ stage, ...details });
 const collection = {
+  where(condition) {
+    let offset = 0, pageSize = 100, sortField = null, sortDirection = 'asc';
+    return {
+      orderBy(field, direction) { sortField = field; sortDirection = direction; return this; },
+      skip(value) { offset = value; return this; },
+      limit(value) { pageSize = value; return this; },
+      async get() {
+        if (condition.recordingFileId && referenceQueryError) throw referenceQueryError;
+        const rows = [...documents.values()].filter(record =>
+          Object.entries(condition).every(([field, value]) => record[field] === value));
+        if (sortField) rows.sort((a, b) => String(a[sortField]).localeCompare(String(b[sortField])) * (sortDirection === 'desc' ? -1 : 1));
+        return { data: clone(rows.slice(offset, offset + pageSize)) };
+      },
+    };
+  },
   doc(id) { return {
     get: async () => ({ data: clone(documents.get(id) || null) }),
     set: async ({ data }) => { documents.set(id, clone({ ...data, _id: id })); },
@@ -31,15 +54,21 @@ const database = {
 };
 const serverSdk = {
   DYNAMIC_CURRENT_ENV: 'dynamic', init() {}, database: () => database,
-  getWXContext: () => ({ OPENID: 'student', ENV: 'test' }),
+  getWXContext: () => ({ OPENID: currentOpenId, ENV: 'test' }),
   downloadFile: async ({ fileID }) => {
-    if (!cloudFiles.has(fileID)) throw Object.assign(new Error('missing file'), { code: 'FILE_NOT_FOUND' });
-    return { fileContent: cloudFiles.get(fileID) };
+    if (probeDownloadError) throw probeDownloadError;
+    if (probeDownloadResult !== undefined) return probeDownloadResult;
+    if (!cloudFiles.has(fileID)) throw Object.assign(new Error('missing file'), { errCode: -503003 });
+    return { fileContent: cloudFiles.get(fileID), statusCode: 200, errMsg: 'downloadFile:ok' };
   },
-  getTempFileURL: async ({ fileList }) => ({ fileList: fileList.map(value => {
+  deleteFile: async ({ fileList }) => ({ fileList: fileList.map(fileID => {
+    cloudFiles.delete(fileID);
+    return { fileID, status: 0 };
+  }) }),
+  getTempFileURL: async ({ fileList }) => { counters.signed++; return { fileList: fileList.map(value => {
     const fileID = typeof value === 'string' ? value : value.fileID;
     return { fileID, status: 0, tempFileURL: `https://example.test/${encodeURIComponent(fileID)}` };
-  }) }),
+  }) }; },
 };
 const serverModule = { exports: {} };
 vm.runInNewContext(fs.readFileSync(path.join(root, 'cloudfunctions/checkIn/index.js'), 'utf8'), {
@@ -51,7 +80,8 @@ vm.runInNewContext(fs.readFileSync(path.join(root, 'cloudfunctions/checkIn/index
 const wx = { cloud: {
   callFunction: async ({ data }) => {
     counters.cloudCall++;
-    const result = await serverModule.exports.main(data);
+    const result = await serverModule.exports.main(responseMode === 'legacy' ? { ...data, shareVersion: 1 } : data);
+    if (responseMode === 'missing-expiry' && result.ok) delete result.data.expiresAtMs;
     // 模拟服务器已经提交成功，但客户端断网未收到回包。
     if (data.action === 'commit' && result.ok && dropNextCommitResponse) {
       dropNextCommitResponse = false;
@@ -85,19 +115,28 @@ const { createPendingCheckInStore } = load('src/features/listeningPractice/pendi
 const { createCheckInSubmissionCoordinator } = load('src/features/listeningPractice/checkInSubmissionCoordinator.ts');
 const service = load('src/services/cloudCheckIn.ts');
 const createStore = () => createPendingCheckInStore({
-  storage: { get: key => clone(metadata.get(key)), set: (key, data) => metadata.set(key, clone(data)) },
+  storage: { get: key => clone(metadata.get(key)), set: (key, data) => {
+    if (failShareWrite && data.some(item => item.share && !metadata.get(key)?.find(old => old.requestId === item.requestId)?.share)) {
+      throw Object.assign(new Error('setStorageSync:fail quota exceeded'), { code: 'STORAGE_FULL' });
+    }
+    metadata.set(key, clone(data));
+  } },
   file: {
+    usageBytes: () => [...localFiles].filter(([file]) => file.startsWith('/saved/'))
+      .reduce((total, [, content]) => total + content.length, 0),
     save: temp => { const savedFilePath = `/saved/${++sequence}.mp3`; localFiles.set(savedFilePath, localFiles.get(temp)); localFiles.delete(temp); return { savedFilePath }; },
     exists: file => localFiles.has(file),
     remove: file => { counters.localRemove++; localFiles.delete(file); },
   },
   clock: { now: () => now }, random: { hex: () => (++sequence).toString(16).padStart(32, '0') },
+  diagnose,
 });
 const createCoordinator = pendingStore => createCheckInSubmissionCoordinator({
   pendingStore, getRecordingInfo: service.getCheckInRecordingInfo,
   prepareCheckIn: service.prepareCheckIn, commitCheckIn: service.commitCheckIn,
   startPreparedCheckInUpload: service.startPreparedCheckInUpload,
   scheduler: { setTimeout, clearTimeout }, clock: { now: () => now },
+  diagnose,
 });
 
 (async () => {
@@ -127,6 +166,34 @@ const createCoordinator = pendingStore => createCheckInSubmissionCoordinator({
   assert.equal(localFiles.has(saved.item.localPath), true, '上传成功后仍保留本地录音');
   assert.equal(store.list()[0].share.id, first.id);
   const firstRequest = pending.shareRequestId;
+  currentOpenId = 'friend';
+  const friendDetail = await service.getCheckInDetail(first.id, first.shareToken);
+  assert.equal(friendDetail.isOwner, false, '另一账号持有本条分享口令才可获取播放地址');
+  assert.ok(friendDetail.recordingUrl);
+  await assert.rejects(service.getCheckInDetail(first.id, 'wrong-token'));
+  await assert.rejects(service.getCheckInDetail(first.id));
+  currentOpenId = 'student';
+
+  // 真实客户端到真实云函数：跨 owner 旧引用和核验查询错误均不能签名，也不清除任何引用/文件。
+  const firstDocument = documents.get(first.id);
+  documents.set('legacy-alias', { _id: 'legacy-alias', _openid: 'another-student',
+    recordingFileId: firstDocument.recordingFileId, shareToken: 'legacy-alias-token' });
+  const conflictDocuments = clone([...documents]), conflictFiles = clone([...cloudFiles]);
+  const signedBefore = counters.signed;
+  await assert.rejects(service.getCheckInDetail(first.id), error => error.code === 'FILE_REFERENCE_CONFLICT');
+  currentOpenId = 'friend';
+  await assert.rejects(service.getCheckInDetail(first.id, first.shareToken), error => error.code === 'FILE_REFERENCE_CONFLICT');
+  currentOpenId = 'student';
+  assert.equal(counters.signed, signedBefore);
+  assert.deepEqual([...documents], conflictDocuments); assert.deepEqual(clone([...cloudFiles]), conflictFiles);
+  // 只撤回测试注入的别名，继续原有生命周期验证；不调用生产删除逻辑处理冲突。
+  documents.delete('legacy-alias');
+  referenceQueryError = Object.assign(new Error('reference query timeout'), { code: 'ETIMEDOUT' });
+  await assert.rejects(service.getCheckInDetail(first.id), error => error.code === 'ETIMEDOUT');
+  referenceQueryError = null;
+  assert.equal(counters.signed, signedBefore);
+  assert.deepEqual(documents.get(first.id), firstDocument);
+  assert.equal(cloudFiles.has(firstDocument.recordingFileId), true);
 
   now += 29 * DAY;
   store = createStore(); await store.ready(); coordinator = createCoordinator(store);
@@ -173,7 +240,84 @@ const createCoordinator = pendingStore => createCheckInSubmissionCoordinator({
   assert.equal(localFiles.has(uncertain.item.localPath), true);
   assert.equal(counters.localRemove, 0);
 
+  // 真实客户端、协调器、仓储和服务端一起覆盖旧版响应与本地写失败，不能只用宽松的 markShared 假实现。
+  for (const mode of ['legacy', 'missing-expiry', 'storage-failure']) {
+    localFiles.set('/temp/retry.mp3', Buffer.from(`recording ${mode}`));
+    const record = await store.saveRecording({ tempFilePath: '/temp/retry.mp3', durationMs: 2000,
+      fileSizeBytes: localFiles.get('/temp/retry.mp3').length, context: saved.item.context });
+    await store.complete(record.item.requestId, true);
+    const snapshot = await store.beginShare(record.item.requestId);
+    const uploadedBefore = counters.upload;
+    responseMode = mode === 'storage-failure' ? '' : mode;
+    failShareWrite = mode === 'storage-failure';
+    diagnostics.length = 0;
+    const failed = await coordinator.submit(snapshot).promise;
+    if (mode === 'storage-failure') {
+      assert.equal(failed.state, 'committed');
+      assert.equal(failed.cleanupPending, true);
+      assert.ok(diagnostics.some(log => log.stage === 'share.metadata.write.failed' && log.error.code === 'STORAGE_FULL'));
+    } else {
+      assert.equal(failed.state, 'failed', `${mode} 不应误报云端已生成但本地保存失败`);
+      assert.equal(failed.error.code, 'SHARE_PROTOCOL_MISMATCH');
+      assert.ok(diagnostics.some(log => log.stage === `share.${mode === 'legacy' ? 'preparing' : 'committing'}.failed` && log.error.code === 'SHARE_PROTOCOL_MISMATCH'));
+    }
+    assert.equal(counters.upload - uploadedBefore, mode === 'legacy' ? 0 : 1);
+    assert.equal(store.list().find(item => item.requestId === record.item.requestId).share, undefined);
+    responseMode = ''; failShareWrite = false;
+    store = createStore(); await store.ready(); coordinator = createCoordinator(store);
+    const retrySnapshot = await store.beginShare(record.item.requestId);
+    assert.equal(retrySnapshot.shareRequestId, snapshot.shareRequestId, '失败不能偷偷换代');
+    const success = await coordinator.submit(retrySnapshot).promise;
+    assert.equal(success.state, 'committed'); assert.equal(success.cleanupPending, false);
+    assert.equal(counters.upload - uploadedBefore, 1, '重启恢复只补写分享状态，不能重复上传');
+    assert.equal(localFiles.has(record.item.localPath), true);
+    assert.equal(counters.localRemove, 0);
+    const detail = await service.getCheckInDetail(success.id, success.shareToken);
+    assert.ok(detail.recordingUrl);
+  }
+
+  // 用户主动检查 → 持久化失效当前代 → 再次主动分享。使用真实服务/仓储/协调器/云函数。
+  for (const broken of ['deleted', 'missing', 'invalid']) {
+    const localId = saved.item.requestId;
+    let current = store.list().find(item => item.requestId === localId);
+    const oldShare = current.share, oldGeneration = current.shareRequestId;
+    const uploadsBefore = counters.upload;
+    const unchanged = clone(current);
+    for (const malformed of [{ fileContent: Buffer.alloc(0) }, { statusCode: 200, errCode: -503002, fileContent: Buffer.alloc(0) }]) {
+      probeDownloadResult = malformed;
+      await assert.rejects(service.getCheckInShareStatus(oldShare.id, oldGeneration), error => error.code === 'SHARE_STATUS_UNAVAILABLE');
+      assert.deepEqual(clone(store.list().find(item => item.requestId === localId)), unchanged);
+      assert.equal(counters.upload, uploadsBefore);
+      assert.equal(localFiles.has(current.localPath), true);
+    }
+    probeDownloadResult = undefined;
+    probeDownloadError = { code: 'ETIMEDOUT', message: 'https://secret?token=private' };
+    await assert.rejects(service.getCheckInShareStatus(oldShare.id, oldGeneration), error => error.code === 'SHARE_STATUS_UNAVAILABLE');
+    probeDownloadError = null;
+    assert.deepEqual(clone(store.list().find(item => item.requestId === localId)), unchanged);
+    assert.equal(counters.upload, uploadsBefore);
+    assert.equal((await service.getCheckInShareStatus(oldShare.id, oldGeneration)).state, 'active');
+    if (broken === 'deleted') await service.removeCheckIn(oldShare.id);
+    else if (broken === 'missing') cloudFiles.delete(documents.get(oldShare.id).recordingFileId);
+    else cloudFiles.set(documents.get(oldShare.id).recordingFileId, Buffer.from('corrupted audio'));
+    assert.equal((await service.getCheckInShareStatus(oldShare.id, oldGeneration)).state, broken);
+    assert.equal(await store.markShareExpired(localId, oldGeneration), true);
+    assert.equal(counters.upload, uploadsBefore, '核验失效不得自动重传');
+    assert.ok(documents.has(oldShare.id), '恢复分享必须保留防重记录');
+    store = createStore(); await store.ready(); coordinator = createCoordinator(store);
+    current = store.list().find(item => item.requestId === localId);
+    assert.equal(current.share, undefined); assert.equal(localFiles.has(current.localPath), true);
+    const next = await store.beginShare(localId);
+    assert.notEqual(next.shareRequestId, oldGeneration);
+    const restored = await coordinator.submit(next).promise;
+    assert.equal(restored.state, 'committed'); assert.notEqual(restored.id, oldShare.id);
+    assert.equal(counters.upload, uploadsBefore + 1);
+    assert.equal(await store.markShareExpired(localId, oldGeneration), false, '旧代迟到核验不能清除新分享');
+    assert.equal(store.list().find(item => item.requestId === localId).share.id, restored.id);
+    assert.equal(counters.localRemove, 0);
+  }
+
   const appConfig = fs.readFileSync(path.join(root, 'src/app.config.ts'), 'utf8');
   assert.match(appConfig, /点击分享后才会上传云端/, '麦克风用途应与新上传手势一致');
-  console.log('本地分享集成通过：完成零联网、重启恢复、真实服务协议、30天过期重传、丢回包幂等恢复、旧链接不复活、本地不删除。');
+  console.log('本地分享集成通过：完成零联网、重启恢复、好友口令鉴权、30天过期重传、丢回包/本地回写失败幂等恢复、旧协议拦截、脱敏日志接线、本地不删除。');
 })().catch(error => { console.error(error); process.exitCode = 1; });
