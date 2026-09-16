@@ -19,20 +19,33 @@ function harness(initial = [row(1)]) {
   const capturedLogs = [];
   const files = new Set(initial.map(r => r.recordingFileId).filter(Boolean));
   const metrics = { writes: 0, deletes: 0, queries: 0, conflicts: 0 };
+  const clock = { elapsedMs: 0 };
   const env = { SHARE_CLEANUP_ENABLED: "true", SHARE_STORAGE_FILE_ID_PREFIX: prefix };
   const controls = { context: { SOURCE: "wx_trigger", ENV: "test" }, contextError: null, deleteError: null,
     deleteStatus: 0, deleteErrMsg: undefined, missingStatus: -503003, finalizeError: null, beforeMark: null,
-    readError: null, queryError: null };
+    checkpointError: null, beforeCheckpoint: null, readError: null, queryError: null,
+    transactionMs: 0, deleteMs: 0, queryMs: 0, stateReadMs: 0, hardBudgetMs: Infinity };
+  const advance = ms => {
+    clock.elapsedMs += ms;
+    if (clock.elapsedMs >= controls.hardBudgetMs) throw new Error("SYNTHETIC_HARD_TIMEOUT_PRIVATE_VALUE");
+  };
   const readMap = (name, tx) => tx ? tx[name] : name === "checkins" ? records : state;
   const write = (name, id, data) => { readMap(name).set(id, { ...structuredClone(data), _id: id });
     const key = `${name}/${id}`; versions.set(key, (versions.get(key) || 0) + 1); metrics.writes++; };
   const collection = (name, tx) => ({
     doc(id) { return {
       async get() { if (controls.readError) throw controls.readError;
+        if (name === "shareCleanupState" && tx && controls.beforeCheckpoint) {
+          const callback = controls.beforeCheckpoint;
+          controls.beforeCheckpoint = null;
+          callback(data => write(name, id, data));
+        }
+        if (name === "shareCleanupState" && !tx) advance(controls.stateReadMs);
         if (tx) tx.reads.set(`${name}/${id}`, tx.versions.get(`${name}/${id}`) || 0);
         return { data: structuredClone(readMap(name, tx).get(id) || null) }; },
       async set({ data }) {
         if (name === "checkins" && data.status === "deleted" && controls.finalizeError) throw controls.finalizeError;
+        if (name === "shareCleanupState" && controls.checkpointError) throw controls.checkpointError;
         if (tx) tx.writes.push({ name, id, data: structuredClone(data) }); else write(name, id, data);
       },
     }; },
@@ -44,6 +57,7 @@ function harness(initial = [row(1)]) {
             val && typeof val === "object" && "gt" in val ? r[key] > val.gt : r[key] === val))
             .sort((a, b) => a._id.localeCompare(b._id)).slice(0, size).map(r => structuredClone(r));
           if (controls.beforeMark) { const callback = controls.beforeMark; controls.beforeMark = null; callback(); }
+          advance(controls.queryMs);
           return { data };
         } };
     },
@@ -52,6 +66,7 @@ function harness(initial = [row(1)]) {
     async runTransaction(operation) {
       const tx = { checkins: structuredClone(records), shareCleanupState: structuredClone(state), versions: new Map(versions), reads: new Map(), writes: [] };
       const result = await operation({ collection: name => collection(name, tx) });
+      advance(controls.transactionMs);
       if ([...tx.reads].some(([key, version]) => (versions.get(key) || 0) !== version)) {
         metrics.conflicts++; throw Object.assign(new Error("conflict"), { code: "DATABASE_TRANSACTION_CONFLICT" });
       }
@@ -69,7 +84,9 @@ function harness(initial = [row(1)]) {
         const record = [...records.values()].find(r => prefix + r.cloudPath === fileID);
         assert.ok(record && ["deletePending", "deleted"].includes(record.status), "必须先失效再删文件");
       }
-      if (controls.deleteError) throw controls.deleteError;
+      const deleteError = typeof controls.deleteError === "function" ? controls.deleteError(fileList) : controls.deleteError;
+      if (deleteError) throw deleteError;
+      advance(controls.deleteMs);
       return { fileList: fileList.map(fileID => {
         const status = files.has(fileID) ? controls.deleteStatus : controls.missingStatus;
         if (status === 0) files.delete(fileID);
@@ -78,10 +95,11 @@ function harness(initial = [row(1)]) {
     },
   };
   const mod = { exports: {} };
-  vm.runInNewContext(source, { exports: mod.exports, module: mod, process: { env }, Date: class extends Date { static now() { return NOW; } },
+  vm.runInNewContext(source, { exports: mod.exports, module: mod, process: { env }, Date: class extends Date { static now() { return NOW + clock.elapsedMs; } },
     console: { info() {}, error(...args) { capturedLogs.push(inspect(args)); } },
     require: name => name === "wx-server-sdk" ? cloud : require(path.join(root, name)) });
-  return { call: (event = {}) => mod.exports.main(event), records, state, files, metrics, controls, env, capturedLogs };
+  return { call: (event = {}) => { clock.elapsedMs = 0; return mod.exports.main(event); },
+    records, state, files, metrics, controls, env, capturedLogs, clock };
 }
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
@@ -149,6 +167,132 @@ test("预演精确处理到期边界并只读翻页，不改正式清理游标",
   assert.equal(second.nextCursor, "");
   assert.deepEqual(h.state.get("v2"), { cursor: idFor(9), revision: 2 });
   assert.equal(h.metrics.writes + h.metrics.deletes, 0);
+});
+test("软预算逐候选检查点可在硬超时前多轮推进完整页", async () => {
+  const h = harness(Array.from({ length: 51 }, (_, i) => row(i + 1)));
+  h.controls.transactionMs = 30;
+  h.controls.deleteMs = 70;
+  h.controls.hardBudgetMs = 3000;
+  const results = [];
+  for (let i = 0; i < 10 && (h.files.size > 0 || h.state.get("v2")?.cursor); i++) {
+    const result = await h.call();
+    results.push(result);
+    assert.equal(result.ok, true, "软预算退出必须早于模拟硬超时");
+    assert.ok(h.clock.elapsedMs < h.controls.hardBudgetMs, "不得触及模拟硬预算");
+  }
+  assert.ok(results.some(result => result.budgetExhausted === true), "完整页应触发软预算分批");
+  assert.equal(results.reduce((sum, result) => sum + result.processed, 0), 51);
+  assert.equal(h.files.size, 0);
+  assert.ok([...h.records.values()].every(record => record.status === "deleted"));
+  assert.equal(h.state.get("v2").cursor, "");
+});
+test("查询已耗尽软预算时保留正式游标且不启动候选", async () => {
+  const h = harness([row(1), row(2), row(3)]);
+  h.state.set("v2", { cursor: idFor(1), revision: 4 });
+  h.controls.queryMs = 1200;
+  const result = await h.call();
+  assert.equal(result.ok, true);
+  assert.equal(result.budgetExhausted, true);
+  assert.equal(result.scanned, 2);
+  assert.equal(result.processed, 0);
+  assert.equal(result.candidates, 0);
+  assert.equal(result.nextCursor, idFor(1));
+  assert.deepEqual(h.state.get("v2"), { cursor: idFor(1), revision: 4 });
+  assert.equal(h.metrics.deletes + h.metrics.writes, 0);
+});
+test("正式游标读取已耗尽软预算时不再启动分页查询", async () => {
+  const h = harness([row(1), row(2)]);
+  h.state.set("v2", { cursor: idFor(1), revision: 4 });
+  h.controls.stateReadMs = 1200;
+  const result = await h.call();
+  assert.equal(result.ok, true);
+  assert.equal(result.budgetExhausted, true);
+  assert.equal(result.scanned, 0);
+  assert.equal(result.processed, 0);
+  assert.equal(result.nextCursor, idFor(1));
+  assert.equal(h.metrics.queries, 0, "软预算耗尽后不得强行启动页面读取");
+  assert.deepEqual(h.state.get("v2"), { cursor: idFor(1), revision: 4 });
+});
+test("dry-run预算退出只返回实际审核位置且不写正式状态", async () => {
+  const h = harness([row(1), row(2), row(3)]);
+  h.state.set("v2", { cursor: idFor(9), revision: 2 });
+  h.controls.queryMs = 1200;
+  const result = await h.call({ dryRun: true, cursor: idFor(1) });
+  assert.equal(result.ok, true);
+  assert.equal(result.budgetExhausted, true);
+  assert.equal(result.processed, 0);
+  assert.equal(result.candidates, 0);
+  assert.equal(result.validated, 0, "未启动的候选不能声明已校验");
+  assert.equal(result.nextCursor, idFor(1));
+  assert.deepEqual(h.state.get("v2"), { cursor: idFor(9), revision: 2 });
+  assert.equal(h.metrics.deletes + h.metrics.writes, 0);
+});
+test("候选检查点失败立即停止且保留可重试墓碑引用", async () => {
+  const h = harness([row(1), row(2)]);
+  h.controls.checkpointError = new Error("SYNTHETIC_CHECKPOINT_PRIVATE_VALUE");
+  const result = await h.call();
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "CLEANUP_FAILED");
+  assert.equal(result.processed, 1);
+  assert.equal(h.metrics.deletes, 1);
+  assert.equal(h.records.get(idFor(1)).status, "deleted");
+  assert.equal(h.records.get(idFor(1)).recordingFileId, row(1).recordingFileId);
+  assert.equal(h.records.get(idFor(2)).status, "active", "检查点失败后不得继续删除");
+  assert.equal(h.state.has("v2"), false);
+  assert.equal(JSON.stringify({ result, logs: h.capturedLogs }).includes("SYNTHETIC_CHECKPOINT_PRIVATE_VALUE"), false);
+});
+test("单候选未知删除错误推进检查点且不阻塞后续安全记录", async () => {
+  const h = harness([row(1), row(2)]);
+  let first = true;
+  h.controls.deleteError = () => first ? (first = false, new Error("SYNTHETIC_DELETE_PRIVATE_VALUE")) : null;
+  const result = await h.call();
+  assert.equal(result.ok, true);
+  assert.equal(result.failed, 1);
+  assert.equal(result.deleted, 1);
+  assert.equal(result.processed, 2);
+  assert.equal(h.records.get(idFor(1)).status, "deletePending");
+  assert.equal(h.records.get(idFor(1)).recordingFileId, row(1).recordingFileId);
+  assert.equal(h.records.get(idFor(2)).status, "deleted");
+  assert.equal(h.state.get("v2").cursor, "");
+  const retry = await h.call();
+  assert.equal(retry.ok, true);
+  assert.equal(h.records.get(idFor(1)).status, "deleted");
+  assert.equal(h.files.size, 0);
+});
+test("纯active页只在页尾保存已扫描前缀", async () => {
+  const h = harness(Array.from({ length: 51 }, (_, i) => row(i + 1, { expiresAtMs: NOW + 1 })));
+  const first = await h.call();
+  assert.equal(first.scanned, 50);
+  assert.equal(first.processed, 50);
+  assert.equal(first.candidates, 0);
+  assert.equal(first.nextCursor, idFor(50));
+  assert.equal(h.metrics.writes, 1, "跳过未到期记录不得逐条写检查点");
+  const second = await h.call();
+  assert.equal(second.scanned, 1);
+  assert.equal(second.processed, 1);
+  assert.equal(second.nextCursor, "");
+  assert.equal(h.metrics.writes, 2);
+  assert.equal(h.metrics.deletes, 0);
+});
+test("满页游标在下一次空页回绕且不伪报处理记录", async () => {
+  const h = harness(Array.from({ length: 50 }, (_, i) => row(i + 1, { expiresAtMs: NOW + 1 })));
+  const first = await h.call();
+  assert.equal(first.nextCursor, idFor(50));
+  const second = await h.call();
+  assert.equal(second.scanned, 0);
+  assert.equal(second.processed, 0);
+  assert.equal(second.candidates, 0);
+  assert.equal(second.nextCursor, "");
+  assert.equal(h.state.get("v2").cursor, "");
+});
+test("并发revision前进时中止且不覆盖较新游标", async () => {
+  const h = harness(Array.from({ length: 50 }, (_, i) => row(i + 1, { expiresAtMs: NOW + 1 })));
+  h.controls.beforeCheckpoint = save => save({ cursor: idFor(99), revision: 1, updatedAtMs: NOW });
+  const result = await h.call();
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "CLEANUP_STATE_CHANGED");
+  assert.equal(h.state.get("v2").cursor, idFor(99));
+  assert.equal(h.state.get("v2").revision, 1);
 });
 test("小批持久游标扫多页并回绕，旧记录不占分页", async () => {
   const h = harness(Array.from({ length: 121 }, (_, i) => row(i + 1)));
@@ -246,7 +390,9 @@ test("pending未commit孤儿及墓碑后迟到上传可再次删除", async () =
 });
 test("并发清理事务冲突可重试，分页后提交胜出不误删", async () => {
   const h = harness(); const results = await Promise.all([h.call(), h.call()]);
-  assert.ok(results.every(r => r.ok)); assert.equal(h.files.size, 0); assert.ok(h.metrics.conflicts > 0);
+  assert.ok(results.some(r => r.ok));
+  assert.ok(results.every(r => r.ok || r.code === "CLEANUP_STATE_CHANGED"));
+  assert.equal(h.files.size, 0); assert.ok(h.metrics.conflicts > 0);
   const r = row(1, { status: "pending", expiresAtMs: undefined, pendingExpiresAtMs: NOW - 1 });
   const k = harness([r]); k.controls.beforeMark = () => Object.assign(k.records.get(r._id), { status: "active", expiresAtMs: NOW + 86400000 });
   assert.equal((await k.call()).deleted, 0); assert.equal(k.metrics.deletes, 0);

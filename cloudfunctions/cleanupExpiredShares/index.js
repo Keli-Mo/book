@@ -4,6 +4,7 @@ const cloud = require("wx-server-sdk");
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database({ throwOnNotFound: false });
 const PAGE_SIZE = 50;
+const WORK_BUDGET_MS = 1200;
 const cleanupCodes = new Set([
   "INVALID_SHARE_PATH",
   "INVALID_SHARE_FILE_ID",
@@ -82,11 +83,14 @@ const cleanOne = async (id, prefix, now) => {
 };
 
 exports.main = async (event = {}) => {
-  const result = { ok: true, dryRun: true, scanned: 0, candidates: 0, validated: 0, deleted: 0, failed: 0, nextCursor: "" };
+  const result = { ok: true, dryRun: true, scanned: 0, processed: 0, candidates: 0,
+    validated: 0, deleted: 0, failed: 0, budgetExhausted: false, nextCursor: "" };
   try {
     const context = cloud.getWXContext();
     // SDK 来源从平台上下文获取，event.Type/SOURCE 等客户端声明不参与授权。
     if (context.SOURCE !== "wx_trigger" || context.OPENID) return { ok: false, code: "FORBIDDEN" };
+    // 软预算只阻止启动新工作；已经开始的事务或删除仍由平台硬超时兜底。
+    const budgetStartedAt = Date.now();
     const request = event && typeof event === "object" && !Array.isArray(event) ? event : {};
     const prefix = trustedPrefix(context.ENV);
     const dryRun = process.env.SHARE_CLEANUP_ENABLED !== "true" || request.dryRun === true || !prefix;
@@ -96,34 +100,63 @@ exports.main = async (event = {}) => {
     // dry-run 不写游标；可用返回的 nextCursor 分页审核，事件不能改变正式清理进度。
     const state = dryRun ? null : (await stateDoc.get()).data;
     const cursor = dryRun ? (typeof request.cursor === "string" && /^[a-f0-9]{64}$/.test(request.cursor) ? request.cursor : "") : (state?.cursor || "");
+    let expectedRevision = state?.revision || 0;
+    let savedCursor = cursor;
+    result.nextCursor = cursor;
+    const saveCursor = async nextCursor => {
+      if (dryRun) {
+        result.nextCursor = nextCursor;
+        return;
+      }
+      if (nextCursor === savedCursor) return;
+      await transaction(async tx => {
+        const doc = tx.collection("shareCleanupState").doc("v2"), latest = (await doc.get()).data;
+        if ((latest?.revision || 0) !== expectedRevision) throw new Error("CLEANUP_STATE_CHANGED");
+        await doc.set({ data: { cursor: nextCursor, revision: expectedRevision + 1, updatedAtMs: Date.now() } });
+      });
+      expectedRevision++;
+      savedCursor = nextCursor;
+      result.nextCursor = nextCursor;
+    };
+    if (Date.now() - budgetStartedAt >= WORK_BUDGET_MS) {
+      result.budgetExhausted = true;
+      console.info("分享清理批次", result);
+      return result;
+    }
     const page = await db.collection("checkins").where({ shareVersion: 2,
       ...(cursor ? { _id: db.command.gt(cursor) } : {}) }).orderBy("_id", "asc").limit(PAGE_SIZE).get();
     result.scanned = page.data.length;
     const now = Date.now();
+    let lastProcessedCursor = cursor;
     for (const record of page.data) {
-      if (!eligible(record, now)) continue;
-      result.candidates++;
-      // 缺少可信前缀时只能统计，不能把候选声明为已校验通过。
-      if (!prefix) continue;
-      try {
-        // 预演也走真实路径/环境检查；正式删除仍在事务内重读校验以防扫描竞态。
-        fileFor(record, prefix);
-        result.validated++;
-        if (!dryRun && await cleanOne(record._id, prefix, now)) result.deleted++;
-      } catch (error) {
-        result.failed++;
-        // 不输出录音URL、口令或OPENID，失败记录保留引用，下轮重试。
-        console.error("分享清理未完成", { code: safeCleanupCode(error) });
+      if (Date.now() - budgetStartedAt >= WORK_BUDGET_MS) {
+        result.budgetExhausted = true;
+        break;
       }
+      const candidate = eligible(record, now);
+      if (candidate) {
+        result.candidates++;
+        // 缺少可信前缀时只能统计，不能把候选声明为已校验通过。
+        if (prefix) {
+          try {
+            // 预演也走真实路径/环境检查；正式删除仍在事务内重读校验以防扫描竞态。
+            fileFor(record, prefix);
+            result.validated++;
+            if (!dryRun && await cleanOne(record._id, prefix, now)) result.deleted++;
+          } catch (error) {
+            result.failed++;
+            // 不输出录音URL、口令或OPENID，失败记录保留引用，下轮回绕重试。
+            console.error("分享清理未完成", { code: safeCleanupCode(error) });
+          }
+        }
+      }
+      result.processed++;
+      lastProcessedCursor = record._id;
+      // 候选完成后立即保存连续前缀；未到期记录集中到页尾或预算退出再保存。
+      if (candidate && !dryRun) await saveCursor(lastProcessedCursor);
     }
-    result.nextCursor = page.data.length === PAGE_SIZE ? page.data[page.data.length - 1]._id : "";
-    if (!dryRun) await transaction(async tx => {
-      const doc = tx.collection("shareCleanupState").doc("v2"), latest = (await doc.get()).data;
-      // 并发执行者只推进自己读取的游标代次，不覆盖更新后的进度。
-      if ((latest?.revision || 0) === (state?.revision || 0)) {
-        await doc.set({ data: { cursor: result.nextCursor, revision: (state?.revision || 0) + 1, updatedAtMs: now } });
-      }
-    });
+    if (result.budgetExhausted) await saveCursor(lastProcessedCursor);
+    else await saveCursor(page.data.length < PAGE_SIZE ? "" : lastProcessedCursor);
     console.info("分享清理批次", result);
     return result;
   } catch (error) {
