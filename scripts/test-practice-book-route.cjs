@@ -1554,12 +1554,17 @@ async function testRoutes() {
     assert.ok(button, "非法路由应有可恢复的书库入口");
     button.props.onClick();
     assert.equal(page.navigations.at(-1), "/pages/BookLibrary/BookLibrary");
+    assert.equal(page.navigationMethods.at(-1), "redirectTo", "恢复应替换无效页，不能把错误页留在返回栈");
     assert.equal(page.audios.length, 0, "非法路由不能初始化录音会话");
   }
   const broken = createPage("src/pages/Practice/Practice.tsx", { bookId: "22", practice: "0" }, {
     overrides: { "@/features/listeningPractice/bookPractice": { buildBookPracticeBundle() { throw new Error("教材 22 第 2 页：缺少图片"); } } },
   });
   assert.match(textOf(broken.render()), /教材 22 第 2 页：缺少图片/);
+  const brokenButton = elements(broken.render()).find((node) => node.type === "Button" && textOf(node) === "选择教材");
+  assert.ok(brokenButton, "损坏教材应有可恢复的书库入口");
+  brokenButton.props.onClick();
+  assert.equal(broken.navigationMethods.at(-1), "redirectTo", "损坏教材恢复应替换无效页，不能把错误页留在返回栈");
 
   for (const bookId of ["3", "22", "25"]) {
     const bundle = buildBookPracticeBundle(bookId);

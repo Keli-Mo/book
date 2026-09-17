@@ -148,7 +148,7 @@ export default function Practice() {
           <Text>{route.errorMessage}</Text>
           <Button
             className='practice-empty__button device-touch-target'
-            onClick={() => Taro.navigateTo({ url: "/pages/BookLibrary/BookLibrary" })}
+            onClick={() => Taro.redirectTo({ url: "/pages/BookLibrary/BookLibrary" })}
           >
             选择教材
           </Button>
