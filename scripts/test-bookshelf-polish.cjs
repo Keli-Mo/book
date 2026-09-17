@@ -35,6 +35,9 @@ assert.match(libraryCss, /series-filter[\s\S]*min-height:\s*44PX/, "筛选点击
 assert.match(libraryCss, /book-row::after[\s\S]*left:\s*124rpx/, "书库分隔线应从文字区域开始");
 assert.match(homeCss, /device-layout--pad[\s\S]*series-row::after[\s\S]*left:\s*55PX/, "Pad 首页分隔线应与固定尺寸的文字区域对齐");
 assert.match(libraryCss, /device-layout--pad[\s\S]*book-row::after[\s\S]*left:\s*62PX/, "Pad 书库分隔线应与固定尺寸的文字区域对齐");
-assert.match(homeCss, /continue-card__title[\s\S]*display:\s*-webkit-box[\s\S]*-webkit-line-clamp:\s*2/, "首页真实书名最多显示两行");
+const continueTitleRule = homeCss.match(/\.continue-card__title\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(continueTitleRule, /overflow-wrap:\s*anywhere/, "首页真实书名必须允许长词断行");
+assert.match(continueTitleRule, /white-space:\s*normal/, "首页真实书名必须自然换行");
+assert.doesNotMatch(continueTitleRule, /-webkit-(?:box|line-clamp)/, "首页真实书名不得再受 WebKit 两行截断限制");
 
 console.log("书架精修契约通过：标签、真实进度、留白、筛选触区和列表分隔均符合要求。");

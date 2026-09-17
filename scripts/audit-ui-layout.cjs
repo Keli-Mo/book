@@ -26,6 +26,7 @@ function html(node) {
   return `<${tag} ${attrs} style="${esc(styleText(p.style)+extra)}">${['input','img'].includes(tag)?'':html(p.children)+`</${tag}>`}`;
 }
 const cases=[['Home','recent'],['Home','empty'],['BookLibrary','all'],['BookLibrary','empty'],['Practice','idle'],['Practice','recording'],['Practice','paused'],['Practice','saved'],['Practice','save-failed'],['Practice','directory'],['Practice','error'],['CheckInDetail','local'],['CheckInDetail','playing'],['CheckInDetail','loading'],['CheckInDetail','error'],['CheckInDetail','shared'],['MyCheckIns','records'],['MyCheckIns','empty'],['MyCheckIns','offline'],['MyCheckIns','delete-pending']];
+const textScaleCases=[['Home','recent',1.5],['Home','recent',2],['MyCheckIns','records',1.5],['MyCheckIns','records',2]];
 async function surface(name,state,profile) {
   const item=sampleRecording('7');
   const shareId='b'.repeat(64);
@@ -78,13 +79,31 @@ async function surface(name,state,profile) {
     return html(tree);
   } finally {app.dispose();}
 }
+async function applyTextScale(page,scale) {
+  if(scale===1) return;
+  await page.evaluate(multiplier=>{
+    // 先一次性快照，避免父元素放大后再读取子元素而发生继承倍率叠乘。
+    const metrics=[...document.querySelectorAll('body *')].map(el=>{
+      const style=getComputedStyle(el);
+      return {el,fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight),pixelLineHeight:style.lineHeight.endsWith('px')};
+    });
+    for(const {el,fontSize,lineHeight,pixelLineHeight} of metrics){
+      if(el.classList.contains('at-icon')) continue;
+      if(Number.isFinite(fontSize)&&fontSize>0) el.style.setProperty('font-size',`${fontSize*multiplier}px`,'important');
+      if(pixelLineHeight&&Number.isFinite(lineHeight)&&lineHeight>0) el.style.setProperty('line-height',`${lineHeight*multiplier}px`,'important');
+    }
+  },scale);
+}
 (async()=>{
   fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({channel:'msedge',headless:true});const results=[];
-  const profiles=stage==='before'?[[768,1024,true,0]]:[[320,740,false,0],[390,844,false,34],[844,390,false,21],[768,1024,true,0],[1024,768,true,20],[1180,820,true,20],[375,700,true,0],[600,400,true,0]];
+  const bottomFocus=stage==='home-bottom';
+  const profiles=stage==='before'?[[768,1024,true,0]]:bottomFocus?[[390,844,false,34]]:[[320,740,false,0],[390,844,false,34],[844,390,false,21],[768,1024,true,0],[1024,768,true,20],[1180,820,true,20],[375,700,true,0],[600,400,true,0]];
   try {for(const [width,height,isPad,safeAreaBottom] of profiles){
     const profile={windowWidth:width,windowHeight:height,isPad,orientation:width>height?'landscape':'portrait',isSplit:isPad&&width>=960&&height>=600,statusBarHeight:20,safeAreaBottom};
     const context=await browser.newContext({viewport:{width,height}});const page=await context.newPage();
-    for(const [name,state] of cases){
+    const scaledCases=(width===390&&height===844)||(width===1024&&height===768)?textScaleCases:[];
+    const scenarios=bottomFocus?[['Home','recent',2]]:[...cases.map(([name,state])=>[name,state,1]),...scaledCases];
+    for(const [name,state,textScale] of scenarios){
       const body=(await surface(name,state,profile)).replace(/(-?[\d.]+)rpx/g,(_,v)=>Number(v)*width/750+'px');
       // 加载实际构建产物，额外导航组件的样式由页面 bundle 自动收集。
       let css=['dist/app.wxss',`dist/pages/${name}/${name}.wxss`].map(f=>readWxssWithImports(path.join(root,f))).join('\n').replace(/(-?[\d.]+)rpx/g,(_,v)=>Number(v)*width/750+'px');
@@ -93,8 +112,25 @@ async function surface(name,state,profile) {
       css=css.replace(/env\(safe-area-inset-(bottom|left|right|top)\)/g,(_,side)=>(side==='bottom'?safeAreaBottom:side==='top'?0:sideInset)+'px');
       await page.setContent(`<html><meta charset="utf-8"><style>html,body{margin:0;font-family:Arial,"Microsoft YaHei",sans-serif}view,scroll-view{display:block}text{display:inline}input{border:0;box-sizing:border-box;background:transparent}button{display:block;margin:0 auto;padding:0 14px;font-size:18px;line-height:2.555;text-align:center;border:0;box-sizing:border-box}img{display:block}scroll-view{scrollbar-width:none}</style><style>${css}</style><body>${body}</body></html>`,{waitUntil:'domcontentloaded'});
       await page.locator('img').evaluateAll(images=>Promise.all(images.map(img=>img.complete?null:new Promise(resolve=>{img.onload=resolve;img.onerror=resolve;setTimeout(resolve,5000)}))));
-      const measure=await page.evaluate(({name:surfaceName,state:surfaceState,isPad:padSurface,statusBarHeight,safeAreaBottom:bottomInset,sideInset:notchInset})=>{
+      await applyTextScale(page,textScale);
+      const measure=await page.evaluate(({name:surfaceName,state:surfaceState,textScale:fontScale,isPad:padSurface,statusBarHeight,safeAreaBottom:bottomInset,sideInset:notchInset})=>{
         const errors=[];const box=el=>el.getBoundingClientRect();const $=s=>document.querySelector(s);
+        const overlaps=(first,second)=>{
+          const a=box(first),b=box(second);
+          return Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
+        };
+        const textIsClipped=el=>{
+          const range=document.createRange();range.selectNodeContents(el);
+          const textBox=range.getBoundingClientRect();
+          if(textBox.left<-1||textBox.right>innerWidth+1||textBox.top<-1) return true;
+          for(let ancestor=el;ancestor;ancestor=ancestor.parentElement){
+            const style=getComputedStyle(ancestor);
+            if(!['hidden','clip'].includes(style.overflowX)&&!['hidden','clip'].includes(style.overflowY)) continue;
+            const clipBox=box(ancestor);
+            if(textBox.left<clipBox.left-1||textBox.right>clipBox.right+1||textBox.top<clipBox.top-1||textBox.bottom>clipBox.bottom+1) return true;
+          }
+          return false;
+        };
         const nav=$('.check-in-navigation');
         if(nav){
           if(Math.abs(box(nav).top)>1) errors.push('自定义导航未贴视口顶部');
@@ -142,15 +178,41 @@ async function surface(name,state,profile) {
             }
           }
         }
+        if(fontScale>1){
+          const titleSelectors=surfaceName==='Home'?['.continue-card__title','.series-row__title']:surfaceName==='MyCheckIns'?['.check-in-list-card__section','.check-in-list-card__book']:[];
+          for(const selector of titleSelectors){
+            const titles=[...document.querySelectorAll(selector)];
+            if(!titles.length) errors.push(`大字号标题缺失:${selector}`);
+            for(const [index,title] of titles.entries()){
+              if(title.scrollWidth>title.clientWidth+1||title.scrollHeight>title.clientHeight+1) errors.push(`大字号标题被截断:${selector}[${index}]`);
+            }
+          }
+          const buttonSelector=surfaceName==='Home'?'.continue-card__button':surfaceName==='MyCheckIns'?'.check-in-list-card__actions button':null;
+          if(buttonSelector){
+            const buttons=[...document.querySelectorAll(buttonSelector)];
+            if(!buttons.length) errors.push(`大字号卡片按钮缺失:${buttonSelector}`);
+            for(const [index,button] of buttons.entries()){
+              if(textIsClipped(button)) errors.push(`大字号卡片按钮内容被截断:${buttonSelector}[${index}]`);
+            }
+          }
+          const cards=surfaceName==='Home'?[...document.querySelectorAll('.continue-card')]:surfaceName==='MyCheckIns'?[...document.querySelectorAll('.check-in-list-card')]:[];
+          for(const [cardIndex,card] of cards.entries()){
+            const ordered=surfaceName==='Home'?[card.querySelector('.continue-card__title'),card.querySelector('.continue-card__progress'),card.querySelector('.continue-card__button')]:[card.querySelector('.check-in-list-card__section'),card.querySelector('.check-in-list-card__book'),card.querySelector('.check-in-list-card__meta'),card.querySelector('.check-in-list-card__actions')];
+            const visible=ordered.filter(Boolean);
+            for(let index=0;index<visible.length-1;index++) if(overlaps(visible[index],visible[index+1])) errors.push(`大字号卡片内容重叠:${surfaceName}[${cardIndex}]`);
+            const buttons=[...card.querySelectorAll('button')];
+            for(let first=0;first<buttons.length;first++) for(let second=first+1;second<buttons.length;second++) if(overlaps(buttons[first],buttons[second])) errors.push(`大字号卡片按钮重叠:${surfaceName}[${cardIndex}]`);
+          }
+        }
         const largeIcons=[...document.querySelectorAll('.at-icon[data-ui-icon-size]')].filter(el=>Math.abs(parseFloat(getComputedStyle(el).fontSize)-Number(el.dataset.uiIconSize))>0.5);
         if(largeIcons.length) errors.push(`图标随屏宽放大:${largeIcons.length}`);
         const tab=$('.home-tabs');
-        if(tab){if(parseFloat(getComputedStyle(tab).paddingBottom)<bottomInset)errors.push('底栏未预留模拟安全区');const end=box(tab).bottom-parseFloat(getComputedStyle(tab).paddingBottom);for(const el of document.querySelectorAll('.home-tabs__item > text:not(.at-icon)')) if(box(el).bottom>end+1) errors.push('底栏文字超出安全内容区');}
-        const overflowingDeleteLabels=[...document.querySelectorAll('.check-in-list-card__delete')].filter(el=>{
+        if(tab&&fontScale===1){if(parseFloat(getComputedStyle(tab).paddingBottom)<bottomInset)errors.push('底栏未预留模拟安全区');const end=box(tab).bottom-parseFloat(getComputedStyle(tab).paddingBottom);for(const el of document.querySelectorAll('.home-tabs__item > text:not(.at-icon)')) if(box(el).bottom>end+1) errors.push('底栏文字超出安全内容区');}
+        const overflowingDeleteLabels=fontScale===1?[...document.querySelectorAll('.check-in-list-card__delete')].filter(el=>{
           const range=document.createRange();range.selectNodeContents(el);
           const textBox=range.getBoundingClientRect(),buttonBox=box(el),style=getComputedStyle(el);
           return textBox.left<buttonBox.left+parseFloat(style.paddingLeft)-0.5||textBox.right>buttonBox.right-parseFloat(style.paddingRight)+0.5;
-        });
+        }):[];
         if(overflowingDeleteLabels.length) errors.push(`删除按钮文字越界:${overflowingDeleteLabels.length}`);
         const preview=$('.check-in-list-card__preview');if(padSurface&&preview&&box(preview).width>100) errors.push('Pad封面flex-basis仍随rpx放大');
         const empty=$('.my-check-ins-state__button');if(empty&&box(empty).bottom>window.innerHeight) errors.push('空态按钮首屏不可见');
@@ -158,9 +220,29 @@ async function surface(name,state,profile) {
         const targets=[...document.querySelectorAll('.device-touch-target')].filter(el=>box(el).width<43.9||box(el).height<43.9);if(targets.length)errors.push(`命中区不足44px:${targets.length}`);
         if([...document.images].some(el=>!el.naturalWidth))errors.push('教材图片未加载成功');
         return {errors,padding,largeIcons:largeIcons.map(el=>({name:el.className,size:getComputedStyle(el).fontSize})),previewWidth:preview?box(preview).width:null,missingImages:[...document.images].filter(el=>!el.naturalWidth).length};
-      },{name,state,isPad,statusBarHeight:profile.statusBarHeight,safeAreaBottom,sideInset});
-      const file=`${width}x${height}-${name}-${state}.png`;await page.screenshot({path:path.join(out,file),fullPage:state!=='directory'});
-      results.push({width,height,name,state,...measure,file});
+      },{name,state,textScale,isPad,statusBarHeight:profile.statusBarHeight,safeAreaBottom,sideInset});
+      const scaleSuffix=textScale===1?'':`-text-${Math.round(textScale*100)}`;
+      const file=`${width}x${height}-${name}-${state}${scaleSuffix}.png`;await page.screenshot({path:path.join(out,file),fullPage:state!=='directory'});
+      if(bottomFocus){
+        await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
+        await page.waitForTimeout(50);
+        const bottomReachability=await page.evaluate(()=>{
+          const rows=[...document.querySelectorAll('.series-row')],last=rows.at(-1),tab=document.querySelector('.home-tabs');
+          if(!last||!tab) return {errors:['末个系列或固定底栏缺失']};
+          const row=last.getBoundingClientRect(),bar=tab.getBoundingClientRect();
+          const point={x:Math.max(0,Math.min(innerWidth-1,row.left+row.width/2)),y:Math.max(0,Math.min(innerHeight-1,row.top+row.height/2))};
+          const hit=document.elementFromPoint(point.x,point.y);const errors=[];
+          if(scrollY<1) errors.push('页面未实际滚动');
+          if(row.top<0||row.bottom>bar.top+1) errors.push(`末个系列未完整停在底栏上方:${row.top.toFixed(1)}..${row.bottom.toFixed(1)}>${bar.top.toFixed(1)}`);
+          if(row.width<43.9||row.height<43.9) errors.push(`末个系列命中区不足44px:${row.width.toFixed(1)}x${row.height.toFixed(1)}`);
+          if(!hit||!(hit===last||last.contains(hit))) errors.push(`末个系列中心不可命中:${hit?.className||hit?.tagName||'none'}`);
+          return {errors,scrollY,row:{top:row.top,bottom:row.bottom,width:row.width,height:row.height},tabTop:bar.top,hit:hit?.className||hit?.tagName||''};
+        });
+        measure.bottomReachability=bottomReachability;
+        measure.errors.push(...bottomReachability.errors);
+        await page.screenshot({path:path.join(out,`${width}x${height}-${name}-${state}${scaleSuffix}-bottom.png`),fullPage:false});
+      }
+      results.push({width,height,name,state,textScale,...measure,file});
     }
     await context.close();
   }}finally{fs.writeFileSync(path.join(out,'measurements.json'),JSON.stringify(results,null,2));await browser.close();}

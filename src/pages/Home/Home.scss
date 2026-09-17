@@ -75,14 +75,12 @@
   }
 
   &__title {
-    display: -webkit-box;
-    overflow: hidden;
     color: #17241f;
     font-size: 32rpx;
     font-weight: 800;
     line-height: 1.42;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   &__progress {
@@ -189,12 +187,11 @@
   }
 
   &__title {
-    overflow: hidden;
     color: #1e2b26;
     font-size: 27rpx;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   &__range {
@@ -368,12 +365,10 @@
     padding: 22rpx;
 
     &__body { padding-left: 22rpx; }
-    &__title,
     &__progress { overflow-wrap: anywhere; }
   }
 
   .series-row {
-    &__title,
     &__range { white-space: normal; }
   }
 }
