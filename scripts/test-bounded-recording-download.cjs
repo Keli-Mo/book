@@ -171,6 +171,15 @@ async function main() {
   for (const [i, signResult] of malformed.entries()) await test(`签名矛盾/畸形 ${i}`, async () => {
     const h = setup({ signResult }); await failure(h, 'UNAVAILABLE'); assert.equal(h.metrics.downloads || 0, 0);
   });
+  for (const status of [-503002, -503003, '0']) await test(`签名顶层 status ${JSON.stringify(status)} 必须失败且零GET`, async () => {
+    const h = setup({ signResult: { ...signing(), status } });
+    await failure(h, 'UNAVAILABLE'); assert.equal(h.metrics.downloads || 0, 0);
+  });
+  await test('签名顶层数值 status 0 兼容成功', async () => {
+    const h = setup({ signResult: { ...signing(), status: 0 } });
+    assert.equal((await h.read()).fileSizeBytes, 1); assert.equal(h.metrics.downloads, 1);
+    assert.equal(h.timers.size, 0);
+  });
   for (const signThrow of [{ errCode: -503003 }, { code: 'STORAGE_FILE_NONEXIST' },
     { errCode: -503003, code: 'STORAGE_FILE_NONEXIST', errno: -503003 }])
     await test('同步纯 typed 缺失', async () => { await failure(setup({ signThrow }), 'MISSING'); });

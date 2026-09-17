@@ -20,6 +20,7 @@ const signingFailure = value => {
 
 const signingResult = (result, fileID) => {
   if (!object(result) || result.errMsg !== "getTempFileURL:ok" || !codesAreZero(result) ||
+      ("status" in result && result.status !== 0) ||
       !Array.isArray(result.fileList) || result.fileList.length !== 1) return { kind: "UNAVAILABLE" };
   const item = result.fileList[0];
   if (!object(item) || item.fileID !== fileID) return { kind: "UNAVAILABLE" };

@@ -210,6 +210,40 @@ test("激活事务冲突消耗剩余预算后，不再发起新事务", async ()
   assert.equal(h.metrics.attempts, before + 1); assert.equal(h.records.get(p.id).status, "pending");
 });
 
+for (const status of [-503002, -503003, "0"]) {
+  test(`commit 拒绝顶层 status ${JSON.stringify(status)}，零GET且保留pending`, async () => {
+    const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
+    const recordingFileId = h.upload(p), before = plain([...h.records]);
+    h.controls.signPatch = { status };
+    const result = await h.call("commit", { ...event, recordingFileId });
+    assert.equal(result.code, "CHECK_IN_ERROR"); assert.equal(result.ok, false);
+    assert.equal(h.metrics.signed, 1); assert.equal(h.metrics.downloads, 0);
+    assert.deepEqual(plain([...h.records]), before); assert.equal(h.records.get(p.id).status, "pending");
+  });
+  test(`shareStatus 拒绝顶层 status ${JSON.stringify(status)}，不返回invalid/missing且零GET`, async () => {
+    const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
+    const recordingFileId = h.upload(p);
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
+    const before = plain([...h.records]), downloads = h.metrics.downloads;
+    h.controls.signPatch = { status };
+    for (const content of [Buffer.alloc(0), Buffer.alloc(bytes.length, 1), bytes]) {
+      h.files.set(recordingFileId, content);
+      const result = await h.call("shareStatus", { id: p.id, shareRequestId: event.requestId });
+      assert.equal(result.code, "SHARE_STATUS_UNAVAILABLE"); assert.equal(result.ok, false);
+      assert.equal(result.data, undefined); assert.equal(h.metrics.downloads, downloads);
+      assert.deepEqual(plain([...h.records]), before); assert.equal(h.metrics.deletes, 0);
+    }
+  });
+}
+
+test("顶层数值 status 0 兼容 commit 与 shareStatus 完整流", async () => {
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
+  h.controls.signPatch = { status: 0 };
+  assert.equal((await h.call("commit", { ...event, recordingFileId: h.upload(p) })).ok, true);
+  assert.equal((await h.call("shareStatus", { id: p.id, shareRequestId: event.requestId })).data.state, "active");
+  assert.equal(h.metrics.downloads, 2); assert.equal(h.metrics.signed, 2);
+});
+
 for (const [label, patch] of [
   ["缺少签名成功状态", { errMsg: undefined }],
   ["成功签名与权限 errCode 矛盾", { errCode: -503002 }],

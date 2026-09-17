@@ -104,3 +104,44 @@ $nodePath = 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependen
 - 8MiB是应用进入摘要的累计字节上限，不代表内核/TLS/网络总接收恰好8MiB。
 - SDK签名超时后不可真正取消其RPC，已发DB事务不能声称撤销；软deadline不等于平台硬超时。
 - 主控需独立复审，按helper上传→确认回读→入口上传的顺序部署，不能并行或重装依赖；新增文件增量能力、源码摘要和平台状态需实际确认。主控已保存部署前快照，当前云端没有本helper，本代理未操作线上。
+
+## 独立复审修正：顶层 status 矛盾（2026-09-17）
+
+复审发现原 `codesAreZero(result)` 只核验 errCode/code/errno，顶层额外 status 被忽略，合法条目与顶层负状态/字符串0混合仍可能GET成功。接受此 Important 反馈，新增 `("status" in result && result.status !== 0)` 拒绝条件：字段存在时只能为数值0，矛盾包固定 UNAVAILABLE，不把顶层缺失码当明确缺失。
+
+本轮仅改 `recordingDownload.js`、helper测试、真实handler测试与本报告；独立提交主题 `fix: 拒绝录音签名顶层状态矛盾`。未改主控另行处理的导航测试或其他任务文件，也未部署/联网。
+
+先补测试、未改生产前运行：
+
+```powershell
+& 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' scripts/test-bounded-recording-download.cjs
+& 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' scripts/test-check-in-function.cjs
+```
+
+两个进程退出码均1。helper首个顶层status=-503002用例实际输出 `AssertionError [ERR_ASSERTION]: Missing expected rejection.`；真实handler对于-503002、-503003、字符串"0"各有commit/shareStatus两个行为失败，共 `6/51 项云函数契约失败`，commit期望CHECK_IN_ERROR而实际code为undefined，shareStatus期望SHARE_STATUS_UNAVAILABLE而实际code为undefined。数值0兼容用例当时已通过，证明新增校验不会要求删除原有兼容行为。
+
+生产只加上述一行后，运行以下四个独立进程，退出码均0，相关最终实际输出列在命令后：
+
+```powershell
+& 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' scripts/test-bounded-recording-download.cjs
+& 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' scripts/test-check-in-function.cjs
+& 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' scripts/test-local-share-lifecycle.cjs
+& 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' scripts/test-cloud-error.cjs
+```
+
+```text
+91/91 bounded recording tests passed (fake HTTPS/clock; no real network)
+云函数协议测试通过：51 组，含乐观冲突、文件校验和墓碑。
+本地分享集成通过：完成零联网、重启恢复、好友口令鉴权、30天过期重传、丢回包/本地回写失败幂等恢复、旧协议拦截、脱敏日志接线、本地不删除。
+云开发错误提示测试通过：错误对象、字符串及任意错误码均使用固定安全分类。
+```
+
+新增handler断言明确要求commit保留pending且零GET；shareStatus对空内容、同长度坏内容、正常内容均返回UNAVAILABLE而不返回invalid/missing/active，GET增量为0且数据库/删除计数不变；数值0必须完成两次真实流读取并成功提交/核验。
+
+补充检查命令无输出、退出码0：
+
+```powershell
+& 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' --check cloudfunctions/checkIn/recordingDownload.js; git diff --check -- cloudfunctions/checkIn/recordingDownload.js scripts/test-bounded-recording-download.cjs scripts/test-check-in-function.cjs
+```
+
+上述修正取代原自查关于没有已知问题的当时结论；当前待独立复审确认。线上未验收项仍全部保留，本轮未把主控的其他全套测试结果当作本任务验证证据。
