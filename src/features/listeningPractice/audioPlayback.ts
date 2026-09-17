@@ -11,11 +11,14 @@ interface TrackAudioError {
 interface TrackAudio {
   src: string;
   loop: boolean;
+  currentTime: number;
   play: () => void;
   destroy: () => void;
   onEnded: (callback: () => void) => void;
   onError: (callback: (error: TrackAudioError) => void) => void;
+  onPlay: (callback: () => void) => void;
   onStop: (callback: () => void) => void;
+  onTimeUpdate: (callback: () => void) => void;
 }
 
 interface TrackAudioController {
@@ -26,6 +29,11 @@ interface TrackAudioController {
 
 interface AudioStopController {
   stop: () => unknown;
+}
+
+interface TrackAudioHooks {
+  onPlay?: () => void;
+  onTimeUpdate?: (seconds: number) => void;
 }
 
 /**
@@ -48,6 +56,7 @@ export const createTrackAudioController = (
   createAudio: () => TrackAudio,
   onTrackChange: (trackId: string | null) => void,
   onPlaybackError?: (error: TrackAudioError) => void,
+  hooks: TrackAudioHooks = {},
 ): TrackAudioController => {
   let generation = 0;
   let activeSession: {
@@ -89,6 +98,14 @@ export const createTrackAudioController = (
 
     audio.onEnded(finishCurrentSession);
     audio.onStop(finishCurrentSession);
+    audio.onPlay(() => {
+      if (!isCurrentSession(sessionGeneration)) return;
+      hooks.onPlay?.();
+    });
+    audio.onTimeUpdate(() => {
+      if (!isCurrentSession(sessionGeneration)) return;
+      hooks.onTimeUpdate?.(audio.currentTime);
+    });
     audio.onError((error) => {
       if (!isCurrentSession(sessionGeneration)) return;
       activeSession = null;
@@ -127,10 +144,10 @@ export const createTrackAudioController = (
 /** 页面隐藏时只停止两类播放，不触碰 RecorderManager 正在进行的录音。 */
 export const stopPracticePlayback = (
   modelAudioController: AudioStopController | null | undefined,
-  recordingAudio: StoppableAudio | null | undefined,
+  recordingAudioController: AudioStopController | null | undefined,
 ) => {
   modelAudioController?.stop();
-  stopAudioIfLoaded(recordingAudio);
+  recordingAudioController?.stop();
 };
 
 /** 把播放器的秒进度换算成整秒毫秒值，并限制在录音总时长内。 */

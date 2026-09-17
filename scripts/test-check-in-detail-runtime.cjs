@@ -136,10 +136,41 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
   let tree = local.page.render();
   await byClass(tree, "shared-recording__play").props.onClick();
   assert.equal(local.cloudCalls, 0, "本地加载和回听必须零云调用");
-  assert.deepEqual(local.page.audios[0].events, ["play"]);
+  const playbackA = local.page.audios.find((audio) => audio.src === "wxfile://saved.mp3");
+  assert.deepEqual(playbackA.events, ["play"]);
+  tree = local.page.render();
+  assert.equal(textOf(byClass(tree, "shared-recording__play")), "■停止播放", "onPlay 前后应由原生回调确认播放态");
+  await byClass(tree, "shared-recording__play").props.onClick();
+  tree = local.page.render();
+  assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "再次点击应停止并释放 A 会话");
+  await byClass(tree, "shared-recording__play").props.onClick();
+  const playbackB = local.page.audios.findLast((audio) => audio.src === "wxfile://saved.mp3");
+  assert.notEqual(playbackB, playbackA, "再次播放必须创建独立 B 会话");
+  playbackB.currentTime = 2.8;
+  playbackB.trigger("TimeUpdate");
+  const toastCountBeforeOldEvents = local.toasts.length;
+  playbackA.currentTime = 0.1;
+  for (const event of ["Play", "TimeUpdate", "Stop", "Ended", "Error"]) {
+    playbackA.trigger(event, event === "Error" ? { errCode: 1, errMsg: "old" } : undefined);
+  }
+  tree = local.page.render();
+  assert.equal(textOf(byClass(tree, "shared-recording__play")), "■停止播放", "A 的全部迟到事件不能清空 B 播放态");
+  assert.equal(textOf(byClass(tree, "shared-recording__duration")), "0:02 / 0:03", "A 的迟到进度不能让 B 倒退或跳变");
+  assert.equal(local.toasts.length, toastCountBeforeOldEvents, "A 的迟到错误不能额外弹提示");
+  playbackB.trigger("Ended");
+  tree = local.page.render();
+  assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "B 正常结束应复位播放态");
+  await byClass(tree, "shared-recording__play").props.onClick();
+  const playbackC = local.page.audios.findLast((audio) => audio.src === "wxfile://saved.mp3");
+  playbackC.trigger("Error", { errCode: 2, errMsg: "current" });
+  tree = local.page.render();
+  assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "当前会话报错应复位播放态");
+  assert.equal(local.toasts.at(-1), "录音播放失败", "仅当前会话错误应显示固定提示");
+  await byClass(tree, "shared-recording__play").props.onClick();
+  const hiddenPlayback = local.page.audios.findLast((audio) => audio.src === "wxfile://saved.mp3");
   local.page.hide();
-  local.page.audios[0].trigger("Play");
-  assert.equal(local.page.audios[0].events.at(-1), "stop", "隐藏后的迟到 onPlay 必须再次停止音频");
+  hiddenPlayback.trigger("Play");
+  assert.equal(textOf(byClass(local.page.render(), "shared-recording__play")), "▶播放本次跟读", "隐藏后的迟到 onPlay 不能复活页面播放态");
   local.page.dispose();
 
   const begin = deferred();
@@ -217,8 +248,32 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
   cloudPage.hide();
   refreshed.resolve({ id: "cloud", shareToken: "token", bookId: "22", bookTitle: "教材", practiceIndex: 0, pageNumber: 8, sectionTitle: "第一课", imageUrl: "cover", durationMs: 3000, createdAt: 1, recordingUrl: "fresh-url", isOwner: false });
   await cloudPlay;
-  assert.equal(cloudPage.audios[0].events.includes("play"), false, "云地址刷新迟到且页面已隐藏时不得启动播放");
+  assert.equal(cloudPage.audios.some((audio) => audio.events.includes("play")), false, "云地址刷新迟到且页面已隐藏时不得启动播放");
   cloudPage.dispose();
+
+  const rejectedRefresh = deferred();
+  let rejectedCalls = 0;
+  const rejectedToasts = [];
+  const rejectedCloudPage = createPage("src/pages/CheckInDetail/CheckInDetail.tsx", { id: "cloud", token: "token" }, {
+    showToast: ({ title }) => rejectedToasts.push(title),
+    overrides: {
+      "@/services/cloudCheckIn": {
+        getCheckInDetail: async () => {
+          rejectedCalls += 1;
+          if (rejectedCalls === 1) return { id: "cloud", shareToken: "token", bookId: "22", bookTitle: "教材", practiceIndex: 0, pageNumber: 8, sectionTitle: "第一课", imageUrl: "cover", durationMs: 3000, createdAt: 1, recordingUrl: "old-url", isOwner: false };
+          return rejectedRefresh.promise;
+        },
+        getReadableCloudError: (error) => error.message,
+      },
+    },
+  });
+  rejectedCloudPage.render(); await settle(); tree = rejectedCloudPage.render();
+  const rejectedPlay = byClass(tree, "shared-recording__play").props.onClick();
+  rejectedCloudPage.hide();
+  rejectedRefresh.reject(new Error("旧请求失败"));
+  await rejectedPlay;
+  assert.deepEqual(rejectedToasts, [], "隐藏后迟到的云地址刷新失败不能弹提示");
+  rejectedCloudPage.dispose();
 
   console.log("录音详情运行时测试通过：本地零云请求、离页分享门闩、隐藏提交恢复、长计时器与云播放迟到均正确。");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

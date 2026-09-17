@@ -10,7 +10,6 @@ import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { saveReadingProgress } from "@/features/bookLibrary/readingProgress";
 import {
   createTrackAudioController,
-  stopAudioIfLoaded,
   stopPracticePlayback,
 } from "@/features/listeningPractice/audioPlayback";
 import {
@@ -200,7 +199,9 @@ function PracticeSession({
   const modelAudioControllerRef = useRef<ReturnType<
     typeof createTrackAudioController
   > | null>(null);
-  const recordingAudioRef = useRef<Taro.InnerAudioContext | null>(null);
+  const recordingAudioRef = useRef<ReturnType<
+    typeof createTrackAudioController
+  > | null>(null);
   const recorderOwnerRef = useRef<RecorderOwner | null>(null);
   const recordingTimelineRef = useRef<RecordingTimeline>({
     accumulatedMs: 0,
@@ -456,7 +457,7 @@ function PracticeSession({
   }, [applyRecordingMachine, clearHiddenStopRetry]);
 
   const clearRecordingView = useCallback(() => {
-    stopAudioIfLoaded(recordingAudioRef.current);
+    recordingAudioRef.current?.stop();
     if (mountedRef.current) {
       setIsPlayingRecording(false);
       setTempRecordingPath("");
@@ -481,30 +482,46 @@ function PracticeSession({
   useEffect(() => {
     const modelAudioController = createTrackAudioController(
       () => Taro.createInnerAudioContext(),
-      setPlayingTrackId,
+      (trackId) => {
+        if (mountedRef.current && !pageHiddenRef.current) {
+          setPlayingTrackId(trackId);
+        }
+      },
       (error) => {
         console.error("示范音频播放失败", error.errCode, error.errMsg);
-        Taro.showToast({ title: "示范音频播放失败", icon: "none" });
+        if (mountedRef.current && !pageHiddenRef.current) {
+          Taro.showToast({ title: "示范音频播放失败", icon: "none" });
+        }
       },
     );
     modelAudioControllerRef.current = modelAudioController;
 
-    const recordingAudio = Taro.createInnerAudioContext();
-    recordingAudio.loop = false;
-    recordingAudio.onPlay(() => setIsPlayingRecording(true));
-    recordingAudio.onEnded(() => setIsPlayingRecording(false));
-    recordingAudio.onStop(() => setIsPlayingRecording(false));
-    recordingAudio.onError(() => {
-      setIsPlayingRecording(false);
-      Taro.showToast({ title: "录音回听失败", icon: "none" });
-    });
-    recordingAudioRef.current = recordingAudio;
+    const recordingAudioController = createTrackAudioController(
+      () => Taro.createInnerAudioContext(),
+      (trackId) => {
+        if (trackId === null && mountedRef.current && !pageHiddenRef.current) {
+          setIsPlayingRecording(false);
+        }
+      },
+      () => {
+        if (mountedRef.current && !pageHiddenRef.current) {
+          Taro.showToast({ title: "录音回听失败", icon: "none" });
+        }
+      },
+      {
+        onPlay: () => {
+          if (mountedRef.current && !pageHiddenRef.current) {
+            setIsPlayingRecording(true);
+          }
+        },
+      },
+    );
+    recordingAudioRef.current = recordingAudioController;
 
     return () => {
-      // 路由换书/换训练会卸载会话，两路音频都需先停止再释放。
-      stopPracticePlayback(modelAudioController, recordingAudio);
+      // 卸载只释放会话，不再向即将卸载的页面写播放状态。
       modelAudioController.dispose();
-      recordingAudio.destroy();
+      recordingAudioController.dispose();
       modelAudioControllerRef.current = null;
       recordingAudioRef.current = null;
     };
@@ -1056,7 +1073,7 @@ function PracticeSession({
     const controller = modelAudioControllerRef.current;
     if (!controller || recordingState === "uploading") return;
 
-    stopAudioIfLoaded(recordingAudioRef.current);
+    recordingAudioRef.current?.stop();
     // 示范音频由用户手动控制，录音中和暂停时也允许播放或切换。
     controller.toggle(trackId, url);
   };
@@ -1273,7 +1290,7 @@ function PracticeSession({
       return;
     }
 
-    stopAudioIfLoaded(recordingAudioRef.current);
+    recordingAudioRef.current?.stop();
     let permission: "granted" | "request" | "open-settings";
     try {
       const settings = await Taro.getSetting();
@@ -1359,17 +1376,12 @@ function PracticeSession({
   };
 
   const playRecording = () => {
-    const audio = recordingAudioRef.current;
-    if (!audio || !tempRecordingPath || savingRecordingRef.current) return;
+    const controller = recordingAudioRef.current;
+    if (!controller || !tempRecordingPath || savingRecordingRef.current) return;
 
     modelAudioControllerRef.current?.stop();
     setPlayingTrackId(null);
-    if (isPlayingRecording) {
-      stopAudioIfLoaded(audio);
-      return;
-    }
-    audio.src = tempRecordingPath;
-    audio.play();
+    controller.toggle("recording", tempRecordingPath);
   };
 
   const retrySaveRecording = async () => {
@@ -1380,7 +1392,7 @@ function PracticeSession({
     savingRecordingRef.current = true;
     setIsSavingRecording(true);
     const generation = ++saveGenerationRef.current;
-    stopAudioIfLoaded(recordingAudioRef.current);
+    recordingAudioRef.current?.stop();
     setIsPlayingRecording(false);
     try {
       const result = await getPendingCheckInStore().retrySave(pending.requestId);

@@ -144,7 +144,7 @@ const createPage = (file, params, options = {}) => {
       audio.play = () => { audio.events.push("play"); handlers.Play?.(); };
       audio.stop = () => { audio.events.push("stop"); handlers.Stop?.(); };
       audio.destroy = () => { audio.events.push("destroy"); };
-      audio.trigger = (event) => handlers[event]?.();
+      audio.trigger = (event, value) => handlers[event]?.(value);
       audios.push(audio);
       return audio;
     },
@@ -1519,7 +1519,7 @@ async function testRoutes() {
   modelPlaybackTree = modelPlaybackLeavingPage.render();
   await byClass(modelPlaybackTree, "check-in-navigation__home").props.onClick();
   modelPlaybackLeavingPage.hide();
-  assert.equal(modelPlaybackLeavingPage.audios[1].events.at(-1), "destroy", "示范播放从房子离页必须销毁并停止会话");
+  assert.equal(modelPlaybackLeavingPage.audios.find((audio) => audio.src)?.events.at(-1), "destroy", "示范播放从房子离页必须销毁并停止会话");
 
   const recordingPlaybackLeavingPage = createPage(
     "src/pages/Practice/Practice.tsx",
@@ -1537,7 +1537,7 @@ async function testRoutes() {
   recordingPlaybackTree = recordingPlaybackLeavingPage.render();
   await byClass(recordingPlaybackTree, "check-in-navigation__home").props.onClick();
   recordingPlaybackLeavingPage.hide();
-  assert.equal(recordingPlaybackLeavingPage.audios[0].events.at(-1), "stop", "录音回听从房子离页必须停止");
+  assert.equal(recordingPlaybackLeavingPage.audios.find((audio) => audio.src === oldPending.localPath)?.events.at(-1), "destroy", "录音回听从房子离页必须释放当前会话");
 
   const invalidRoutes = [{}, { practice: "0" }, { bookId: "3" }, { bookId: "unknown", practice: "0" }];
   for (const bookId of ["3", "22", "25"]) {

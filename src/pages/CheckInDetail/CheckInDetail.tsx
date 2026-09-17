@@ -2,7 +2,7 @@ import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidHide, useDidShow, useRouter, useShareAppMessage, useUnload } from "@tarojs/taro";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
-import { stopAudioIfLoaded } from "@/features/listeningPractice/audioPlayback";
+import { createTrackAudioController, getPlaybackPositionMs } from "@/features/listeningPractice/audioPlayback";
 import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import type { CheckInSubmissionHandle } from "@/features/listeningPractice/checkInSubmissionCoordinator";
 import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
@@ -36,7 +36,7 @@ export default function CheckInDetail() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [expiryTick, setExpiryTick] = useState(0);
-  const audioRef = useRef<Taro.InnerAudioContext | null>(null);
+  const audioControllerRef = useRef<ReturnType<typeof createTrackAudioController> | null>(null);
   const durationRef = useRef(0);
   const mountedRef = useRef(true);
   const visibleRef = useRef(true);
@@ -97,36 +97,51 @@ export default function CheckInDetail() {
 
   useEffect(() => {
     mountedRef.current = true;
-    const audio = Taro.createInnerAudioContext();
-    audio.loop = false;
-    audio.onPlay(() => {
-      if (!mountedRef.current) return;
-      if (!visibleRef.current) {
-        stopAudioIfLoaded(audio);
-        return;
-      }
-      setIsPlaying(true);
-    });
-    audio.onTimeUpdate(() => mountedRef.current && setPlaybackPositionMs(Math.min(durationRef.current, Math.max(0, audio.currentTime * 1000))));
-    const reset = () => { if (mountedRef.current) { setIsPlaying(false); setPlaybackPositionMs(0); } };
-    audio.onEnded(reset); audio.onStop(reset);
-    audio.onError(() => { reset(); Taro.showToast({ title: "录音播放失败", icon: "none" }); });
-    audioRef.current = audio;
-    return () => { mountedRef.current = false; stopAudioIfLoaded(audio); audio.destroy(); audioRef.current = null; };
+    const controller = createTrackAudioController(
+      () => Taro.createInnerAudioContext(),
+      (trackId) => {
+        if (trackId === null && mountedRef.current && visibleRef.current) {
+          setIsPlaying(false);
+          setPlaybackPositionMs(0);
+        }
+      },
+      () => {
+        if (mountedRef.current && visibleRef.current) {
+          Taro.showToast({ title: "录音播放失败", icon: "none" });
+        }
+      },
+      {
+        onPlay: () => {
+          if (mountedRef.current && visibleRef.current) setIsPlaying(true);
+        },
+        onTimeUpdate: (seconds) => {
+          if (mountedRef.current && visibleRef.current) {
+            setPlaybackPositionMs(getPlaybackPositionMs(seconds, durationRef.current));
+          }
+        },
+      },
+    );
+    audioControllerRef.current = controller;
+    return () => {
+      mountedRef.current = false;
+      controller.dispose();
+      audioControllerRef.current = null;
+    };
   }, []);
 
   const leavePage = () => {
     visibleRef.current = false;
     shareAttemptRef.current += 1;
     playAttemptRef.current += 1;
-    stopAudioIfLoaded(audioRef.current);
+    audioControllerRef.current?.stop();
     submissionRef.current?.cancel();
   };
   useDidHide(() => {
     visibleRef.current = false;
     shareAttemptRef.current += 1;
     playAttemptRef.current += 1;
-    stopAudioIfLoaded(audioRef.current);
+    audioControllerRef.current?.stop();
+    setIsPlaying(false);
     setPlaybackPositionMs(0);
     submissionRef.current?.cancel();
   });
@@ -182,11 +197,11 @@ export default function CheckInDetail() {
   }, [localId, recordId, routeToken]);
 
   const toggleRecording = async () => {
-    const audio = audioRef.current;
-    if (!audio || !detail || !visibleRef.current || savingRef.current) return;
+    const controller = audioControllerRef.current;
+    if (!controller || !detail || !visibleRef.current || savingRef.current) return;
     const attempt = playAttemptRef.current + 1;
     playAttemptRef.current = attempt;
-    if (isPlaying) { stopAudioIfLoaded(audio); return; }
+    if (isPlaying) { controller.stop(); return; }
     let recordingUrl = detail.recordingUrl;
     if (detail.source === "cloud") {
       try {
@@ -197,19 +212,21 @@ export default function CheckInDetail() {
         durationRef.current = refreshed.durationMs;
         setDetail({ source: "cloud", cloud: refreshed, recordingUrl });
       } catch (error) {
+        if (!mountedRef.current || !visibleRef.current || playAttemptRef.current !== attempt) return;
         Taro.showToast({ title: getReadableCloudError(error), icon: "none" });
         return;
       }
     }
     if (!visibleRef.current || playAttemptRef.current !== attempt) return;
-    setPlaybackPositionMs(0); audio.src = recordingUrl; audio.play();
+    setPlaybackPositionMs(0);
+    controller.toggle("recording", recordingUrl);
   };
 
   const retrySaveRecording = async () => {
     if (!localId || detail?.source !== "local" || detail.pending.recoverable || savingRef.current || sharing || !visibleRef.current) return;
     savingRef.current = true;
     setSaving(true);
-    stopAudioIfLoaded(audioRef.current);
+    audioControllerRef.current?.stop();
     try {
       const result = await pendingStore.retrySave(localId);
       // 隐藏时仅完成本地保存，返回页面会从仓储恢复，绝不在这里启动分享。
