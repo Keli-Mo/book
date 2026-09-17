@@ -81,3 +81,45 @@ tsc --noEmit --skipLibCheck：退出码 0，无诊断。
 - 未发现未解决疑点。打开目录不停止、换训练/隐藏/卸载释放、无音源不调用原生 stop、回听只在点击后创建实例、onPlay 前不进入播放态、详情仅播放中显示当前/总时长均有行为测试或既有格式化测试覆盖。
 - 工作树中原有 IDE 配置、其他计划及并行审计进度文件均未读取修改或纳入本提交。
 - 未访问云端、未执行真实学生录音、未部署、未 push。
+
+## 独立 Review Minor 补强：原生 onPlay 前后状态
+
+独立 review 指出原详情测试所用假音频在 `play()` 内同步触发 `Play`，因此“onPlay 前后”断言没有真正观察回调到达前的状态。补强仅修改公共假音频选项与详情运行时测试，生产代码未变；默认测试仍保持同步 `Play` 语义。
+
+### RED
+
+命令：
+
+```powershell
+& 'C:\Users\23237\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' scripts/test-check-in-detail-runtime.cjs
+```
+
+结果（退出码 1）：
+
+```text
+AssertionError [ERR_ASSERTION]: 原生 onPlay 未到时不能提前显示停止按钮
+'■停止播放' !== '▶播放本次跟读'
+RED_DETAIL_EXIT=1
+```
+
+失败原因符合预期：测试已请求延迟 `Play`，但旧夹具忽略该选项并仍在 `play()` 内同步发出事件。
+
+### GREEN
+
+命令：
+
+```powershell
+& 'C:\Users\23237\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' scripts/test-check-in-detail-runtime.cjs
+& 'C:\Users\23237\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' scripts/test-practice-book-route.cjs
+```
+
+结果（两项退出码均为 0）：
+
+```text
+录音详情运行时测试通过：本地零云请求、离页分享门闩、隐藏提交恢复、长计时器与云播放迟到均正确。
+教材路由测试通过：真实路由、首尾边界、恢复页、教材内容、打卡与历史回跳正确。
+```
+
+新增实证：用户点击后、原生 `Play` 尚未到达时，按钮仍为“播放本次跟读”且只显示总时长 `0:03`；显式触发 `Play` 后才切换为“停止播放”并显示 `0:00 / 0:03`。后续 B 会话迟到隔离与当前会话结束/错误复位继续在同一延迟事件场景下通过。
+
+后续独立提交：`test: 补齐回听原生播放前状态覆盖`（短 SHA 由提交后 handoff 提供）。

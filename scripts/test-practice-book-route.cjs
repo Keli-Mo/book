@@ -141,7 +141,10 @@ const createPage = (file, params, options = {}) => {
       const handlers = {};
       const audio = { src: "", events: [], currentTime: 0 };
       for (const event of ["Play", "Ended", "Stop", "Error", "TimeUpdate"]) audio[`on${event}`] = (callback) => { handlers[event] = callback; };
-      audio.play = () => { audio.events.push("play"); handlers.Play?.(); };
+      audio.play = () => {
+        audio.events.push("play");
+        if (!options.deferAudioPlay) handlers.Play?.();
+      };
       audio.stop = () => { audio.events.push("stop"); handlers.Stop?.(); };
       audio.destroy = () => { audio.events.push("destroy"); };
       audio.trigger = (event, value) => handlers[event]?.(value);

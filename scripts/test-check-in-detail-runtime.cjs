@@ -24,7 +24,7 @@ const makePending = (share) => ({
   completedAtMs: 2,
   ...(share ? { share } : {}),
 });
-const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmitting = () => false, getActive = () => undefined, probe, expire, timers } = {}) => {
+const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmitting = () => false, getActive = () => undefined, probe, expire, timers, deferAudioPlay = false } = {}) => {
   const items = [pending];
   const toasts = [], diagnostics = [];
   let cloudCalls = 0;
@@ -41,6 +41,7 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
   const coordinator = { submit: submit || (() => { throw new Error("不应上传"); }), isSubmitting, getActive };
   const page = createPage("src/pages/CheckInDetail/CheckInDetail.tsx", { localId }, {
     showToast: ({ title }) => toasts.push(title),
+    deferAudioPlay,
     ...(timers ? { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout } : {}),
     overrides: {
       "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => store, logRecordingDiagnostic: (stage, details) => diagnostics.push({ stage, ...details }) },
@@ -131,7 +132,7 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
   assert.ok(localFailure.diagnostics.some(log => log.stage === "share.prepare.failed" && log.error.code === "PENDING_PERSIST_FAILED"));
   localFailure.page.dispose();
 
-  const local = createLocalPage();
+  const local = createLocalPage({ deferAudioPlay: true });
   local.page.render(); await settle();
   let tree = local.page.render();
   await byClass(tree, "shared-recording__play").props.onClick();
@@ -139,13 +140,19 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
   const playbackA = local.page.audios.find((audio) => audio.src === "wxfile://saved.mp3");
   assert.deepEqual(playbackA.events, ["play"]);
   tree = local.page.render();
-  assert.equal(textOf(byClass(tree, "shared-recording__play")), "■停止播放", "onPlay 前后应由原生回调确认播放态");
+  assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "原生 onPlay 未到时不能提前显示停止按钮");
+  assert.equal(textOf(byClass(tree, "shared-recording__duration")), "0:03", "原生 onPlay 未到时应只显示总时长");
+  playbackA.trigger("Play");
+  tree = local.page.render();
+  assert.equal(textOf(byClass(tree, "shared-recording__play")), "■停止播放", "原生 onPlay 到达后才显示停止按钮");
+  assert.equal(textOf(byClass(tree, "shared-recording__duration")), "0:00 / 0:03", "原生 onPlay 到达后才显示当前与总时长");
   await byClass(tree, "shared-recording__play").props.onClick();
   tree = local.page.render();
   assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "再次点击应停止并释放 A 会话");
   await byClass(tree, "shared-recording__play").props.onClick();
   const playbackB = local.page.audios.findLast((audio) => audio.src === "wxfile://saved.mp3");
   assert.notEqual(playbackB, playbackA, "再次播放必须创建独立 B 会话");
+  playbackB.trigger("Play");
   playbackB.currentTime = 2.8;
   playbackB.trigger("TimeUpdate");
   const toastCountBeforeOldEvents = local.toasts.length;
@@ -162,6 +169,7 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
   assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "B 正常结束应复位播放态");
   await byClass(tree, "shared-recording__play").props.onClick();
   const playbackC = local.page.audios.findLast((audio) => audio.src === "wxfile://saved.mp3");
+  playbackC.trigger("Play");
   playbackC.trigger("Error", { errCode: 2, errMsg: "current" });
   tree = local.page.render();
   assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "当前会话报错应复位播放态");
