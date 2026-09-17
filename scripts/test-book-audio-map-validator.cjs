@@ -13,6 +13,32 @@ assert.equal(report.practicePageCount, 1393, "训练页总数应保持 1,393");
 assert.equal(report.audioSegmentCount, 2081, "音频段总数应保持 2,081");
 assert.equal(report.mappings.length, 2081, "每段音频都应保留一条可追踪映射");
 
+const correctedPercentageMappings = [
+  ["3", 84, 1, ["6.8%", "95%"], [6.8, 95]],
+  ["4", 140, 1, ["60.2%", "93%"], [60.2, 93]],
+  ["4", 164, 1, ["57.9%", "95.4%"], [57.9, 95.4]],
+  ["5", 134, 1, ["5.1%", "41.5%"], [5.1, 41.5]],
+];
+for (const [bookId, rawAudioKey, trackNumber, rawOffset, [leftPercent, topPercent]] of correctedPercentageMappings) {
+  const mapping = report.mappings.find(
+    (item) =>
+      item.bookId === bookId
+      && item.rawAudioKey === rawAudioKey
+      && item.trackNumber === trackNumber,
+  );
+  assert.ok(mapping, `教材 ${bookId} 音频键 ${rawAudioKey} 轨 ${trackNumber} 应有诊断映射`);
+  assert.equal(mapping.coordinateType, "Percentage");
+  assert.deepEqual(mapping.rawOffset, rawOffset);
+  assert.ok(
+    Math.abs(mapping.leftPercent - leftPercent) < 1e-9,
+    `教材 ${bookId} 音频键 ${rawAudioKey} 横坐标应为 ${leftPercent}%`,
+  );
+  assert.ok(
+    Math.abs(mapping.topPercent - topPercent) < 1e-9,
+    `教材 ${bookId} 音频键 ${rawAudioKey} 纵坐标应为 ${topPercent}%`,
+  );
+}
+
 const book8Track37 = report.mappings.find(
   ({ bookId, rawAudioKey, trackNumber }) =>
     bookId === "8" && rawAudioKey === 37 && trackNumber === 1,
@@ -56,7 +82,7 @@ for (const [bookId, rawAudioKey, imageIndex, imagePageNumber, section, audioFile
   );
 }
 
-assert.equal(report.coordinateWarnings.length, 6, "六个轻微越界热点应作为警告保留");
+assert.equal(report.coordinateWarnings.length, 2, "两个待语义确认的越界热点应作为警告保留");
 assert.deepEqual(
   report.coordinateWarnings.map(
     ({ bookId, rawAudioKey, trackNumber, rawOffset }) => ({
@@ -67,10 +93,6 @@ assert.deepEqual(
     }),
   ),
   [
-    { bookId: "3", rawAudioKey: 84, trackNumber: 1, rawOffset: [673, 784] },
-    { bookId: "4", rawAudioKey: 140, trackNumber: 1, rawOffset: [959, 781] },
-    { bookId: "4", rawAudioKey: 164, trackNumber: 1, rawOffset: [949, 799] },
-    { bookId: "5", rawAudioKey: 134, trackNumber: 1, rawOffset: [694, 782] },
     { bookId: "6", rawAudioKey: 88, trackNumber: 1, rawOffset: [694, 775] },
     { bookId: "24", rawAudioKey: 214, trackNumber: 1, rawOffset: ["-1%", "54%"] },
   ],
@@ -92,8 +114,8 @@ assert.match(
   /坐标警告：教材 24，音频键 214，图片索引 212，真实页 213，轨 1，原坐标 \["-1%","54%"\]/,
   "越界警告应能直接定位到书、键、图、页、轨及原坐标",
 );
-assert.match(cli.stdout, /坐标轻微越界 6 处（仅警告）/);
+assert.match(cli.stdout, /坐标轻微越界 2 处（仅警告）/);
 
 console.log(
-  "教材音频映射校验器测试通过：23 本、4,056 图、1,393 页、2,081 段，6 个轻微越界仅警告。",
+  "教材音频映射校验器测试通过：23 本、4,056 图、1,393 页、2,081 段，4 个热点已校正，2 个待复核越界仅警告。",
 );

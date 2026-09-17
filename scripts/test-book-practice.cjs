@@ -265,7 +265,10 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
       assert.equal(track.offset.length, 2, `教材 ${bookId} 音频坐标必须含 X/Y 两项`);
       if (track.flag === "Percentage") {
         coordinateCounts.Percentage += 1;
-        assert.ok(track.offset.every((value) => /^-?\d+%$/.test(value)), `教材 ${bookId} 百分比坐标格式错误`);
+        assert.ok(
+          track.offset.every((value) => /^-?(?:\d+(?:\.\d+)?|\.\d+)%$/.test(value)),
+          `教材 ${bookId} 百分比坐标格式错误`,
+        );
       } else if (track.flag === "Cambridge") {
         coordinateCounts.Cambridge += 1;
         assert.ok(track.offset.every(Number.isFinite), `教材 ${bookId} Cambridge 坐标必须为数字`);
@@ -286,7 +289,7 @@ assert.equal(practiceCount, 1393, "移除官方不存在的伪轨后，全教材
 assert.equal(audioSegmentCount, 2081, "移除官方不存在的伪轨后，全教材音频段数应为 2,081");
 assert.deepEqual(
   coordinateCounts,
-  { pixel: 594, Cambridge: 258, Percentage: 1229 },
+  { pixel: 590, Cambridge: 258, Percentage: 1233 },
   "移除官方不存在的伪轨后，三类热点坐标数量应符合权威统计",
 );
 
