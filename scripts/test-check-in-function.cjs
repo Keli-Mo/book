@@ -5,6 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const crypto = require("node:crypto");
 const { inspect } = require("node:util");
+const { loadReader, signing } = require("./test-bounded-recording-download.cjs");
 const source = fs.readFileSync(path.join(__dirname, "../cloudfunctions/checkIn/index.js"), "utf8");
 const hash = (algo, value) => crypto.createHash(algo).update(value).digest("hex");
 const bytes = Buffer.from("one real recording");
@@ -18,7 +19,7 @@ function harness() {
   const records = new Map(), versions = new Map(), files = new Map();
   const capturedLogs = [];
   const metrics = { writes: 0, deletes: 0, downloads: 0, attempts: 0, conflicts: 0, signed: 0 };
-  const controls = { owner: "owner-openid", contextError: null, readError: null, downloadError: null, downloadStatus: 200,
+  const controls = { owner: "owner-openid", contextError: null, readError: null, signError: null,
     deleteStatus: 0, missingDeleteResult: null, deleteError: null, finalizeError: null, ownerOnlyQuery: false, forcedConflicts: 0,
     referenceQueryError: null, referenceQueryErrorOffset: 0, referenceQueryResult: undefined,
     referenceQueryDelayMs: 0, timeOffsetMs: 0 };
@@ -70,6 +71,7 @@ function harness() {
           if ([...tx.reads].some(([id, version]) => (versions.get(id) || 0) !== version) || controls.forcedConflicts > 0) {
             if (controls.forcedConflicts > 0) controls.forcedConflicts--;
             metrics.conflicts++;
+            if (controls.onConflict) controls.onConflict();
             throw Object.assign(new Error("[ResourceUnavailable.TransactionConflict]"), { code: "DATABASE_TRANSACTION_CONFLICT" });
           }
           for (const [id, data] of tx.writes) put(id, data);
@@ -88,17 +90,18 @@ function harness() {
       if (controls.contextError) throw controls.contextError;
       return { OPENID: controls.owner, ENV: "test" };
     },
-    async downloadFile({ fileID }) {
-      metrics.downloads++;
-      if (controls.downloadError) throw controls.downloadError;
-      if ("downloadResult" in controls) return controls.downloadResult;
-      if (!files.has(fileID)) throw Object.assign(new Error("file not uploaded"), { code: "FILE_NOT_FOUND" });
-      return { fileContent: files.get(fileID), errMsg: "downloadFile:ok", ...(controls.downloadStatus === undefined ? {} : { statusCode: controls.downloadStatus }) };
+    async downloadFile() {
+      throw new Error("整文件 downloadFile 禁止调用");
     },
-    async getTempFileURL({ fileList }) { metrics.signed++; metrics.lastSign = plain(fileList); return { fileList: fileList.map(item => {
-      const fileID = typeof item === "string" ? item : item.fileID;
-      return { fileID, status: 0, tempFileURL: `https://example.test/${encodeURIComponent(fileID)}` };
-    }) }; },
+    async getTempFileURL({ fileList }) {
+      metrics.signed++; metrics.lastSign = plain(fileList);
+      if (controls.signError) throw controls.signError;
+      const fileID = typeof fileList[0] === "string" ? fileList[0] : fileList[0].fileID;
+      if (!files.has(fileID)) throw { errCode: -503003 };
+      const result = signing(fileID);
+      if (controls.signPatch) Object.assign(result, controls.signPatch);
+      return result;
+    },
     async deleteFile({ fileList }) { metrics.deletes++;
       if (controls.deleteError) throw controls.deleteError;
       return { fileList: fileList.map(fileID => {
@@ -107,35 +110,120 @@ function harness() {
       return { fileID, status: controls.deleteStatus, errMsg: controls.deleteStatus ? "storage denied" : "ok" };
     }) }; },
   };
+  const baseTime = Date.now();
+  const clock = { now: () => baseTime + controls.timeOffsetMs };
+  const reader = loadReader({ files, controls, metrics, clock });
   const mod = { exports: {} };
   vm.runInNewContext(source, { module: mod, exports: mod.exports, Buffer, URL,
-    Date: class extends Date { static now() { return Date.now() + controls.timeOffsetMs; } },
+    Date: class extends Date { static now() { return clock.now(); } },
     console: { error(...args) { capturedLogs.push(inspect(args)); } },
-    require: name => name === "wx-server-sdk" ? cloud : require(name) });
-  const rawCall = event => mod.exports.main(event);
+    require: name => name === "wx-server-sdk" ? cloud : name === "./recordingDownload" ? reader : require(name) });
+  const rawCall = (event, context = controls.runtimeContext) => mod.exports.main(event, context);
   const call = (action, payload = {}) => rawCall({ ...payload, action });
   const prepare = async (payload = input()) => { const result = await call("prepare", payload);
     assert.equal(result.ok, true, `prepare 应成功：${JSON.stringify(result)}`); return result.data; };
   const upload = (p, content = bytes) => { const id = `cloud://test.bucket/${p.cloudPath}`; files.set(id, content); return id; };
-  return { call, rawCall, prepare, upload, records, files, controls, metrics, capturedLogs };
+  return { call, rawCall, prepare, upload, records, files, controls, metrics, capturedLogs, reader, clock };
 }
 
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
 
+test("commit 必须签名并通过流读取，禁止整文件 SDK 下载", async () => {
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
+  const result = await h.call("commit", { ...event, recordingFileId: h.upload(p) });
+  assert.equal(result.ok, true, "真实 handler 应在禁用 downloadFile 后仍完成流校验");
+  assert.equal(h.metrics.signed, 1);
+  assert.equal(h.metrics.downloads, 1);
+  assert.equal(h.records.get(p.id).status, "active");
+});
+
+test("实际 9MiB 不激活 pending；shareStatus 超限/404/截断保留状态", async () => {
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
+  const recordingFileId = h.upload(p, Buffer.alloc(9 * 1024 * 1024));
+  assert.equal((await h.call("commit", { ...event, recordingFileId })).code, "RECORDING_FILE_MISMATCH");
+  assert.equal(h.records.get(p.id).status, "pending");
+  h.files.set(recordingFileId, bytes);
+  assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
+  for (const patch of [{ chunks: [Buffer.alloc(9 * 1024 * 1024)] }, { httpStatus: 404 }, { complete: false }]) {
+    Object.assign(h.controls, patch);
+    const before = plain([...h.records]);
+    assert.equal((await h.call("shareStatus", { id: p.id, shareRequestId: event.requestId })).code, "SHARE_STATUS_UNAVAILABLE");
+    assert.deepEqual(plain([...h.records]), before); assert.equal(h.files.size, 1); assert.equal(h.metrics.deletes, 0);
+    for (const key of Object.keys(patch)) delete h.controls[key];
+  }
+});
+
+test("1 字节和恰好 8MiB 经真实 helper 提交/核验，幂等不重读", async () => {
+  for (const size of [1, 8 * 1024 * 1024]) {
+    const content = Buffer.alloc(size, 3), h = harness();
+    const event = input({ shareVersion: 2, fileSizeBytes: size, contentSha1: hash("sha1", content) });
+    const p = await h.prepare(event), recordingFileId = h.upload(p, content);
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
+    assert.equal((await h.call("shareStatus", { id: p.id, shareRequestId: event.requestId })).data.state, "active");
+    assert.equal(h.metrics.downloads, 2); assert.equal(h.metrics.signed, 2);
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
+    assert.equal(h.metrics.downloads, 2); assert.equal(h.metrics.signed, 2); assert.equal(h.reader.timers.size, 0);
+  }
+});
+
+test("损坏元数据在签名前失败，保留原记录", async () => {
+  for (const patch of [{ fileSizeBytes: 0 }, { fileSizeBytes: -1 }, { fileSizeBytes: 1.1 },
+    { fileSizeBytes: 8 * 1024 * 1024 + 1 }, { fileSizeBytes: Number.MAX_SAFE_INTEGER + 1 },
+    { contentSha1: "invalid" }, { contentSha1: "A".repeat(40) }]) {
+    const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
+    assert.equal((await h.call("commit", { ...event, recordingFileId: h.upload(p) })).ok, true);
+    Object.assign(h.records.get(p.id), patch);
+    const signed = h.metrics.signed, downloads = h.metrics.downloads, before = plain([...h.records]);
+    assert.equal((await h.call("shareStatus", { id: p.id, shareRequestId: event.requestId })).code, "SHARE_STATUS_UNAVAILABLE");
+    assert.equal(h.metrics.signed, signed); assert.equal(h.metrics.downloads, downloads);
+    assert.deepEqual(plain([...h.records]), before);
+  }
+});
+
+test("绝对预算覆盖引用查询；只信 runtimeContext，截止后不得激活", async () => {
+  for (const [context, expectedBudget] of [[undefined, 2250], [{ time_limit_in_ms: 20000 }, 15000],
+    [{ time_limit_in_ms: 100000 }, 15000], [{ time_limit_in_ms: 4000 }, 3000],
+    [{ time_limit_in_ms: -1 }, 2250], [{ time_limit_in_ms: "20000" }, 2250]]) {
+    const h = harness(), event = input({ shareVersion: 2, time_limit_in_ms: 20000 }), p = await h.prepare(event);
+    const recordingFileId = h.upload(p);
+    h.controls.runtimeContext = context; h.controls.referenceQueryDelayMs = expectedBudget;
+    const before = h.metrics.attempts;
+    assert.equal((await h.call("commit", { ...event, recordingFileId })).code, "ETIMEDOUT");
+    assert.equal(h.metrics.signed + h.metrics.downloads, 0); assert.equal(h.metrics.attempts, before);
+    assert.equal(h.records.get(p.id).status, "pending");
+  }
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event), recordingFileId = h.upload(p);
+  h.controls.afterEnd = () => { h.controls.timeOffsetMs += 2250; };
+  const before = h.metrics.attempts;
+  assert.equal((await h.call("commit", { ...event, recordingFileId })).code, "ETIMEDOUT");
+  assert.equal(h.metrics.downloads, 1); assert.equal(h.metrics.attempts, before);
+  assert.equal(h.records.get(p.id).status, "pending");
+});
+
+test("激活事务冲突消耗剩余预算后，不再发起新事务", async () => {
+  const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event), recordingFileId = h.upload(p);
+  h.controls.forcedConflicts = 1;
+  h.controls.onConflict = () => { h.controls.timeOffsetMs += 2250; };
+  const before = h.metrics.attempts;
+  assert.equal((await h.call("commit", { ...event, recordingFileId })).code, "ETIMEDOUT");
+  assert.equal(h.metrics.attempts, before + 1); assert.equal(h.records.get(p.id).status, "pending");
+});
+
 for (const [label, patch] of [
-  ["缺少 HTTP 状态", {}],
-  ["成功 HTTP 与权限 errCode 矛盾", { statusCode: 200, errCode: -503002 }],
-  ["零 errCode 与失败 code 矛盾", { statusCode: 200, errCode: 0, code: "STORAGE_REQUEST_FAIL" }],
-  ["成功 HTTP 与 errno 矛盾", { statusCode: 200, errno: -1 }],
-  ["成功 HTTP 与失败 errMsg 矛盾", { statusCode: 200, errMsg: "downloadFile:fail storage permission denied" }],
-  ["非数值 HTTP 状态", { statusCode: "200" }],
+  ["缺少签名成功状态", { errMsg: undefined }],
+  ["成功签名与权限 errCode 矛盾", { errCode: -503002 }],
+  ["零 errCode 与失败 code 矛盾", { errCode: 0, code: "STORAGE_REQUEST_FAIL" }],
+  ["成功签名与 errno 矛盾", { errno: -1 }],
+  ["失败 errMsg", { errMsg: "getTempFileURL:fail storage permission denied" }],
+  ["非数值 code", { code: "0" }],
 ]) test(`分享核验拒绝${label}，不误判损坏`, async () => {
   const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event), recordingFileId = h.upload(p);
   await h.call("commit", { ...event, recordingFileId });
   const before = plain([...h.records]);
   for (const fileContent of [Buffer.alloc(0), Buffer.alloc(bytes.length, 1), bytes]) {
-    h.controls.downloadResult = { fileContent, ...patch };
+    h.files.set(recordingFileId, fileContent);
+    h.controls.signPatch = patch;
     const result = await h.call("shareStatus", { id: p.id, shareRequestId: event.requestId });
     assert.equal(result.ok, false, "SDK 未明确成功，不可返回 active/missing/invalid");
     assert.equal(result.code, "SHARE_STATUS_UNAVAILABLE");
@@ -158,16 +246,16 @@ test("本人主动核验分享：真实文件读取、明确失效、未知错�
   }
   h.files.set(recordingFileId, bytes);
   for (const error of [{ errCode: -503003 }, { code: "STORAGE_FILE_NONEXIST" }]) {
-    h.controls.downloadError = error;
+    h.controls.signError = error;
     assert.deepEqual(plain((await probe()).data), { state: "missing" });
   }
   for (const error of [{ errCode: -503002 }, { code: "ETIMEDOUT" }, { code: "STORAGE_REQUEST_FAIL", message: "Status:404 Url:https://secret?token=private" }, { message: "storage file not exists" }]) {
-    h.controls.downloadError = error;
+    h.controls.signError = error;
     const result = await probe();
     assert.equal(result.ok, false);
     assert.doesNotMatch(JSON.stringify(result), /secret|private|https:/);
   }
-  h.controls.downloadError = null;
+  h.controls.signError = null;
   for (const status of ["deletePending", "deleted"]) {
     h.records.get(p.id).status = status;
     assert.deepEqual(plain((await probe()).data), { state: "deleted" });
@@ -299,11 +387,12 @@ test("引用核验期间到期的分享不签 URL，未到期则按核验后余�
   for (const remainingMs of [2000, 10000]) {
     const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event);
     assert.equal((await h.call("commit", { ...event, recordingFileId: h.upload(p) })).ok, true);
-    h.records.get(p.id).expiresAtMs = Date.now() + remainingMs;
+    const signed = h.metrics.signed;
+    h.records.get(p.id).expiresAtMs = h.clock.now() + remainingMs;
     h.controls.referenceQueryDelayMs = 3000;
     const result = await h.call("detail", { id: p.id });
     if (remainingMs === 2000) {
-      assert.equal(result.code, "SHARE_EXPIRED"); assert.equal(h.metrics.signed, 0);
+      assert.equal(result.code, "SHARE_EXPIRED"); assert.equal(h.metrics.signed, signed);
     } else {
       assert.equal(result.ok, true); assert.ok(h.metrics.lastSign[0].maxAge <= 7);
     }
@@ -337,11 +426,11 @@ test("新版预留持久化、并发幂等与载荷冲突", async () => {
 test("新版仅预留可提交、首次提交起30天且重试不续期", async () => {
   const h = harness(), event = input({ shareVersion: 2 });
   assert.equal((await h.call("commit", { ...event, recordingFileId: "cloud://test.bucket/x" })).code, "SHARE_NOT_PREPARED");
-  const p = await h.prepare(event), file = h.upload(p), before = Date.now();
+  const p = await h.prepare(event), file = h.upload(p), before = h.clock.now();
   const [a, b] = await Promise.all([h.call("commit", { ...event, recordingFileId: file }), h.call("commit", { ...event, recordingFileId: file })]);
   assert.equal(a.ok, true); assert.deepEqual(plain(a), plain(b));
   assert.ok(a.data.expiresAtMs >= before + 30 * 86400000);
-  assert.ok(a.data.expiresAtMs <= Date.now() + 30 * 86400000);
+  assert.ok(a.data.expiresAtMs <= h.clock.now() + 30 * 86400000);
   assert.equal((await h.prepare(event)).expiresAtMs, a.data.expiresAtMs);
   assert.equal(h.records.get(p.id).cloudPath, p.cloudPath);
 });
@@ -350,10 +439,11 @@ test("新版过期或墓碑永不复活，过期详情不签URL", async () => {
     const h = harness(), event = input({ shareVersion: 2 }), p = await h.prepare(event), recordingFileId = h.upload(p);
     assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, true);
     Object.assign(h.records.get(p.id), { status, expiresAtMs: 1, pendingExpiresAtMs: 1 });
+    const signed = h.metrics.signed;
     assert.equal((await h.call("prepare", event)).ok, false);
     assert.equal((await h.call("commit", { ...event, recordingFileId })).ok, false);
     assert.equal((await h.call("detail", { id: p.id })).code, "SHARE_EXPIRED");
-    assert.equal(h.metrics.signed, 0);
+    assert.equal(h.metrics.signed, signed);
     const listed = (await h.call("listMine")).data;
     if (status === "deletePending") assert.deepEqual(plain(listed.map(row => [row.id, row.status, row.shareToken])), [[p.id, "deletePending", ""]]);
     else assert.deepEqual(plain(listed), []);
@@ -451,7 +541,7 @@ test("各云端 action 的外部错误只返回并记录固定安全分类", asy
   assert.equal(prepare.metrics.writes, 0);
 
   const commit = harness(), prepared = await commit.prepare(), recordingFileId = commit.upload(prepared);
-  commit.controls.downloadError = { code: `ARBITRARY_${secretMarker}`, errMsg: unsafeMessage };
+  commit.controls.signError = { code: `ARBITRARY_${secretMarker}`, errMsg: unsafeMessage };
   assertSafe(commit, await commit.call("commit", { ...input(), recordingFileId }), "CHECK_IN_ERROR", "云端服务暂时不可用，请稍后重试");
   assert.equal(commit.metrics.deletes + commit.metrics.writes, 0); assert.equal(commit.files.size, 1);
 
@@ -505,11 +595,11 @@ test("null 事件归为固定参数错误且日志 action 为 unknown", async ()
   assert.match(h.capturedLogs[0], /code: 'INVALID_ARGUMENT'/);
   assert.equal(h.metrics.writes + h.metrics.downloads + h.metrics.deletes, 0);
 });
-test("Node SDK 下载仅 fileContent 成功，显式非 200 仍拒绝", async () => {
+test("SDK 明确签名成功且 HTTP 200 完整流才可激活", async () => {
   for (const status of [undefined, 200, 403, 503]) {
-    const h = harness(), p = await h.prepare(); h.controls.downloadStatus = status;
+    const h = harness(), p = await h.prepare(); h.controls.httpStatus = status;
     const result = await h.call("commit", { ...input(), recordingFileId: h.upload(p) });
-    assert.equal(result.ok, status === undefined || status === 200, `statusCode=${status}`);
+    assert.equal(result.ok, status === 200, `statusCode=${status}`);
     assert.equal(h.records.size, result.ok ? 1 : 0);
     assert.equal(h.metrics.deletes, 0);
   }

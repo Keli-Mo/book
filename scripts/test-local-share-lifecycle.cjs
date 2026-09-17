@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
+const { loadReader, signing } = require('./test-bounded-recording-download.cjs');
 const ts = require('typescript');
 const root = path.resolve(__dirname, '..');
 const clone = value => structuredClone(value);
@@ -21,8 +22,9 @@ let dropNextCommitResponse = false;
 let responseMode = '';
 let failShareWrite = false;
 let referenceQueryError = null;
-let probeDownloadError = null;
-let probeDownloadResult;
+let probeSignError = null;
+let probeSignPatch;
+const streamControls = {};
 const diagnostics = [];
 const diagnose = (stage, details) => diagnostics.push({ stage, ...details });
 const collection = {
@@ -55,27 +57,27 @@ const database = {
 const serverSdk = {
   DYNAMIC_CURRENT_ENV: 'dynamic', init() {}, database: () => database,
   getWXContext: () => ({ OPENID: currentOpenId, ENV: 'test' }),
-  downloadFile: async ({ fileID }) => {
-    if (probeDownloadError) throw probeDownloadError;
-    if (probeDownloadResult !== undefined) return probeDownloadResult;
-    if (!cloudFiles.has(fileID)) throw Object.assign(new Error('missing file'), { errCode: -503003 });
-    return { fileContent: cloudFiles.get(fileID), statusCode: 200, errMsg: 'downloadFile:ok' };
-  },
+  downloadFile: async () => { throw new Error('禁止整文件 SDK 下载'); },
   deleteFile: async ({ fileList }) => ({ fileList: fileList.map(fileID => {
     cloudFiles.delete(fileID);
     return { fileID, status: 0 };
   }) }),
-  getTempFileURL: async ({ fileList }) => { counters.signed++; return { fileList: fileList.map(value => {
+  getTempFileURL: async ({ fileList }) => {
+    counters.signed++;
+    if (probeSignError) throw probeSignError;
+    const value = fileList[0];
     const fileID = typeof value === 'string' ? value : value.fileID;
-    return { fileID, status: 0, tempFileURL: `https://example.test/${encodeURIComponent(fileID)}` };
-  }) }; },
+    if (!cloudFiles.has(fileID)) throw { errCode: -503003 };
+    return { ...signing(fileID), ...probeSignPatch };
+  },
 };
+const reader = loadReader({ files: cloudFiles, controls: streamControls, metrics: counters, clock: { now: () => now } });
 const serverModule = { exports: {} };
 vm.runInNewContext(fs.readFileSync(path.join(root, 'cloudfunctions/checkIn/index.js'), 'utf8'), {
   module: serverModule, exports: serverModule.exports, Buffer, URL, Date: TestDate,
   process: { env: { SHARE_STORAGE_FILE_ID_PREFIX: 'cloud://test.bucket/' } },
   console: { error() {}, warn() {}, log() {} },
-  require: name => name === 'wx-server-sdk' ? serverSdk : require(name),
+  require: name => name === 'wx-server-sdk' ? serverSdk : name === './recordingDownload' ? reader : require(name),
 });
 const wx = { cloud: {
   callFunction: async ({ data }) => {
@@ -283,17 +285,24 @@ const createCoordinator = pendingStore => createCheckInSubmissionCoordinator({
     const oldShare = current.share, oldGeneration = current.shareRequestId;
     const uploadsBefore = counters.upload;
     const unchanged = clone(current);
-    for (const malformed of [{ fileContent: Buffer.alloc(0) }, { statusCode: 200, errCode: -503002, fileContent: Buffer.alloc(0) }]) {
-      probeDownloadResult = malformed;
+    for (const malformed of [{ errMsg: undefined }, { errCode: -503002 }, { errCode: 0, code: 'STORAGE_REQUEST_FAIL' }]) {
+      probeSignPatch = malformed;
       await assert.rejects(service.getCheckInShareStatus(oldShare.id, oldGeneration), error => error.code === 'SHARE_STATUS_UNAVAILABLE');
       assert.deepEqual(clone(store.list().find(item => item.requestId === localId)), unchanged);
       assert.equal(counters.upload, uploadsBefore);
       assert.equal(localFiles.has(current.localPath), true);
     }
-    probeDownloadResult = undefined;
-    probeDownloadError = { code: 'ETIMEDOUT', message: 'https://secret?token=private' };
+    probeSignPatch = undefined;
+    for (const patch of [{ httpStatus: 404 }, { complete: false }, { chunks: [Buffer.alloc(9 * 1024 * 1024)] }]) {
+      Object.assign(streamControls, patch);
+      await assert.rejects(service.getCheckInShareStatus(oldShare.id, oldGeneration), error => error.code === 'SHARE_STATUS_UNAVAILABLE');
+      assert.deepEqual(clone(store.list().find(item => item.requestId === localId)), unchanged);
+      assert.equal(counters.upload, uploadsBefore); assert.equal(localFiles.has(current.localPath), true);
+      for (const key of Object.keys(patch)) delete streamControls[key];
+    }
+    probeSignError = { code: 'ETIMEDOUT', message: 'https://secret?token=private' };
     await assert.rejects(service.getCheckInShareStatus(oldShare.id, oldGeneration), error => error.code === 'SHARE_STATUS_UNAVAILABLE');
-    probeDownloadError = null;
+    probeSignError = null;
     assert.deepEqual(clone(store.list().find(item => item.requestId === localId)), unchanged);
     assert.equal(counters.upload, uploadsBefore);
     assert.equal((await service.getCheckInShareStatus(oldShare.id, oldGeneration)).state, 'active');
@@ -318,6 +327,8 @@ const createCoordinator = pendingStore => createCheckInSubmissionCoordinator({
   }
 
   const appConfig = fs.readFileSync(path.join(root, 'src/app.config.ts'), 'utf8');
+  assert.ok(counters.downloads > 0, '真实 helper 必须确实执行 HTTPS 流');
+  assert.equal(reader.timers.size, 0);
   assert.match(appConfig, /点击分享后才会上传云端/, '麦克风用途应与新上传手势一致');
   console.log('本地分享集成通过：完成零联网、重启恢复、好友口令鉴权、30天过期重传、丢回包/本地回写失败幂等恢复、旧协议拦截、脱敏日志接线、本地不删除。');
 })().catch(error => { console.error(error); process.exitCode = 1; });

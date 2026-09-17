@@ -1,6 +1,7 @@
 /* eslint-disable import/no-commonjs */
 const cloud = require("wx-server-sdk");
 const crypto = require("crypto");
+const { MAX_RECORDING_BYTES, readRecordingDigest } = require("./recordingDownload");
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
@@ -90,7 +91,7 @@ const bindRequest = (event, openId) => {
   // 固定字段顺序、裁剪文本、舍入原生时长，客户端不能自行指定 payloadDigest。
   const payload = {
     ...normalizeSnapshot(event),
-    fileSizeBytes: requireInteger(event.fileSizeBytes, "录音文件大小", 1, 8 * 1024 * 1024),
+    fileSizeBytes: requireInteger(event.fileSizeBytes, "录音文件大小", 1, MAX_RECORDING_BYTES),
     contentSha1: event.contentSha1.toLowerCase(),
   };
   const payloadDigest = digest("sha256", JSON.stringify(payload));
@@ -139,8 +140,9 @@ const prepareCheckIn = async (event, openId) => {
     : { state: "upload-required", id: binding.id, cloudPath: binding.cloudPath });
 };
 
-const runTransaction = async (operation) => {
+const runTransaction = async (operation, deadlineAtMs) => {
   for (let attempt = 0; ; attempt++) {
+    if (deadlineAtMs !== undefined && Date.now() >= deadlineAtMs) reject("ETIMEDOUT", publicMessages.ETIMEDOUT);
     try {
       // 关闭底层叠加重试，统一限制最多 3 次尝试；兼容微信包装后的冲突错误。
       return await db.runTransaction(operation, 0);
@@ -187,7 +189,7 @@ const assertFileReferences = async (recordingFileId, openId) => {
   }
 };
 
-const commitCheckIn = async (event, openId, envId) => {
+const commitCheckIn = async (event, openId, envId, deadlineAtMs) => {
   const binding = bindRequest(event, openId);
   const previous = (await checkIns.doc(binding.id).get()).data;
   if (binding.shareVersion === 2 && !previous) reject("SHARE_NOT_PREPARED", "请先预留分享上传");
@@ -199,16 +201,22 @@ const commitCheckIn = async (event, openId, envId) => {
   }
   // 文件检查在事务外完成；仅 URL 或客户端“上传成功”声明不足以证明文件有效。
   await assertFileReferences(recordingFileId, openId);
-  const downloaded = await cloud.downloadFile({ fileID: recordingFileId });
-  // Node SDK 成功结果可能仅含 fileContent；有 HTTP 状态时仍拒绝非 200。
-  if ((downloaded.statusCode !== undefined && downloaded.statusCode !== 200) || !Buffer.isBuffer(downloaded.fileContent) ||
-      downloaded.fileContent.length !== binding.payload.fileSizeBytes ||
-      digest("sha1", downloaded.fileContent) !== binding.payload.contentSha1) {
+  let downloaded;
+  try {
+    downloaded = await readRecordingDigest(cloud, recordingFileId, { deadlineAtMs });
+  } catch (error) {
+    const code = error?.code === "TIMEOUT" ? "ETIMEDOUT" :
+      error?.code === "LIMIT" || error?.code === "MISSING" ? "RECORDING_FILE_MISMATCH" : "CHECK_IN_ERROR";
+    reject(code, publicMessages[code]);
+  }
+  if (downloaded.fileSizeBytes !== binding.payload.fileSizeBytes ||
+      downloaded.contentSha1 !== binding.payload.contentSha1) {
     reject("RECORDING_FILE_MISMATCH", "录音文件不存在、大小或内容摘要不一致");
   }
   const record = { ...binding.payload, _openid: openId, requestId: binding.requestId,
     payloadDigest: binding.payloadDigest, recordingFileId, status: "active", protocolVersion: 1,
     shareToken: crypto.randomBytes(16).toString("hex"), createdAt: db.serverDate() };
+  if (Date.now() >= deadlineAtMs) reject("ETIMEDOUT", publicMessages.ETIMEDOUT);
   return success(await runTransaction(async transaction => {
     const doc = transaction.collection("checkins").doc(binding.id);
     const currentRecord = (await doc.get()).data;
@@ -223,7 +231,7 @@ const commitCheckIn = async (event, openId, envId) => {
     }
     await doc.set({ data: record });
     return { id: binding.id, shareToken: record.shareToken };
-  }));
+  }, deadlineAtMs));
 };
 
 const toPublicSummary = (record) => ({
@@ -294,7 +302,7 @@ const listMine = async (openId) => {
 };
 
 // 只在本机录音 owner 主动修复链接时读取；不签回 URL，不修改记录或删除防重墓碑。
-const getShareStatus = async (event, openId) => {
+const getShareStatus = async (event, openId, deadlineAtMs) => {
   try {
     const id = requireText(event.id, "打卡编号", 100);
     const shareRequestId = requireText(event.shareRequestId, "分享代次", 32).toLowerCase();
@@ -307,27 +315,19 @@ const getShareStatus = async (event, openId) => {
     if (isExpired(record)) return success({ state: "expired" });
     if (record.status !== "active") return failure("分享尚未完成", "SHARE_NOT_COMMITTED");
     await assertFileReferences(record.recordingFileId, openId);
+    if (!Number.isSafeInteger(record.fileSizeBytes) || record.fileSizeBytes <= 0 ||
+        record.fileSizeBytes > MAX_RECORDING_BYTES || typeof record.contentSha1 !== "string" ||
+        !/^[a-f0-9]{40}$/.test(record.contentSha1)) {
+      return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
+    }
     try {
-      // SDK 签出地址不证明文件存在；downloadFile 才验证可读取。
-      const downloaded = await cloud.downloadFile({ fileID: record.recordingFileId });
-      // wx-server-sdk 成功包明确包含 statusCode:200；畸形或自相矛盾的回包不能证明文件损坏。
-      if (downloaded?.statusCode !== 200 ||
-          [downloaded.errCode, downloaded.code, downloaded.errno].some(code => code !== undefined && code !== 0) ||
-          (downloaded.errMsg !== undefined && downloaded.errMsg !== "downloadFile:ok") ||
-          !Buffer.isBuffer(downloaded.fileContent)) {
-        return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
-      }
-      if (!Number.isSafeInteger(record.fileSizeBytes) || record.fileSizeBytes <= 0 ||
-          typeof record.contentSha1 !== "string" || !/^[a-f0-9]{40}$/.test(record.contentSha1)) {
-        return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
-      }
-      if (downloaded.fileContent.length !== record.fileSizeBytes || digest("sha1", downloaded.fileContent) !== record.contentSha1) {
+      const downloaded = await readRecordingDigest(cloud, record.recordingFileId, { deadlineAtMs });
+      if (downloaded.fileSizeBytes !== record.fileSizeBytes || downloaded.contentSha1 !== record.contentSha1) {
         return success({ state: "invalid" });
       }
     } catch (error) {
-      // 4.0.2 明确缺失码；403、超时、STORAGE_REQUEST_FAIL 及通用文案均不能失效本机状态。
-      const code = error?.errCode ?? error?.code;
-      if (code === -503003 || code === "STORAGE_FILE_NONEXIST") return success({ state: "missing" });
+      // 只有 helper 验证的无矛盾签名缺失才可使本机分享失效。
+      if (error?.code === "MISSING") return success({ state: "missing" });
       return failure("暂时无法核验分享，请稍后重试", "SHARE_STATUS_UNAVAILABLE");
     }
     return success({ state: isExpired(record) ? "expired" : "active" });
@@ -393,9 +393,16 @@ const removeCheckIn = async (event, openId) => {
   return success({ id });
 };
 
-exports.main = async (event = {}) => {
+exports.main = async (event = {}, runtimeContext) => {
+  const startedAt = Date.now();
   let action = "unknown";
   try {
+    // 腾讯云 runtime context 的可信执行时限，客户端 event 不参与预算。
+    // 这些是保守软策略，不能代替线上冷暖启动/8MiB/事务余量实测。
+    const configuredLimit = runtimeContext?.time_limit_in_ms;
+    const limit = Number.isSafeInteger(configuredLimit) && configuredLimit > 0 ? Math.min(configuredLimit, 20000) : 3000;
+    const reserve = Math.min(1000, Math.floor(limit / 4));
+    const deadlineAtMs = startedAt + Math.min(15000, limit - reserve);
     let requestedAction;
     if (event && typeof event === "object" && !Array.isArray(event)) {
       requestedAction = event.action;
@@ -410,7 +417,7 @@ exports.main = async (event = {}) => {
       case "prepare":
         return await prepareCheckIn(event, OPENID);
       case "commit":
-        return await commitCheckIn(event, OPENID, ENV);
+        return await commitCheckIn(event, OPENID, ENV, deadlineAtMs);
       case "create":
         return failure("旧版新增已停用，请升级客户端后重试", "LEGACY_CREATE_DISABLED");
       case "detail":
@@ -418,7 +425,7 @@ exports.main = async (event = {}) => {
       case "listMine":
         return await listMine(OPENID);
       case "shareStatus":
-        return await getShareStatus(event, OPENID);
+        return await getShareStatus(event, OPENID, deadlineAtMs);
       case "remove":
         return await removeCheckIn(event, OPENID);
       default:
