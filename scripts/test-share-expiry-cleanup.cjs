@@ -1,5 +1,6 @@
 /* eslint-disable import/no-commonjs */
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
@@ -9,22 +10,29 @@ const source = fs.existsSync(path.join(root, "index.js")) ? fs.readFileSync(path
 const NOW = 1800000000000;
 const prefix = "cloud://test.bucket/";
 const idFor = i => i.toString(16).padStart(64, "0");
+const sha256 = value => crypto.createHash("sha256").update(value).digest("hex");
 const row = (i, patch = {}) => {
-  const cloudPath = `expiring-shares-v2/${"a".repeat(64)}/${i.toString(16).padStart(32, "0")}-${"b".repeat(64)}.mp3`;
-  return { _id: idFor(i), shareVersion: 2, status: "active", cloudPath,
+  const owner = "owner-primary";
+  const requestId = i.toString(16).padStart(32, "0");
+  const payloadDigest = "b".repeat(64);
+  const cloudPath = `expiring-shares-v2/${sha256(owner)}/${requestId}-${payloadDigest}.mp3`;
+  return { _id: idFor(i), _openid: owner, requestId, payloadDigest,
+    shareVersion: 2, status: "active", cloudPath,
     recordingFileId: prefix + cloudPath, expiresAtMs: NOW - 1, ...patch };
 };
 function harness(initial = [row(1)]) {
   const records = new Map(initial.map(r => [r._id, structuredClone(r)])), state = new Map(), versions = new Map();
   const capturedLogs = [];
   const files = new Set(initial.map(r => r.recordingFileId).filter(Boolean));
-  const metrics = { writes: 0, deletes: 0, queries: 0, conflicts: 0 };
+  const metrics = { writes: 0, deletes: 0, queries: 0, referenceQueries: [], conflicts: 0 };
   const clock = { elapsedMs: 0 };
   const env = { SHARE_CLEANUP_ENABLED: "true", SHARE_STORAGE_FILE_ID_PREFIX: prefix };
   const controls = { context: { SOURCE: "wx_trigger", ENV: "test" }, contextError: null, deleteError: null,
     deleteStatus: 0, deleteErrMsg: undefined, missingStatus: -503003, finalizeError: null, beforeMark: null,
     checkpointError: null, beforeCheckpoint: null, readError: null, queryError: null,
-    transactionMs: 0, deleteMs: 0, queryMs: 0, stateReadMs: 0, hardBudgetMs: Infinity };
+    referenceQueryError: null, referenceQueryData: undefined, beforeReferenceReturn: null,
+    transactionMs: 0, deleteMs: 0, queryMs: 0, referenceQueryMs: 0,
+    stateReadMs: 0, hardBudgetMs: Infinity };
   const advance = ms => {
     clock.elapsedMs += ms;
     if (clock.elapsedMs >= controls.hardBudgetMs) throw new Error("SYNTHETIC_HARD_TIMEOUT_PRIVATE_VALUE");
@@ -49,15 +57,26 @@ function harness(initial = [row(1)]) {
         if (tx) tx.writes.push({ name, id, data: structuredClone(data) }); else write(name, id, data);
       },
     }; },
-    where(condition) { let size = 50;
-      return { orderBy(key, direction) { assert.equal(key, "_id"); assert.equal(direction, "asc"); return this; },
+    where(condition) { let size = 50, ordered = false;
+      return { orderBy(key, direction) { assert.equal(key, "_id"); assert.equal(direction, "asc"); ordered = true; return this; },
         limit(n) { assert.ok(n <= 50); size = n; return this; }, async get() { metrics.queries++;
+          const referenceQuery = Object.keys(condition).length === 1 && typeof condition.recordingFileId === "string";
+          if (referenceQuery) {
+            metrics.referenceQueries.push({ condition: structuredClone(condition), limit: size, ordered });
+            if (controls.referenceQueryError) throw controls.referenceQueryError;
+          }
           if (controls.queryError) throw controls.queryError;
-          const data = [...readMap(name).values()].filter(r => Object.entries(condition).every(([key, val]) =>
+          let data = [...readMap(name).values()].filter(r => Object.entries(condition).every(([key, val]) =>
             val && typeof val === "object" && "gt" in val ? r[key] > val.gt : r[key] === val))
             .sort((a, b) => a._id.localeCompare(b._id)).slice(0, size).map(r => structuredClone(r));
+          if (referenceQuery && controls.referenceQueryData !== undefined) data = controls.referenceQueryData;
           if (controls.beforeMark) { const callback = controls.beforeMark; controls.beforeMark = null; callback(); }
-          advance(controls.queryMs);
+          if (referenceQuery && controls.beforeReferenceReturn) {
+            const callback = controls.beforeReferenceReturn;
+            controls.beforeReferenceReturn = null;
+            callback();
+          }
+          advance(controls.queryMs + (referenceQuery ? controls.referenceQueryMs : 0));
           return { data };
         } };
     },
@@ -97,7 +116,7 @@ function harness(initial = [row(1)]) {
   const mod = { exports: {} };
   vm.runInNewContext(source, { exports: mod.exports, module: mod, process: { env }, Date: class extends Date { static now() { return NOW + clock.elapsedMs; } },
     console: { info() {}, error(...args) { capturedLogs.push(inspect(args)); } },
-    require: name => name === "wx-server-sdk" ? cloud : require(path.join(root, name)) });
+    require: name => name === "wx-server-sdk" ? cloud : name === "crypto" ? crypto : require(path.join(root, name)) });
   return { call: (event = {}) => { clock.elapsedMs = 0; return mod.exports.main(event); },
     records, state, files, metrics, controls, env, capturedLogs, clock };
 }
@@ -125,6 +144,131 @@ test("未配置或错误可信前缀阻断删除，不构造猜测bucket", async
     assert.equal(r.validated, 0, "没有可信前缀时不能宣称候选已校验通过");
     assert.equal(h.metrics.deletes + h.metrics.writes, 0);
   }
+});
+test("fixture使用真实owner请求摘要绑定路径", async () => {
+  const record = row(31);
+  assert.ok(record._openid);
+  assert.match(record.requestId, /^[a-f0-9]{32}$/);
+  assert.match(record.payloadDigest, /^[a-f0-9]{64}$/);
+  assert.equal(record.cloudPath,
+    `expiring-shares-v2/${sha256(record._openid)}/${record.requestId}-${record.payloadDigest}.mp3`);
+});
+test("预演和正式模式都拒绝owner或请求摘要与路径不一致且不改变记录和文件", async () => {
+  const invalid = [
+    { _openid: "owner-other" },
+    { _openid: undefined },
+    { requestId: "f".repeat(32) },
+    { requestId: undefined },
+    { payloadDigest: "c".repeat(64) },
+    { payloadDigest: undefined },
+  ];
+  for (const dryRun of [true, false]) {
+    for (const patch of invalid) {
+      const record = row(1, patch), h = harness([record]);
+      const before = structuredClone(h.records.get(record._id));
+      const result = await h.call({ dryRun });
+      assert.equal(result.failed, 1);
+      assert.equal(result.validated, 0);
+      assert.equal(h.metrics.deletes, 0);
+      assert.deepEqual(h.records.get(record._id), before);
+      assert.equal(h.files.has(record.recordingFileId), true);
+      assert.match(h.capturedLogs.at(-1), /code: 'INVALID_SHARE_BINDING'/);
+    }
+  }
+});
+test("active必须有可信fileID，pending、deletePending和deleted可只保留完整可信路径", async () => {
+  const active = row(1, { recordingFileId: undefined });
+  const pending = row(2, { status: "pending", recordingFileId: undefined,
+    expiresAtMs: undefined, pendingExpiresAtMs: NOW - 1 });
+  const deleting = row(3, { status: "deletePending", recordingFileId: undefined });
+  const deleted = row(4, { status: "deleted", recordingFileId: undefined });
+  const h = harness([active, pending, deleting, deleted]);
+  const result = await h.call({ dryRun: true });
+  assert.equal(result.candidates, 4);
+  assert.equal(result.validated, 3);
+  assert.equal(result.failed, 1);
+  assert.equal(h.metrics.writes + h.metrics.deletes, 0);
+});
+test("同fileID的其他owner或同owner第二条记录都阻断且不能先写deletePending", async () => {
+  for (const dryRun of [true, false]) {
+    for (const aliasOwner of ["owner-other", "owner-primary"]) {
+      const target = row(10);
+      const alias = row(11, { _openid: aliasOwner, shareVersion: undefined,
+        status: "deleted", expiresAtMs: undefined, recordingFileId: target.recordingFileId });
+      const h = harness([target, alias]);
+      const result = await h.call({ dryRun });
+      assert.equal(result.failed, 1);
+      assert.equal(result.validated, 0);
+      assert.equal(result.deleted, 0);
+      assert.equal(h.records.get(target._id).status, "active");
+      assert.equal(h.metrics.deletes, 0);
+      assert.equal(h.files.has(target.recordingFileId), true);
+      assert.match(h.capturedLogs.at(-1), /code: 'FILE_REFERENCE_CONFLICT'/);
+    }
+  }
+});
+test("引用核验不按owner期限状态或旧协议过滤且只取两条", async () => {
+  const target = row(500);
+  const statuses = ["active", "pending", "deletePending", "deleted"];
+  const aliases = Array.from({ length: 100 }, (_, index) => row(index + 1, {
+    _openid: index % 2 ? "owner-primary" : "owner-other",
+    shareVersion: index % 3 ? undefined : 1,
+    status: statuses[index % statuses.length],
+    expiresAtMs: index % 2 ? NOW + 86400000 : undefined,
+    pendingExpiresAtMs: index % 2 ? undefined : NOW - 86400000,
+    recordingFileId: target.recordingFileId,
+  }));
+  const h = harness([...aliases, target]);
+  const result = await h.call({ dryRun: true });
+  assert.equal(result.candidates, 1);
+  assert.equal(result.validated, 0);
+  assert.equal(result.failed, 1);
+  assert.deepEqual(h.metrics.referenceQueries, [{
+    condition: { recordingFileId: target.recordingFileId }, limit: 2, ordered: false,
+  }]);
+  assert.equal(h.metrics.deletes + h.metrics.writes, 0);
+});
+test("引用查询异常和非数组结果固定失败关闭且不泄漏SDK错误", async () => {
+  const secret = "SYNTHETIC_REFERENCE_PRIVATE_VALUE";
+  for (const configure of [
+    h => { h.controls.referenceQueryError = new Error(secret); },
+    h => { h.controls.referenceQueryData = null; },
+  ]) {
+    const h = harness(); configure(h);
+    const result = await h.call();
+    assert.equal(result.failed, 1);
+    assert.equal(result.validated, 0);
+    assert.equal(h.records.get(idFor(1)).status, "active");
+    assert.equal(h.metrics.deletes, 0);
+    assert.match(h.capturedLogs.at(-1), /code: 'FILE_REFERENCE_CHECK_FAILED'/);
+    assert.equal(JSON.stringify({ result, logs: h.capturedLogs }).includes(secret), false);
+  }
+});
+test("引用核验耗尽软预算时不报validated且不写状态或推进游标", async () => {
+  const h = harness();
+  h.controls.referenceQueryMs = 1200;
+  const result = await h.call();
+  assert.equal(result.ok, true);
+  assert.equal(result.budgetExhausted, true);
+  assert.equal(result.validated, 0);
+  assert.equal(result.processed, 0);
+  assert.equal(result.nextCursor, "");
+  assert.equal(h.records.get(idFor(1)).status, "active");
+  assert.equal(h.state.has("v2"), false);
+  assert.equal(h.metrics.deletes + h.metrics.writes, 0);
+});
+test("正式首事务拒绝预检后改变的完整绑定", async () => {
+  const record = row(1), h = harness([record]);
+  h.controls.beforeReferenceReturn = () => {
+    h.records.get(record._id).requestId = "f".repeat(32);
+  };
+  const result = await h.call();
+  assert.equal(result.failed, 1);
+  assert.equal(result.deleted, 0);
+  assert.equal(h.metrics.deletes, 0);
+  assert.equal(h.records.get(record._id).status, "active");
+  assert.equal(h.files.has(record.recordingFileId), true);
+  assert.match(h.capturedLogs.at(-1), /code: 'INVALID_SHARE_BINDING'/);
 });
 test("只清理新版到期记录，错误路径和旧无期限记录留存", async () => {
   const initial = [row(1), row(2, { shareVersion: undefined }), row(3, { expiresAtMs: undefined }),

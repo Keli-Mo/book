@@ -1,5 +1,6 @@
 /* eslint-disable import/no-commonjs */
 const cloud = require("wx-server-sdk");
+const crypto = require("crypto");
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database({ throwOnNotFound: false });
@@ -8,6 +9,9 @@ const WORK_BUDGET_MS = 1200;
 const cleanupCodes = new Set([
   "INVALID_SHARE_PATH",
   "INVALID_SHARE_FILE_ID",
+  "INVALID_SHARE_BINDING",
+  "FILE_REFERENCE_CONFLICT",
+  "FILE_REFERENCE_CHECK_FAILED",
   "FILE_DELETE_UNCONFIRMED",
   "CLEANUP_STATE_CHANGED",
   "DATABASE_TRANSACTION_CONFLICT",
@@ -45,20 +49,46 @@ const trustedPrefix = envId => {
   return envId && match && match[1] === envId ? value : null;
 };
 const fileFor = (record, prefix) => {
-  // 路径必须是服务端新版预留的完整形状，绝不扫描教材或旧 checkins 前缀。
+  const owner = record?._openid;
+  if (typeof owner !== "string" || !owner ||
+      typeof record.requestId !== "string" || !/^[a-f0-9]{32}$/.test(record.requestId) ||
+      typeof record.payloadDigest !== "string" || !/^[a-f0-9]{64}$/.test(record.payloadDigest)) {
+    throw new Error("INVALID_SHARE_BINDING");
+  }
+  const ownerDigest = crypto.createHash("sha256").update(owner).digest("hex");
+  const cloudPath = `expiring-shares-v2/${ownerDigest}/${record.requestId}-${record.payloadDigest}.mp3`;
   if (!/^expiring-shares-v2\/[a-f0-9]{64}\/[a-f0-9]{32}-[a-f0-9]{64}\.mp3$/.test(record.cloudPath || "")) {
     throw new Error("INVALID_SHARE_PATH");
   }
-  const fileID = prefix + record.cloudPath;
+  if (record.cloudPath !== cloudPath) throw new Error("INVALID_SHARE_BINDING");
+  const fileID = prefix + cloudPath;
+  if (record.status === "active" && record.recordingFileId === undefined) {
+    throw new Error("INVALID_SHARE_FILE_ID");
+  }
   if (record.recordingFileId !== undefined && record.recordingFileId !== fileID) throw new Error("INVALID_SHARE_FILE_ID");
   return fileID;
 };
-const cleanOne = async (id, prefix, now) => {
+const assertFileReferences = async (fileID, record) => {
+  let result;
+  try {
+    result = await db.collection("checkins").where({ recordingFileId: fileID }).limit(2).get();
+  } catch (_) {
+    throw new Error("FILE_REFERENCE_CHECK_FAILED");
+  }
+  if (!Array.isArray(result?.data)) throw new Error("FILE_REFERENCE_CHECK_FAILED");
+  if (result.data.length > 1 || (result.data.length === 1 &&
+      (result.data[0]?._id !== record._id || result.data[0]?._openid !== record._openid))) {
+    throw new Error("FILE_REFERENCE_CONFLICT");
+  }
+};
+const cleanOne = async (id, expectedTarget, prefix, now, budgetStartedAt) => {
+  if (Date.now() - budgetStartedAt >= WORK_BUDGET_MS) return "budgetExhausted";
   const target = await transaction(async tx => {
     const doc = tx.collection("checkins").doc(id), record = (await doc.get()).data;
     // 分页后重读，避免扫描期间已完成提交的 pending 被误删。
     if (!eligible(record, now)) return null;
     const fileID = fileFor(record, prefix);
+    if (fileID !== expectedTarget) throw new Error("CLEANUP_STATE_CHANGED");
     if (record.status !== "deletePending" && record.status !== "deleted") {
       const { _id, ...data } = record;
       await doc.set({ data: { ...data, status: "deletePending" } });
@@ -66,6 +96,7 @@ const cleanOne = async (id, prefix, now) => {
     return fileID;
   });
   if (!target) return false;
+  if (Date.now() - budgetStartedAt >= WORK_BUDGET_MS) return "budgetExhausted";
   try {
     const result = await cloud.deleteFile({ fileList: [target] });
     const file = result.fileList?.find(item => item.fileID === target);
@@ -139,10 +170,22 @@ exports.main = async (event = {}) => {
         // 缺少可信前缀时只能统计，不能把候选声明为已校验通过。
         if (prefix) {
           try {
-            // 预演也走真实路径/环境检查；正式删除仍在事务内重读校验以防扫描竞态。
-            fileFor(record, prefix);
+            // 预演和正式执行使用同一绑定与全引用预检；正式删除仍在事务内重读绑定防扫描竞态。
+            const fileID = fileFor(record, prefix);
+            await assertFileReferences(fileID, record);
+            if (Date.now() - budgetStartedAt >= WORK_BUDGET_MS) {
+              result.budgetExhausted = true;
+              break;
+            }
             result.validated++;
-            if (!dryRun && await cleanOne(record._id, prefix, now)) result.deleted++;
+            if (!dryRun) {
+              const cleaned = await cleanOne(record._id, fileID, prefix, now, budgetStartedAt);
+              if (cleaned === "budgetExhausted") {
+                result.budgetExhausted = true;
+                break;
+              }
+              if (cleaned) result.deleted++;
+            }
           } catch (error) {
             result.failed++;
             // 不输出录音URL、口令或OPENID，失败记录保留引用，下轮回绕重试。
