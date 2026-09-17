@@ -37,13 +37,22 @@ const page = (...args) => { const result = createPage(...args); pages.push(resul
   const detail = page("src/pages/CheckInDetail/CheckInDetail.tsx", params, { overrides, pageStack });
   detail.render(); await settle(); tree = detail.render();
   await byClass(tree, "shared-recording__play").props.onClick();
-  assert.equal(detail.audios[0].events.at(-1), "play");
+  const playbackAudio = detail.audios.findLast((audio) => audio.src === pending.localPath);
+  assert.ok(playbackAudio, "应通过保存路径找到实际回听原生实例");
+  assert.equal(playbackAudio.events.at(-1), "play", "实际回听原生实例必须已开始播放");
   await byClass(tree, "check-in-actions__practice").props.onClick();
   assert.equal(detail.navigationMethods.at(-1), "navigateBack", "继续跟读应复用原训练页，不新建抢占录音器的第二个训练页");
 
   // 按微信返回的生命周期顺序卸载详情、重新显示栈内原页；原生箭头与 navigateBack 使用同一栈语义。
-  detail.hide(); detail.unload(); detail.dispose();
-  assert.ok(detail.audios[0].events.includes("stop"), "离开详情时必须停止回听");
+  detail.hide();
+  tree = detail.render();
+  assert.equal(playbackAudio.events.filter((event) => event === "destroy").length, 1, "隐藏详情应恰好销毁当前回听实例");
+  assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "隐藏详情应恢复播放按钮");
+  assert.doesNotMatch(textOf(byClass(tree, "shared-recording__duration")), / \/ /, "隐藏详情不得显示播放中的当前/总时长");
+  const audioCountAfterHide = detail.audios.length;
+  detail.unload(); detail.dispose();
+  assert.equal(playbackAudio.events.filter((event) => event === "destroy").length, 1, "卸载和销毁后不得重复销毁回听实例");
+  assert.equal(detail.audios.length, audioCountAfterHide, "卸载和销毁后不得创建新的回听实例");
   practice.show(); practice.render(); await settle(); tree = practice.render();
   const bundle = buildBookPracticeBundle("22");
   assert.equal(byClass(tree, "practice-book-page__image").props.src, bundle.practices[4].imageUrl, "返回必须保留翻页后的教材图片");
