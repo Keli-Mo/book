@@ -351,7 +351,7 @@ export default function CheckInDetail() {
     <View className={`check-in-detail-page__content check-in-detail device-layout__content ${layoutClassName}`}>
       <View className='check-in-detail__success'>
         <Text className='check-in-detail__check'>✓</Text>
-        <Text className='check-in-detail__title'>完成一次英语跟读</Text>
+        <Text className='check-in-detail__title'>完成英语跟读</Text>
         <Text className='check-in-detail__time'>{formatCheckInTime(values.createdAt)}</Text>
       </View>
       <View className='check-in-course-card'>

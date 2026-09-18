@@ -75,6 +75,7 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
     });
     checked.page.render(); await settle();
     let tree = checked.page.render();
+    assert.equal(textOf(byClass(tree, "check-in-detail__title")), "完成英语跟读", "详情标题使用精简文案");
     assert.equal(checked.cloudCalls, 0, "不能在打开本机录音时自动核验");
     const repair = byClass(tree, "shared-recording__repair");
     assert.ok(repair, "已有链接需要主动核验入口");
