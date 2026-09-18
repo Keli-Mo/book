@@ -24,7 +24,8 @@ function harness(initial = [row(1)]) {
   const records = new Map(initial.map(r => [r._id, structuredClone(r)])), state = new Map(), versions = new Map();
   const capturedLogs = [];
   const files = new Set(initial.map(r => r.recordingFileId).filter(Boolean));
-  const metrics = { writes: 0, deletes: 0, queries: 0, referenceQueries: [], conflicts: 0 };
+  const metrics = { writes: 0, deletes: 0, queries: 0, referenceQueries: [], conflicts: 0,
+    stateReads: 0, transactions: [] };
   const clock = { elapsedMs: 0 };
   const env = { SHARE_CLEANUP_ENABLED: "true", SHARE_STORAGE_FILE_ID_PREFIX: prefix };
   const controls = { context: { SOURCE: "wx_trigger", ENV: "test" }, contextError: null, deleteError: null,
@@ -48,7 +49,7 @@ function harness(initial = [row(1)]) {
           controls.beforeCheckpoint = null;
           callback(data => write(name, id, data));
         }
-        if (name === "shareCleanupState" && !tx) advance(controls.stateReadMs);
+        if (name === "shareCleanupState" && !tx) { metrics.stateReads++; advance(controls.stateReadMs); }
         if (tx) tx.reads.set(`${name}/${id}`, tx.versions.get(`${name}/${id}`) || 0);
         return { data: structuredClone(readMap(name, tx).get(id) || null) }; },
       async set({ data }) {
@@ -83,10 +84,15 @@ function harness(initial = [row(1)]) {
   });
   const db = { collection: name => collection(name), command: { gt: value => ({ gt: value }) },
     async runTransaction(operation) {
+      const startedAtMs = clock.elapsedMs;
       const tx = { checkins: structuredClone(records), shareCleanupState: structuredClone(state), versions: new Map(versions), reads: new Map(), writes: [] };
       const result = await operation({ collection: name => collection(name, tx) });
-      advance(controls.transactionMs);
-      if ([...tx.reads].some(([key, version]) => (versions.get(key) || 0) !== version)) {
+      const phase = [...tx.reads.keys()].some(key => key.startsWith("shareCleanupState/")) ? "checkpoint"
+        : tx.writes.some(w => w.data.status === "deleted") ? "finalize" : "mark";
+      metrics.transactions.push({ phase, startedAtMs });
+      advance(typeof controls.transactionMs === "function" ? controls.transactionMs(phase) : controls.transactionMs);
+      if (controls.transactionConflict?.(phase) ||
+          [...tx.reads].some(([key, version]) => (versions.get(key) || 0) !== version)) {
         metrics.conflicts++; throw Object.assign(new Error("conflict"), { code: "DATABASE_TRANSACTION_CONFLICT" });
       }
       for (const w of tx.writes) write(w.name, w.id, w.data);
@@ -117,16 +123,206 @@ function harness(initial = [row(1)]) {
   vm.runInNewContext(source, { exports: mod.exports, module: mod, process: { env }, Date: class extends Date { static now() { return NOW + clock.elapsedMs; } },
     console: { info() {}, error(...args) { capturedLogs.push(inspect(args)); } },
     require: name => name === "wx-server-sdk" ? cloud : name === "crypto" ? crypto : require(path.join(root, name)) });
-  return { call: (event = {}) => { clock.elapsedMs = 0; return mod.exports.main(event); },
+  return { call: (event = {}) => { clock.elapsedMs = 0; return mod.exports.main(event, controls.runtimeContext); },
     records, state, files, metrics, controls, env, capturedLogs, clock };
 }
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
+test("慢候选跨越准入截止后仍可安全收尾并多轮回绕", async () => {
+  const h = harness([row(1), row(2)]);
+  Object.assign(h.controls, {
+    referenceQueryMs: 900, transactionMs: 350, deleteMs: 50,
+    hardBudgetMs: 3000, runtimeContext: { time_limit_in_ms: 3000 },
+  });
+  for (let i = 0; i < 4 && (h.files.size || h.state.get("v2")?.cursor); i++) {
+    const result = await h.call();
+    assert.equal(result.ok, true);
+    assert.ok(h.clock.elapsedMs < 3000);
+    if (i < 2) {
+      assert.equal(result.processed, 1);
+      assert.equal(result.budgetExhausted, true);
+      assert.equal(result.nextCursor, idFor(i + 1));
+      assert.equal(h.clock.elapsedMs, 2000, "完成检查点后不再发起页尾写入");
+    }
+  }
+  assert.equal(h.files.size, 0);
+  assert.equal(h.records.get(idFor(1)).status, "deleted");
+  assert.equal(h.records.get(idFor(2)).status, "deleted");
+  assert.equal(h.state.get("v2").cursor, "");
+  assert.ok(h.metrics.transactions.every(tx => tx.startedAtMs < 2000));
+});
+test("引用核验达到1200ms仍可收尾但不接下一候选，预演保持零写零删", async () => {
+  for (const dryRun of [false, true]) {
+    const h = harness([row(1), row(2)]);
+    h.controls.referenceQueryMs = 1200;
+    const result = await h.call({ dryRun });
+    assert.equal(result.ok, true);
+    assert.equal(result.processed, 1);
+    assert.equal(result.candidates, 1);
+    assert.equal(result.validated, 1);
+    assert.equal(result.deleted, dryRun ? 0 : 1);
+    assert.equal(result.nextCursor, idFor(1));
+    assert.equal(result.budgetExhausted, true);
+    assert.equal(h.records.get(idFor(2)).status, "active");
+    if (dryRun) assert.equal(h.metrics.writes + h.metrics.deletes, 0);
+  }
+});
+test("可信时限不超过预留时鉴权后零数据库和存储I/O并记录脱敏零进展类别", async () => {
+  for (const time_limit_in_ms of [1000, 500]) {
+    const h = harness();
+    h.controls.runtimeContext = { time_limit_in_ms };
+    const result = await h.call();
+    assert.equal(result.ok, true);
+    assert.equal(result.budgetExhausted, true);
+    assert.equal(result.processed, 0);
+    assert.equal(result.failed, 0);
+    assert.equal(h.metrics.stateReads + h.metrics.queries + h.metrics.writes + h.metrics.deletes, 0);
+    assert.equal(h.metrics.transactions.length, 0);
+    assert.deepEqual(h.capturedLogs, ["[ '分享清理预算不足', { code: 'CLEANUP_BUDGET_EXHAUSTED' } ]"]);
+  }
+});
+test("可信较长时限可完成慢候选且只接一条，超过20秒的配置仍受上限约束", async () => {
+  const h = harness([row(1), row(2)]);
+  Object.assign(h.controls, { runtimeContext: { time_limit_in_ms: 6000 },
+    referenceQueryMs: 2500, transactionMs: 350, deleteMs: 50, hardBudgetMs: 6000 });
+  const result = await h.call();
+  assert.equal(result.processed, 1);
+  assert.equal(result.deleted, 1);
+  assert.equal(result.nextCursor, idFor(1));
+  assert.equal(h.files.size, 1);
+  assert.equal(h.clock.elapsedMs, 3600);
+  const capped = harness();
+  Object.assign(capped.controls, { runtimeContext: { time_limit_in_ms: 100000 }, referenceQueryMs: 19000 });
+  const stopped = await capped.call();
+  assert.equal(stopped.budgetExhausted, true);
+  assert.equal(stopped.processed, 0);
+  assert.equal(stopped.validated, 0);
+  assert.equal(capped.metrics.writes + capped.metrics.deletes, 0);
+  assert.equal(capped.metrics.transactions.length, 0);
+});
+test("缺失或非法context回退3000ms，event伪造字段不能扩张收尾预算", async () => {
+  for (const runtimeContext of [undefined, null, {}, ...[NaN, Infinity, "20000", -1, 1.5, 0,
+    Number.MAX_SAFE_INTEGER + 1].map(time_limit_in_ms => ({ time_limit_in_ms }))]) {
+    const h = harness();
+    Object.assign(h.controls, { runtimeContext, referenceQueryMs: 2000 });
+    const result = await h.call({ time_limit_in_ms: 20000, runtimeContext: { time_limit_in_ms: 20000 } });
+    assert.equal(result.budgetExhausted, true);
+    assert.equal(result.validated, 0);
+    assert.equal(result.processed, 0);
+    assert.equal(result.failed, 0);
+    assert.equal(h.metrics.writes + h.metrics.deletes, 0);
+    assert.equal(h.metrics.transactions.length, 0);
+    assert.equal(h.state.has("v2"), false);
+    assert.match(h.capturedLogs.at(-1), /code: 'CLEANUP_BUDGET_EXHAUSTED'/);
+  }
+});
+test("标记和删除耗尽收尾预算时不越过未完成行，下一调用重新核验后恢复", async () => {
+  for (const phase of ["mark", "delete"]) {
+    const h = harness();
+    Object.assign(h.controls, { referenceQueryMs: 900,
+      transactionMs: phase === "mark" ? 1100 : 100, deleteMs: phase === "delete" ? 1000 : 0 });
+    const result = await h.call();
+    assert.equal(result.ok, true);
+    assert.equal(result.budgetExhausted, true);
+    assert.equal(result.processed, 0);
+    assert.equal(result.failed, 0);
+    assert.equal(result.nextCursor, "");
+    assert.equal(h.records.get(idFor(1)).status, "deletePending");
+    assert.equal(h.records.get(idFor(1)).recordingFileId, row(1).recordingFileId);
+    assert.equal(h.metrics.deletes, phase === "delete" ? 1 : 0);
+    assert.equal(h.metrics.transactions.length, 1);
+    assert.equal(h.state.has("v2"), false);
+    Object.assign(h.controls, { referenceQueryMs: 0, transactionMs: 0, deleteMs: 0 });
+    const resumed = await h.call();
+    assert.equal(resumed.deleted, 1);
+    assert.equal(h.metrics.referenceQueries.length, 2);
+    assert.equal(h.records.get(idFor(1)).status, "deleted");
+    assert.equal(h.files.size, 0);
+    assert.equal(h.state.get("v2").cursor, "");
+  }
+});
+test("结束事务刚好用尽预算时保留旧持久游标，后续可重验墓碑并恢复", async () => {
+  const h = harness();
+  h.state.set("v2", { cursor: idFor(0), revision: 5 });
+  Object.assign(h.controls, { referenceQueryMs: 900, deleteMs: 100,
+    transactionMs: phase => phase === "finalize" ? 900 : 100 });
+  const result = await h.call();
+  assert.equal(result.ok, true);
+  assert.equal(result.budgetExhausted, true);
+  assert.equal(result.deleted, 1);
+  assert.equal(result.processed, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(result.nextCursor, idFor(0));
+  assert.equal(h.metrics.transactions.length, 2);
+  assert.equal(h.records.get(idFor(1)).status, "deleted");
+  assert.equal(h.files.size, 0);
+  assert.deepEqual(h.state.get("v2"), { cursor: idFor(0), revision: 5 });
+  Object.assign(h.controls, { referenceQueryMs: 0, transactionMs: 0, deleteMs: 0 });
+  assert.equal((await h.call()).deleted, 1);
+  assert.equal(h.metrics.referenceQueries.length, 2);
+  assert.equal(h.state.get("v2").cursor, "");
+});
+test("标记结束及检查点事务冲突耗尽收尾预算后不再重试且可恢复", async () => {
+  for (const phase of ["mark", "finalize", "checkpoint"]) {
+    const h = harness();
+    h.state.set("v2", { cursor: idFor(0), revision: 5 });
+    Object.assign(h.controls, { referenceQueryMs: 900, deleteMs: 100,
+      transactionMs: kind => kind === phase ? ({ mark: 1100, finalize: 900, checkpoint: 800 })[phase] : 100,
+      transactionConflict: kind => kind === phase });
+    const result = await h.call();
+    assert.equal(result.ok, true);
+    assert.equal(result.budgetExhausted, true);
+    assert.equal(result.failed, 0);
+    assert.equal(result.processed, phase === "checkpoint" ? 1 : 0);
+    assert.equal(result.deleted, phase === "checkpoint" ? 1 : 0);
+    assert.equal(h.metrics.conflicts, 1, "达到收尾截止后不得再发起冲突重试");
+    assert.equal(result.nextCursor, idFor(0));
+    assert.deepEqual(h.state.get("v2"), { cursor: idFor(0), revision: 5 });
+    assert.equal(h.metrics.deletes, phase === "mark" ? 0 : 1);
+    assert.equal(h.records.get(idFor(1)).status,
+      phase === "mark" ? "active" : phase === "finalize" ? "deletePending" : "deleted");
+    Object.assign(h.controls, { referenceQueryMs: 0, deleteMs: 0, transactionMs: 0, transactionConflict: null });
+    assert.equal((await h.call()).deleted, 1);
+    assert.equal(h.metrics.referenceQueries.length, 2);
+    assert.equal(h.records.get(idFor(1)).status, "deleted");
+    assert.equal(h.files.size, 0);
+    assert.equal(h.state.get("v2").cursor, "");
+  }
+});
 test("默认dryrun，事件不能启用删除", async () => {
   const h = harness(); delete h.env.SHARE_CLEANUP_ENABLED;
   const result = await h.call({ enabled: true, dryRun: false });
   assert.equal(result.dryRun, true); assert.equal(result.candidates, 1);
   assert.equal(h.metrics.deletes + h.metrics.writes, 0);
+});
+for (const phase of ["mark", "finalize", "checkpoint"]) {
+  test(`${phase}最后一次冲突刚好耗尽预算也不能冒充候选处理完成`, async () => {
+    const h = harness();
+    Object.assign(h.controls, {
+      referenceQueryMs: ({ mark: 800, finalize: 700, checkpoint: 600 })[phase],
+      transactionMs: kind => kind === phase ? 400 : 100,
+      transactionConflict: kind => kind === phase,
+    });
+    const result = await h.call();
+    assert.equal(result.ok, true);
+    assert.equal(result.budgetExhausted, true);
+    assert.equal(result.failed, 0);
+    assert.equal(result.processed, phase === "checkpoint" ? 1 : 0);
+    assert.equal(h.metrics.conflicts, 3);
+    assert.equal(h.clock.elapsedMs, 2000);
+    assert.equal(h.metrics.deletes, phase === "mark" ? 0 : 1);
+    assert.equal(h.state.has("v2"), false);
+  });
+}
+test("预演收尾预算耗尽时仍返回此前已经审核的连续位置", async () => {
+  const h = harness([row(1, { expiresAtMs: NOW + 1 }), row(2)]);
+  h.controls.referenceQueryMs = 2000;
+  const result = await h.call({ dryRun: true });
+  assert.equal(result.budgetExhausted, true);
+  assert.equal(result.processed, 1);
+  assert.equal(result.nextCursor, idFor(1));
+  assert.equal(result.validated, 0);
+  assert.equal(h.metrics.writes + h.metrics.deletes, 0);
 });
 test("只信SDK定时来源，拒绝客户端、调用链及伪造timer", async () => {
   for (const context of [{ SOURCE: "wx_client" }, { SOURCE: "wx_client,scf" }, { SOURCE: "wx_devtools" }, {},
@@ -244,9 +440,9 @@ test("引用查询异常和非数组结果固定失败关闭且不泄漏SDK错�
     assert.equal(JSON.stringify({ result, logs: h.capturedLogs }).includes(secret), false);
   }
 });
-test("引用核验耗尽软预算时不报validated且不写状态或推进游标", async () => {
+test("引用核验耗尽收尾预算时不报validated且不写状态或推进游标", async () => {
   const h = harness();
-  h.controls.referenceQueryMs = 1200;
+  h.controls.referenceQueryMs = 2000;
   const result = await h.call();
   assert.equal(result.ok, true);
   assert.equal(result.budgetExhausted, true);
