@@ -9,7 +9,7 @@ import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/ch
 import { getPendingCheckInStore, logRecordingDiagnostic, diagnoseLocalRecordingFailure, recoverPendingRecording, getActivePendingRecovery } from "@/features/listeningPractice/pendingCheckInRuntime";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
 import { getRecordingRecoveryMessage } from "@/features/listeningPractice/recordingRecovery";
-import { getCheckInDetail, getCheckInShareStatus, getReadableCloudError, getShareFailureMessage, type CheckInDetail as CloudDetail } from "@/services/cloudCheckIn";
+import { getCheckInDetail, getShareReadFailure, getShareFailureMessage, type CheckInDetail as CloudDetail } from "@/services/cloudCheckIn";
 import { sharedImage } from "@/constant";
 import { formatCheckInTime, formatPlaybackDurationLabel } from "@/utils/checkInFormat";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
@@ -29,11 +29,10 @@ export default function CheckInDetail() {
   const [detail, setDetail] = useState<DetailView | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [errorTitle, setErrorTitle] = useState("暂时无法打开这条录音");
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackPositionMs, setPlaybackPositionMs] = useState(0);
   const [sharing, setSharing] = useState(false);
-  const [checkingShare, setCheckingShare] = useState(false);
-  const checkingShareRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const [localPlaybackFailed, setLocalPlaybackFailed] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState("");
@@ -206,7 +205,16 @@ export default function CheckInDetail() {
           const cloud = await getCheckInDetail(recordId, routeToken);
           if (active) { durationRef.current = cloud.durationMs; setDetail({ source: "cloud", cloud, recordingUrl: cloud.recordingUrl }); }
         } else throw new Error("链接缺少录音编号");
-      } catch (error) { if (active) setErrorMessage(localId ? (error instanceof Error ? error.message : "本机录音读取失败") : getReadableCloudError(error)); }
+      } catch (error) {
+        if (active) {
+          if (localId) setErrorMessage(error instanceof Error ? error.message : "本机录音读取失败");
+          else {
+            const failure = getShareReadFailure(error);
+            setErrorTitle(failure.title);
+            setErrorMessage(failure.message);
+          }
+        }
+      }
       finally { if (active) setLoading(false); }
     })();
     return () => { active = false; };
@@ -229,7 +237,13 @@ export default function CheckInDetail() {
         setDetail({ source: "cloud", cloud: refreshed, recordingUrl });
       } catch (error) {
         if (!mountedRef.current || !visibleRef.current || playAttemptRef.current !== attempt) return;
-        Taro.showToast({ title: getReadableCloudError(error), icon: "none" });
+        const failure = getShareReadFailure(error);
+        if (failure.unavailable) {
+          controller.stop();
+          setErrorTitle(failure.title);
+          setErrorMessage(failure.message);
+          setDetail(null);
+        } else Taro.showToast({ title: failure.message, icon: "none" });
         return;
       }
     }
@@ -272,7 +286,7 @@ export default function CheckInDetail() {
 
   const recoverRecording = () => {
     if (detail?.source !== "local" || !localPlaybackFailed || !detail.pending.share?.id ||
-        !mountedRef.current || !visibleRef.current || recoveryRef.current || savingRef.current || sharing || checkingShareRef.current) return;
+        !mountedRef.current || !visibleRef.current || recoveryRef.current || savingRef.current || sharing) return;
     return observeRecovery(recoverPendingRecording(localId));
   };
 
@@ -296,7 +310,7 @@ export default function CheckInDetail() {
   };
 
   const prepareShare = async () => {
-    if (!localId || sharing || checkingShareRef.current || savingRef.current || recoveryRef.current || getActivePendingRecovery(localId) || hasValidShare || !visibleRef.current || detail?.source !== "local" || !detail.pending.recoverable) return;
+    if (!localId || sharing || savingRef.current || recoveryRef.current || getActivePendingRecovery(localId) || hasValidShare || !visibleRef.current || detail?.source !== "local" || !detail.pending.recoverable) return;
     const attempt = shareAttemptRef.current + 1;
     shareAttemptRef.current = attempt;
     setSharing(true);
@@ -340,34 +354,6 @@ export default function CheckInDetail() {
     }
   };
 
-  const checkShare = async () => {
-    if (detail?.source !== "local" || !detail.pending.share || !detail.pending.shareRequestId ||
-        sharing || checkingShareRef.current || savingRef.current || recoveryRef.current || getActivePendingRecovery(localId) || !visibleRef.current) return;
-    const { share, shareRequestId } = detail.pending;
-    checkingShareRef.current = true;
-    setCheckingShare(true);
-    try {
-      const status = await getCheckInShareStatus(share.id, shareRequestId);
-      if (!mountedRef.current || !visibleRef.current) return;
-      if (status.state === "active") {
-        Taro.showToast({ title: "分享仍有效，可发送给朋友", icon: "none" });
-        return;
-      }
-      const invalidated = await pendingStore.markShareExpired(localId, shareRequestId);
-      if (!mountedRef.current || !visibleRef.current) return;
-      const latest = pendingStore.list().find((item) => item.requestId === localId);
-      if (latest) setDetail({ source: "local", pending: latest, recordingUrl: latest.localPath });
-      // 晚到核验不得清除另一代新分享；持久化失败仍保留原文件与引用。
-      if (invalidated) Taro.showToast({ title: "旧分享已失效，请再次点击分享", icon: "none" });
-      else if (latest?.shareRequestId === shareRequestId) Taro.showToast({ title: "本机状态保存失败，请重试", icon: "none" });
-    } catch (_error) {
-      if (mountedRef.current && visibleRef.current) Taro.showToast({ title: "暂时无法核验，请稍后重试", icon: "none" });
-    } finally {
-      checkingShareRef.current = false;
-      if (mountedRef.current) setCheckingShare(false);
-    }
-  };
-
   const renderPage = (content: ReactNode) => (
     <View className='check-in-detail-page'>
       <CheckInNavigation onBack={goBack} />
@@ -385,7 +371,7 @@ export default function CheckInDetail() {
   if (!detail || !values) {
     return renderPage(
       <View className={`check-in-detail-page__content check-in-state device-layout__content ${layoutClassName}`}>
-        <Text className='check-in-state__title'>暂时无法打开这条录音</Text>
+        <Text className='check-in-state__title'>{errorTitle}</Text>
         <Text className='check-in-state__message'>{errorMessage}</Text>
       </View>,
     );
@@ -394,7 +380,7 @@ export default function CheckInDetail() {
   const shareButton = hasValidShare ? (
     <Button className='check-in-actions__share device-touch-target' disabled={recovering} openType={recovering ? undefined : 'share'}>发送给朋友</Button>
   ) : detail.source === "local" ? (
-    <Button className='check-in-actions__share device-touch-target' loading={sharing} disabled={recovering || sharing || checkingShare || saving || !detail.pending.recoverable} onClick={prepareShare}>
+    <Button className='check-in-actions__share device-touch-target' loading={sharing} disabled={recovering || sharing || saving || !detail.pending.recoverable} onClick={prepareShare}>
       {sharing ? "正在准备分享…" : "分享给朋友"}
     </Button>
   ) : (
@@ -426,7 +412,7 @@ export default function CheckInDetail() {
         {detail.source === "local" && (localPlaybackFailed || recovering) && (
           <View>
             <Text className='shared-recording__privacy'>{recoveryMessage || (detail.pending.share?.id ? "本机录音暂时无法播放，可尝试从本人分享恢复；原文件会保留" : "没有可用分享，暂时不能恢复；原录音记录已保留")}</Text>
-            {detail.pending.share?.id && <Button className='shared-recording__recover shared-recording__play device-touch-target' loading={recovering} disabled={recovering || saving || sharing || checkingShare} onClick={recoverRecording}>{recovering ? "正在恢复…" : "从分享恢复"}</Button>}
+            {detail.pending.share?.id && <Button className='shared-recording__recover shared-recording__play device-touch-target' loading={recovering} disabled={recovering || saving || sharing} onClick={recoverRecording}>{recovering ? "正在恢复…" : "从分享恢复"}</Button>}
           </View>
         )}
         {detail.source === "local" && !detail.pending.recoverable && (
@@ -434,9 +420,6 @@ export default function CheckInDetail() {
             <Text className='shared-recording__privacy'>录音保存失败，请重试保存；关闭小程序后可能无法恢复</Text>
             <Button className='shared-recording__retry device-touch-target' loading={saving} disabled={recovering || saving || sharing} onClick={retrySaveRecording}>重试保存</Button>
           </View>
-        )}
-        {detail.source === "local" && detail.pending.share && detail.pending.shareRequestId && (
-          <Button className='check-in-actions__practice shared-recording__privacy shared-recording__repair device-touch-target' loading={checkingShare} disabled={recovering || checkingShare || sharing || saving} onClick={checkShare}>链接打不开？检查分享</Button>
         )}
       </View>
       <View className='check-in-actions device-actions'>

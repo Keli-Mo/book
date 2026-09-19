@@ -1,7 +1,7 @@
 /* eslint-disable import/no-commonjs */
 const assert = require("node:assert/strict");
 const { createPage, byClass, textOf, load } = require("./test-practice-book-route.cjs");
-const { getShareFailureMessage } = load("src/services/cloudCheckIn.ts");
+const { getShareFailureMessage, getShareReadFailure } = load("src/services/cloudCheckIn.ts");
 
 const settle = async () => { for (let index = 0; index < 8; index += 1) await Promise.resolve(); };
 const deferred = () => {
@@ -51,6 +51,7 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
       "@/services/cloudCheckIn": {
         getCheckInDetail: async () => { cloudCalls += 1; throw new Error("本地详情不得访问云端"); },
         getReadableCloudError: (error) => error.message,
+        getShareReadFailure,
         getShareFailureMessage,
         getCheckInShareStatus: async (...args) => { cloudCalls += 1; return probe(...args); },
       },
@@ -110,42 +111,62 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
     assert.equal(reopened.page.audios.some(a => a.src === recovered.localPath), false, '重建页不自动启动播放');
     await byClass(reopened.page.render(), 'shared-recording__play').props.onClick(); assert.ok(reopened.page.audios.some(a => a.src === recovered.localPath)); reopened.page.dispose();
   }
-  for (const state of ["active", "deleted", "expired", "missing", "invalid", "network", "unavailable", "persist-failed", "new-generation"]) {
-    const share = { id: "old-cloud", shareToken: "old-token", expiresAtMs: Date.now() + 60_000 };
-    const pending = { ...makePending(share), shareRequestId: "b".repeat(32) };
-    let uploads = 0;
-    const checked = createLocalPage({ pending,
-      probe: async (id, generation) => {
-        assert.equal(id, share.id); assert.equal(generation, pending.shareRequestId);
-        if (state === "network") throw { code: "ETIMEDOUT", message: "https://secret?token=private" };
-        if (state === "unavailable") throw { code: "SHARE_STATUS_UNAVAILABLE", message: "暂时无法核验分享，请稍后重试" };
-        if (state === "new-generation") checked.items[0] = { ...pending, shareRequestId: "c".repeat(32), share: { ...share, id: "new-cloud" } };
-        return { state: ["persist-failed", "new-generation"].includes(state) ? "missing" : state };
-      },
-      ...(state === "persist-failed" ? { expire: async () => false } : {}),
-      submit: () => { uploads++; return { promise: Promise.resolve({ state: "failed", error: { code: "ETIMEDOUT" } }), cancel: () => false }; },
-    });
-    checked.page.render(); await settle();
-    let tree = checked.page.render();
-    assert.equal(textOf(byClass(tree, "check-in-detail__title")), "完成英语跟读", "详情标题使用精简文案");
-    assert.equal(checked.cloudCalls, 0, "不能在打开本机录音时自动核验");
-    const repair = byClass(tree, "shared-recording__repair");
-    assert.ok(repair, "已有链接需要主动核验入口");
-    await repair.props.onClick();
-    tree = checked.page.render();
-    assert.equal(uploads, 0, "核验与失效均不能自动上传");
-    assert.equal(checked.items[0].localPath, pending.localPath);
-    assert.doesNotMatch(JSON.stringify(checked.toasts), /private|secret/);
-    if (["deleted", "expired", "missing", "invalid"].includes(state)) {
-      assert.equal(checked.items[0].share, undefined);
-      assert.equal(byClass(tree, "check-in-actions__share").props.disabled, false);
-      await byClass(tree, "check-in-actions__share").props.onClick();
-      assert.equal(uploads, 1, "仅再次明确点击分享才可开始提交");
-    } else {
-      assert.equal(checked.items[0].share.id, state === "new-generation" ? "new-cloud" : "old-cloud");
-      assert.equal(byClass(tree, "check-in-actions__share").props.openType, "share");
+  for (const expiresAtMs of [1, Date.now() + 60000]) {
+    const pending = { ...makePending({ id: "share", shareToken: "token", expiresAtMs }), shareRequestId: "b".repeat(32) };
+    const h = createLocalPage({ pending, recover: () => Promise.reject({ code: "SHARE_EXPIRED" }) });
+    h.page.render(); await settle();
+    assert.equal(textOf(byClass(h.page.render(), "check-in-detail__title")), "完成英语跟读");
+    assert.equal(byClass(h.page.render(), "shared-recording__repair"), undefined, "正常页面彻底移除检查分享入口");
+    await byClass(h.page.render(), "shared-recording__play").props.onClick();
+    h.page.audios.findLast(a => a.src === pending.localPath).trigger("Error", {});
+    await byClass(h.page.render(), "shared-recording__recover").props.onClick();
+    assert.equal(byClass(h.page.render(), "shared-recording__repair"), undefined, "分享源异常后也不能重新出现排错入口");
+    assert.equal(h.cloudCalls, 0, "本地回听不增加分享状态探测");
+    assert.equal(h.items[0].localPath, pending.localPath);
+    h.page.dispose();
+  }
+  for (const phase of ["initial", "play"]) {
+    for (const [code, title, message, unavailable] of [
+      ["SHARE_EXPIRED", "分享已过期，请重新分享", /30 天.*重新分享.*本地录音不受/, true],
+      ["REQUEST_DELETED", "分享已过期，请重新分享", /重新分享/, true],
+      ["NOT_FOUND", "分享暂不可用", /不存在或已失效.*重新分享/, true],
+      ["ETIMEDOUT", "暂时无法打开这条录音", /超时.*重试/, false],
+      ["CHECK_IN_ERROR", "暂时无法打开这条录音", /重试/, false],
+    ]) {
+      let calls = 0; const toasts = []; let shareMessage;
+      const cloud = { id: "cloud", shareToken: "token", bookId: "22", bookTitle: "教材", practiceIndex: 0, pageNumber: 8, sectionTitle: "第一课", imageUrl: "cover", durationMs: 3000, createdAt: 1, recordingUrl: "old-url", isOwner: false };
+      const page = createPage("src/pages/CheckInDetail/CheckInDetail.tsx", { id: "cloud", token: "token" }, {
+        showToast: ({ title: toast }) => toasts.push(toast),
+        taroOverrides: { useShareAppMessage: callback => { shareMessage = callback; } },
+        overrides: { "@/services/cloudCheckIn": {
+          getShareReadFailure,
+          getCheckInDetail: async () => {
+            calls++;
+            if (phase === "play" && calls === 1) return cloud;
+            throw { code, message: "private-url secret-token" };
+          },
+        } },
+      });
+      page.render(); await settle();
+      if (phase === "play") await byClass(page.render(), "shared-recording__play").props.onClick();
+      const tree = page.render();
+      if (phase === "initial" || unavailable) {
+        assert.equal(textOf(byClass(tree, "check-in-state__title")), title);
+        assert.match(textOf(byClass(tree, "check-in-state__message")), message);
+        assert.equal(byClass(tree, "shared-recording__play"), undefined, "已失效的云分享不再保留无效播放按钮");
+        assert.equal(byClass(tree, "check-in-actions__share"), undefined, "已失效的云分享不能继续转发旧链接");
+        assert.equal(shareMessage().path, "/pages/Home/Home");
+      } else {
+        assert.ok(byClass(tree, "shared-recording__play"), "暂时网络故障保留播放重试");
+        assert.match(toasts.at(-1), message);
+        assert.doesNotMatch(toasts.at(-1), /30 天|过期/);
+      }
+      assert.equal(byClass(tree, "shared-recording__repair"), undefined);
+      assert.doesNotMatch(textOf(tree) + toasts.join(""), /private-url|secret-token/);
+      assert.equal(calls, phase === "initial" ? 1 : 2, "不额外调用状态核验");
+      assert.equal(page.audios.some(a => a.events.includes("play")), false);
+      page.dispose();
     }
-    checked.page.dispose();
   }
   for (const state of ["committed", "failed"]) {
     const completion = deferred();
@@ -300,6 +321,7 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
           return refreshed.promise;
         },
         getReadableCloudError: (error) => error.message,
+        getShareReadFailure,
       },
     },
   });
@@ -325,6 +347,7 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
           return rejectedRefresh.promise;
         },
         getReadableCloudError: (error) => error.message,
+        getShareReadFailure,
       },
     },
   });

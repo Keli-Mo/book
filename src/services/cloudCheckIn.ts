@@ -326,3 +326,20 @@ export const getReadableCloudError = (error: unknown) => {
   const classified = classifyCloudError(error);
   return classified.code === "CHECK_IN_ERROR" ? "操作失败，请稍后重试" : classified.message;
 };
+
+/** 读取分享失败的专用页面文案；网络/文件故障不能被说成超过 30 天。 */
+export const getShareReadFailure = (error: unknown) => {
+  const { code } = classifyCloudError(error);
+  // 服务端也用 SHARE_EXPIRED 表达已删除等失效状态，不能断言一定超过 30 天。
+  if (code === "SHARE_EXPIRED" || code === "REQUEST_DELETED") return {
+    unavailable: true,
+    title: "分享已过期，请重新分享",
+    message: "分享链接有效期为 30 天。请录音者从“我的录音”重新分享，本地录音不受分享期限影响。",
+  };
+  if (code === "NOT_FOUND") return {
+    unavailable: true,
+    title: "分享暂不可用",
+    message: "这条分享不存在或已失效，请联系录音者重新分享。",
+  };
+  return { unavailable: false, title: "暂时无法打开这条录音", message: getReadableCloudError(error) };
+};

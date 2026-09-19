@@ -7,7 +7,8 @@ const path = require('path');
 const { chromium } = require('playwright');
 const { createUiPage, sampleRecording, settle } = require('./helpers/native-ui-fixtures.cjs');
 const { readWxssWithImports } = require('./helpers/read-wxss.cjs');
-const { byClass, elements } = require('./test-practice-book-route.cjs');
+const { byClass, elements, load } = require('./test-practice-book-route.cjs');
+const { getShareReadFailure } = load('src/services/cloudCheckIn.ts');
 
 const root = path.resolve(__dirname,'..');
 const stage = process.argv[2] || 'after';
@@ -27,6 +28,7 @@ function html(node) {
 }
 const cases=[['Home','recent'],['Home','empty'],['BookLibrary','all'],['BookLibrary','empty'],['Practice','idle'],['Practice','recording'],['Practice','paused'],['Practice','saved'],['Practice','save-failed'],['Practice','directory'],['Practice','error'],['CheckInDetail','local'],['CheckInDetail','playing'],['CheckInDetail','loading'],['CheckInDetail','error'],['CheckInDetail','shared'],['MyCheckIns','records'],['MyCheckIns','empty'],['MyCheckIns','offline'],['MyCheckIns','delete-pending']];
 const textScaleCases=[['Home','recent',1.5],['Home','recent',2],['MyCheckIns','records',1.5],['MyCheckIns','records',2]];
+cases.push(['CheckInDetail','expired'],['CheckInDetail','missing'],['CheckInDetail','network']);
 async function surface(name,state,profile) {
   const item=sampleRecording('7');
   const shareId='b'.repeat(64);
@@ -39,7 +41,11 @@ async function surface(name,state,profile) {
   if(name==='CheckInDetail') {
     options.params={localId:item.requestId};options.pendingItems=[state==='shared'?sharedItem:item];
     if(state==='error') options.pendingItems=[];
-    if(state==='loading') options.overrides={'@/features/listeningPractice/pendingCheckInRuntime':{getPendingCheckInStore:()=>({list:()=>[],ready:()=>new Promise(()=>{})})}};
+    if(state==='loading') options.overrides={'@/features/listeningPractice/pendingCheckInRuntime':{getPendingCheckInStore:()=>({list:()=>[],ready:()=>new Promise(()=>{})}),getActivePendingRecovery:()=>undefined}};
+    if(['expired','missing','network'].includes(state)) {
+      options.params={id:'ui-share',token:'ui-token'};
+      options.overrides={'@/services/cloudCheckIn':{getShareReadFailure,getCheckInDetail:async()=>{throw {code:{expired:'SHARE_EXPIRED',missing:'NOT_FOUND',network:'ETIMEDOUT'}[state]};}}};
+    }
   }
   if(name==='MyCheckIns') {
     options.pendingItems=state==='empty'?[]:state==='delete-pending'?[sharedItem]:[item,sampleRecording('13'),sampleRecording('20')];
@@ -70,7 +76,10 @@ async function surface(name,state,profile) {
     if(name==='Practice'&&state==='save-failed') assert.match(html(tree),/录音保存失败/,'存储失败场景必须实际显示失败与重试入口');
     if(name==='Practice'&&state==='paused') assert.ok(byClass(tree,'record-button--resume'),'暂停场景必须显示继续录音按钮');
     if(name==='CheckInDetail'&&state==='playing') assert.match(html(tree),/0:03/,'播放场景必须实际显示当前秒数');
-    if(name==='CheckInDetail'&&state==='shared') assert.ok(byClass(tree,'shared-recording__repair'),'已分享本机录音必须显示分享修复入口');
+    if(name==='CheckInDetail') assert.equal(byClass(tree,'shared-recording__repair'),undefined,'所有详情状态均移除检查分享入口');
+    if(name==='CheckInDetail'&&state==='expired') assert.match(html(tree),/分享已过期，请重新分享.*30 天.*重新分享/,'云分享失效必须显示用户指定文案');
+    if(name==='CheckInDetail'&&state==='missing') assert.match(html(tree),/分享暂不可用.*重新分享/,'不存在的分享不能断言超过30天');
+    if(name==='CheckInDetail'&&state==='network') assert.match(html(tree),/网络请求超时.*重试/,'网络异常不能显示过期文案');
     if(name==='MyCheckIns'&&state==='delete-pending') {
       const rendered=html(tree);
       assert.match(rendered,/待删除/,'云端待删录音必须显示待删除状态');
@@ -102,7 +111,7 @@ async function applyTextScale(page,scale) {
     const profile={windowWidth:width,windowHeight:height,isPad,orientation:width>height?'landscape':'portrait',isSplit:isPad&&width>=960&&height>=600,statusBarHeight:20,safeAreaBottom};
     const context=await browser.newContext({viewport:{width,height}});const page=await context.newPage();
     const scaledCases=(width===390&&height===844)||(width===1024&&height===768)?textScaleCases:[];
-    const scenarios=bottomFocus?[['Home','recent',2]]:[...cases.map(([name,state])=>[name,state,1]),...scaledCases];
+    const scenarios=bottomFocus?[['Home','recent',2]]:stage==='share-read'?cases.filter(([name])=>name==='CheckInDetail').map(([name,state])=>[name,state,1]):[...cases.map(([name,state])=>[name,state,1]),...scaledCases];
     for(const [name,state,textScale] of scenarios){
       const body=(await surface(name,state,profile)).replace(/(-?[\d.]+)rpx/g,(_,v)=>Number(v)*width/750+'px');
       // 加载实际构建产物，额外导航组件的样式由页面 bundle 自动收集。
@@ -141,6 +150,9 @@ async function applyTextScale(page,scale) {
           if(home){const s=getComputedStyle(home);if(s.boxShadow!=='none'||!['rgba(0, 0, 0, 0)','transparent'].includes(s.backgroundColor))errors.push('首页图标残留背景或阴影');}
         }
         if(document.documentElement.scrollWidth>window.innerWidth+1) errors.push('页面横向溢出');
+        if(surfaceName==='CheckInDetail') for(const selector of ['.check-in-state__title','.check-in-state__message']) {
+          const element=$(selector); if(element&&textIsClipped(element)) errors.push(`分享状态文案被裁切:${selector}`);
+        }
         const content=$(surfaceName==='Home'?'.library-home__content':surfaceName==='BookLibrary'?'.book-library':surfaceName==='Practice'?'.practice-page, .practice-empty':surfaceName==='MyCheckIns'?'.my-check-ins':'.check-in-detail, .check-in-state');
         const padding=content?parseFloat(getComputedStyle(content).paddingLeft):null;
         if(content&&padding<10) errors.push('正文左右留白丢失');

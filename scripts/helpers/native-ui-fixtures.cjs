@@ -3,7 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
 const React = require("react");
-const { createPage, buildBookPracticeBundle } = require("../test-practice-book-route.cjs");
+const { createPage, buildBookPracticeBundle, load } = require("../test-practice-book-route.cjs");
+const { getShareReadFailure } = load("src/services/cloudCheckIn.ts");
 
 // 只隔离微信原生 API；执行已安装图标组件、工具函数及 Taro 的真实尺寸换算。
 function evaluateModule(file, overrides = {}) {
@@ -56,9 +57,10 @@ function createUiPage(name, options = {}) {
         listMyCheckIns: async () => { if (options.cloudError) throw new Error("network unavailable"); return options.cloudRecords || []; },
         getCheckInDetail: async () => { if (options.detailError) throw new Error(options.detailError); return options.detail; },
         getReadableCloudError: error => error.message,
+        getShareReadFailure,
       },
       ...(name === "MyCheckIns" || name === "CheckInDetail" ? {
-        "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => ({ ready: async () => {}, cleanup: async () => {}, list: () => pending }) },
+        "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => ({ ready: async () => {}, cleanup: async () => {}, list: () => pending }), getActivePendingRecovery: () => undefined, logRecordingDiagnostic: () => {} },
       } : {}),
       ...options.overrides,
     },
