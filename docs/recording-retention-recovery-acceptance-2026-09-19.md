@@ -57,7 +57,7 @@
 - 保存后索引写入或指纹读取失败的重试状态仅存在于当前小程序进程：当前会话只读已保存路径，不再次下载或移动；若进程结束，保存文件可能成为无法追踪的孤立文件。持久索引成功后可离线重启读取，但不能据此承诺永久存储。
 - 新诊断日志已脱敏，只允许固定阶段、短编号、数值或白名单错误码、大小/指纹一致性和实际可用的平台/版本；不输出完整标识、路径、URL、token、SHA、OPENID、storage 原文或原始 error data。
 
-## 最终代码验证（父代理已执行）
+## 首轮完整代码验证（父代理已执行）
 
 以下证据均在最终代码 `ef06309046153d12bfe1567c8c958a778004e7e9` 上由父代理实际执行；不代表真机验收或线上部署。本任务未重复运行代码套件。
 
@@ -90,6 +90,25 @@ $env:PATH = 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependen
 exec session 95778，exit 0。`dist/app.json`、`dist/pages/CheckInDetail/CheckInDetail.js` 时间为 2026-09-19 12:53:36；`dist/common.js` 包含“从分享恢复”和 `RECOVERY_CHANGED`。已有警告：caniuse-lite 陈旧、taro-ui Sass 弃用、webpack 推荐体积阈值（common.js 520 KiB，app-origin.wxss 346 KiB）、NoAsyncChunksWarning；未为本任务升级依赖。
 
 构建前后 `project.config.json`、`project.private.config.json`、`cloudfunctions/cleanupExpiredShares/config.json` 的 SHA256 全部一致；`git diff --check -- src scripts` 无错误。没有清除真实录音或云端数据，没有部署、发布或推送；cleanup 触发器保留用户的空数组。
+
+## 最终总审查补修与重新验证
+
+总审查发现一项完整性缺口：旧记录已有 SHA 时，恢复还应同时比较原来的实测大小，而不能只比较 SHA。提交 `df22c24` 在恢复协调层和仓储入口均补齐校验；无旧 SHA 的 legacy 仍兼容不准确的 onStop 大小。新增两个拒绝测试先以 `Missing expected rejection` 失败；修复后恢复测试 31/31，通过零保存、零索引写入、保留原引用及只清理下载临时文件的断言，另覆盖旧基准相同的成功恢复。
+
+独立最终复审覆盖本轮 `ad93a51..df22c24`：要求符合性通过，无未解决 Critical、Important 或 Minor；这是代码级结论，不代表真机或线上验收。
+
+父代理在最终代码 `df22c24` 上重新执行完整测试：
+
+```powershell
+$retentionFinalFiles = @(rg --files scripts -g 'test-*.cjs' | Sort-Object)
+& 'C:/Users/23237/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe' -e 'const {spawnSync}=require("node:child_process");const files=process.argv.slice(1);let failed=0;for(const file of files){const start=Date.now();const r=spawnSync(process.execPath,[file],{encoding:"utf8",timeout:30000,maxBuffer:4194304,windowsHide:true});const ok=r.status===0&&!r.error;if(!ok)failed++;console.log(JSON.stringify({file,status:r.status,ok,ms:Date.now()-start,...(!ok?{error:r.error?.message,stdout:r.stdout,stderr:r.stderr}:{warnings:(r.stderr||"").trim().slice(0,500)})}));}console.log(JSON.stringify({total:files.length,passed:files.length-failed,failed}));process.exitCode=failed?1:0;' @retentionFinalFiles
+```
+
+exec session 74665，exit 0，`{"total":43,"passed":43,"failed":0}`，无跳过。恢复用例已增至 31 条；测试文件总数仍为 43。roundtrip 模拟大小修正日志与 ui-layout Browserslist 提醒仍存在。
+
+同时重新执行上节完整的 `tsc --noEmit --skipLibCheck` 和 `taro build --type weapp` 命令：均 exit 0，构建 session 53955。构建仍有第三方 Taroify/taro-ui Sass 弃用、Browserslist 数据陈旧、推荐资源体积与 NoAsyncChunks 警告；未更改依赖。再次核对三份用户配置 SHA256 完全一致，`git diff --check ad93a51..df22c24` 无错误。
+
+代码保留在原分支 `codex/practice-home-navigation` 和原工作区，未合并、推送、部署、发布或清除真实录音。下述真机门槛仍需完成。
 
 ## 恢复与数据安全边界
 
