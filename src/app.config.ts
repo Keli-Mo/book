@@ -1,6 +1,10 @@
 export default defineAppConfig({
   resizable: true,
   lazyCodeLoading: "requiredComponents",
+  // Taro 的虚拟 comp 在按需注入时路径会变成 wx://not-found，闸门页白屏。
+  componentPlaceholder: {
+    comp: "view",
+  },
   pages: [
     "pages/Launch/Launch",
     "pages/Home/Home",

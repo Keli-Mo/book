@@ -1,6 +1,6 @@
 import { BOOKS, resolveBookAction } from "@/features/bookLibrary/bookCatalog";
 import type { ReadingProgress } from "@/features/bookLibrary/readingProgress";
-import { CLOUD_ENV_ID, initCloudHosting } from "@/cloud";
+import { CLOUD_ENV_ID, CLOUD_RUN_ENV_ID, initCloudHosting } from "@/cloud";
 
 export type AppEntryMode = "intro" | "practice";
 
@@ -12,7 +12,7 @@ export const HOME_FALLBACK_URL = "/pages/Home/Home";
 export const INTRO_URL = "/pages/Intro/Intro";
 export const CLOUD_HOSTING_SERVICE = "koa-hwx1";
 export const APP_ENTRY_PATH = "/api/app-entry";
-export { CLOUD_ENV_ID, initCloudHosting };
+export { CLOUD_ENV_ID, CLOUD_RUN_ENV_ID, initCloudHosting };
 
 /** 仅 Node 测试或没有 wx.cloud 时使用；真机/开发者工具走 haisha-server。 */
 export const MOCK_APP_ENTRY_MODE: AppEntryMode = "intro";
@@ -75,23 +75,20 @@ const delay = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
-type CloudContainerClient = {
-  callContainer: (options: {
-    config: { env: string };
-    path: string;
-    method: string;
-    header: Record<string, string>;
-    timeout: number;
-    dataType: string;
-  }) => Promise<unknown>;
-};
-
 /**
- * 请求 haisha-server 的 GET /api/app-entry。开发者工具/真机走云托管；仅无 wx.cloud 时用 mock。
- * GET 不要带 application/json：网关会按有 body 处理，callContainer 容易直接 500。
+ * 按微信云托管官方示例调用 GET /api/app-entry。
  */
 export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
-  const cloud = initCloudHosting() as (WxCloud & Partial<CloudContainerClient>) | undefined;
+  const cloud = initCloudHosting() as
+    | (WxCloud & {
+        callContainer?: (options: {
+          config: { env: string };
+          path: string;
+          header: Record<string, string>;
+          method: string;
+        }) => Promise<unknown>;
+      })
+    | undefined;
   const callContainer = cloud?.callContainer;
   if (typeof callContainer !== "function") {
     await delay(MOCK_NETWORK_DELAY_MS);
@@ -99,14 +96,14 @@ export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
   }
 
   const response = await callContainer.call(cloud, {
-    config: { env: CLOUD_ENV_ID },
+    config: {
+      env: CLOUD_RUN_ENV_ID,
+    },
     path: APP_ENTRY_PATH,
-    method: "GET",
     header: {
       "X-WX-SERVICE": CLOUD_HOSTING_SERVICE,
     },
-    timeout: 15000,
-    dataType: "text",
+    method: "GET",
   });
   const mode = readAppEntryMode(response);
   if (!mode) throw new Error("invalid app entry");
