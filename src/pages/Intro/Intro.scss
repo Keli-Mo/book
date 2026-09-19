@@ -1,0 +1,135 @@
+.intro-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #f4f7fb;
+  color: #1d2a3a;
+}
+
+.intro-screen__navigation {
+  box-sizing: border-box;
+  padding-right: 18PX;
+  padding-left: 18PX;
+  background: #f4f7fb;
+}
+
+.intro-screen__navigation-main {
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+}
+
+.intro-screen__title {
+  overflow: hidden;
+  color: #17324a;
+  font-size: 34rpx;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.intro-screen__content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  padding: 12rpx 28rpx 56rpx;
+}
+
+.intro-article {
+  box-sizing: border-box;
+  padding: 36rpx 32rpx 40rpx;
+  border-radius: 28rpx;
+  background: #eef6fb;
+}
+
+.intro-article__header {
+  display: flex;
+  align-items: center;
+  padding-bottom: 18rpx;
+  border-bottom: 2rpx solid rgba(126, 183, 230, 0.45);
+}
+
+.intro-article__brand {
+  display: flex;
+  align-items: center;
+  color: #1d4f7a;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.intro-article__dot {
+  width: 14rpx;
+  height: 14rpx;
+  margin-right: 12rpx;
+  border-radius: 50%;
+  background: #5aa6de;
+}
+
+.intro-article__label {
+  margin-left: auto;
+  color: #7aa7c9;
+  font-size: 24rpx;
+  font-weight: 600;
+  letter-spacing: 1rpx;
+}
+
+.intro-article__quote {
+  margin-left: 12rpx;
+  color: #7eb7e6;
+  font-size: 48rpx;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.intro-article__lead,
+.intro-article__heading,
+.intro-article__item {
+  display: block;
+}
+
+.intro-article__lead {
+  margin-top: 28rpx;
+  color: #2a3d4f;
+  font-size: 28rpx;
+  line-height: 1.7;
+}
+
+.intro-article__heading {
+  margin-top: 36rpx;
+  color: #17324a;
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.intro-article__item {
+  margin-top: 16rpx;
+  color: #2a3d4f;
+  font-size: 28rpx;
+  line-height: 1.65;
+}
+
+.intro-footer {
+  display: flex;
+  margin-top: auto;
+  padding-top: 48rpx;
+  flex-direction: column;
+  align-items: center;
+}
+
+.intro-footer__mark {
+  color: #1d4f7a;
+  font-size: 36rpx;
+  font-weight: 800;
+  letter-spacing: 4rpx;
+}
+
+.intro-footer__name {
+  margin-top: 4rpx;
+  color: #5a7a94;
+  font-size: 22rpx;
+  letter-spacing: 10rpx;
+}

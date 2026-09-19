@@ -50,6 +50,7 @@
     "test:hotspot-layout": "node scripts/test-hotspot-layout.cjs",
     "test:responsive-pages": "node scripts/test-responsive-page-contract.cjs",
     "test:book-catalog": "node scripts/test-book-catalog.cjs",
+    "test:app-entry": "node scripts/test-app-entry.cjs",
     "test:book-library-pages": "node scripts/test-book-library-pages.cjs",
     "test:home-navigation": "node scripts/test-home-navigation.cjs",
     "test:ui-refinements": "node scripts/test-ui-refinements.cjs",
@@ -119,5 +120,6 @@
     "tsconfig-paths-webpack-plugin": "^4.1.0",
     "typescript": "^5.4.5",
     "webpack": "5.91.0"
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

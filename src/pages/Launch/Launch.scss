@@ -1,0 +1,16 @@
+.launch-screen {
+  display: flex;
+  min-height: 100vh;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 88% 4%, rgba(210, 239, 229, 0.42), transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, #f7faf9 100%);
+}
+
+.launch-screen__status {
+  color: #2f856a;
+  font-size: 30rpx;
+  font-weight: 600;
+}
