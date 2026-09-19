@@ -104,6 +104,11 @@ const load = (file, overrides = {}, cache = new Map()) => {
 
   assert.equal(readAppEntryMode({ mode: "practice" }), "practice");
   assert.equal(readAppEntryMode({ data: { ok: true, mode: "intro" } }), "intro");
+  assert.equal(
+    readAppEntryMode({ statusCode: 200, data: '{"ok":true,"mode":"intro"}' }),
+    "intro",
+  );
+  assert.equal(readAppEntryMode({ statusCode: 500, data: { mode: "intro" } }), null);
   assert.equal(readAppEntryMode({ data: { mode: "other" } }), null);
 
   const delayed = [];
@@ -140,6 +145,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
   assert.deepEqual(await hosted.fetchAppEntryMode(), { mode: "practice" });
   assert.equal(calls[0].path, "/api/app-entry");
   assert.equal(calls[0].header["X-WX-SERVICE"], "koa-hwx1");
+  assert.equal(calls[0].config.env, "cloud1-6geu18jg425a604e");
 
   const appConfig = read("src/app.config.ts");
   assert.match(

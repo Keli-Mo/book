@@ -1,5 +1,6 @@
 import { BOOKS, resolveBookAction } from "@/features/bookLibrary/bookCatalog";
 import type { ReadingProgress } from "@/features/bookLibrary/readingProgress";
+import { CLOUD_ENV_ID, initCloudHosting } from "@/cloud";
 
 export type AppEntryMode = "intro" | "practice";
 
@@ -11,19 +12,37 @@ export const HOME_FALLBACK_URL = "/pages/Home/Home";
 export const INTRO_URL = "/pages/Intro/Intro";
 export const CLOUD_HOSTING_SERVICE = "koa-hwx1";
 export const APP_ENTRY_PATH = "/api/app-entry";
+export { CLOUD_ENV_ID, initCloudHosting };
 
-/** 启动分流接口在独立仓库 haisha-server；本地无云托管时用此开关。 */
+/** 仅 Node 测试或没有 wx.cloud 时使用；真机/开发者工具走 haisha-server。 */
 export const MOCK_APP_ENTRY_MODE: AppEntryMode = "intro";
 
-const CLOUD_ENV_ID = "cloud1-6geu18jg425a604e";
 const MOCK_NETWORK_DELAY_MS = 180;
 
 export const isAppEntryMode = (value: unknown): value is AppEntryMode =>
   value === "intro" || value === "practice";
 
+const parseJson = (value: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch (_error) {
+    return value;
+  }
+};
+
 export function readAppEntryMode(payload: unknown): AppEntryMode | null {
-  if (!payload || typeof payload !== "object") return null;
-  const body = "data" in payload ? (payload as { data: unknown }).data : payload;
+  if (payload && typeof payload === "object" && "statusCode" in payload) {
+    const statusCode = (payload as { statusCode: unknown }).statusCode;
+    if (typeof statusCode === "number" && (statusCode < 200 || statusCode >= 300)) {
+      return null;
+    }
+  }
+
+  const nested =
+    payload && typeof payload === "object" && "data" in payload
+      ? (payload as { data: unknown }).data
+      : payload;
+  const body = typeof nested === "string" ? parseJson(nested) : nested;
   if (!body || typeof body !== "object") return null;
   const mode = (body as { mode?: unknown }).mode;
   return isAppEntryMode(mode) ? mode : null;
@@ -65,23 +84,18 @@ type CloudContainerClient = {
   }) => Promise<unknown>;
 };
 
-const getCallContainer = () => {
-  if (typeof wx === "undefined" || !wx.cloud) return undefined;
-  const callContainer = (wx.cloud as typeof wx.cloud & Partial<CloudContainerClient>).callContainer;
-  return typeof callContainer === "function" ? callContainer.bind(wx.cloud) : undefined;
-};
-
 /**
- * 启动分流只经过这里。有云托管则请求 koa-hwx1（haisha-server），没有 callContainer 时用本地 mock。
+ * 请求 haisha-server 的 GET /api/app-entry。开发者工具/真机走云托管；仅无 wx.cloud 时用 mock。
  */
 export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
-  const callContainer = getCallContainer();
-  if (!callContainer) {
+  const cloud = initCloudHosting() as (WxCloud & Partial<CloudContainerClient>) | undefined;
+  const callContainer = cloud?.callContainer;
+  if (typeof callContainer !== "function") {
     await delay(MOCK_NETWORK_DELAY_MS);
     return { mode: MOCK_APP_ENTRY_MODE };
   }
 
-  const response = await callContainer({
+  const response = await callContainer.call(cloud, {
     config: { env: CLOUD_ENV_ID },
     path: APP_ENTRY_PATH,
     method: "GET",
