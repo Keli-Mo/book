@@ -48,7 +48,7 @@ export const createRecordingRecovery = (adapters: RecoveryAdapters) => {
           !/^[0-9a-f]{40}$/i.test(info.contentSha1) ||
           (source.fileSizeBytes !== undefined && source.fileSizeBytes !== info.fileSizeBytes) ||
           (source.contentSha1 !== undefined && source.contentSha1.toLowerCase() !== info.contentSha1.toLowerCase()) ||
-          (snapshot.contentSha1 !== undefined && snapshot.contentSha1.toLowerCase() !== info.contentSha1.toLowerCase()) ||
+          (snapshot.contentSha1 !== undefined && (snapshot.fileSizeBytes !== info.fileSizeBytes || snapshot.contentSha1.toLowerCase() !== info.contentSha1.toLowerCase())) ||
           (source.expiresAtMs !== undefined && source.expiresAtMs <= adapters.now())) {
         throw recoveryError("RECOVERY_VERIFY_FAILED");
       }

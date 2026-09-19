@@ -137,9 +137,34 @@ test('saved-file verification failures retry existing saved file with no additio
   assert.equal(h.savedPaths.length, 1);
 });
 test('known old SHA cannot be replaced with a different authorized share body', async () => {
-  const h = setup({ item: { ...original(), contentSha1: 'e'.repeat(40) } });
+  const h = setup({ item: { ...original(), fileSizeBytes: 100, contentSha1: 'e'.repeat(40) } });
   const p = h.runtime.recoverPendingRecording(id), rejected = assert.rejects(p); await settle(); h.complete(); await rejected;
   assert.equal(h.savedPaths.length, 0); assert.equal(h.runtime.getPendingCheckInStore().list()[0].contentSha1, 'e'.repeat(40));
+});
+test('known old SHA with contradictory old size is rejected before save and only discards the download', async () => {
+  const old = { ...original(), contentSha1: sha };
+  const h = setup({ item: old });
+  const writesBefore = h.writes;
+  const p = h.runtime.recoverPendingRecording(id), rejected = assert.rejects(p, { code: 'RECOVERY_VERIFY_FAILED' });
+  await settle(); h.complete(); await rejected;
+  assert.equal(h.savedPaths.length, 0); assert.equal(h.writes, writesBefore);
+  assert.equal(JSON.stringify(h.runtime.getPendingCheckInStore().list()[0]), JSON.stringify(old));
+  assert.deepEqual(h.removed, ['wxfile://download-private.mp3']);
+});
+test('direct restore rejects contradictory old size when old SHA matches', async () => {
+  const old = { ...original(), contentSha1: sha };
+  const h = setup({ item: old }), store = h.runtime.getPendingCheckInStore();
+  await store.ready();
+  h.files.set('wxfile://direct-download.mp3', { size: 100, digest: sha });
+  const writesBefore = h.writes;
+  await assert.rejects(store.restoreRecording(store.list()[0], 'wxfile://direct-download.mp3', { fileSizeBytes: 100, contentSha1: sha }), { code: 'RECOVERY_VERIFY_FAILED' });
+  assert.equal(h.savedPaths.length, 0); assert.equal(h.writes, writesBefore);
+  assert.equal(JSON.stringify(store.list()[0]), JSON.stringify(old));
+});
+test('known old SHA and matching old size can recover', async () => {
+  const h = setup({ item: { ...original(), fileSizeBytes: 100, contentSha1: sha } });
+  const p = h.runtime.recoverPendingRecording(id); await settle(); h.complete();
+  assert.equal((await p).localPath, 'wxfile://recovered-0.mp3');
 });
 test('capacity is rechecked after download when another operation consumes space', async () => {
   const h = setup(); const p = h.runtime.recoverPendingRecording(id), rejected = assert.rejects(p); await settle();

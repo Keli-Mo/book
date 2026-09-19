@@ -737,7 +737,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       if (!isPositiveInteger(actual.fileSizeBytes) || actual.fileSizeBytes > MAX_RECORDING_FILE_BYTES ||
           !isContentSha1(actual.contentSha1) || actual.fileSizeBytes !== info.fileSizeBytes ||
           actual.contentSha1.toLowerCase() !== info.contentSha1.toLowerCase() ||
-          (snapshot.contentSha1 && snapshot.contentSha1.toLowerCase() !== actual.contentSha1.toLowerCase())) {
+          (snapshot.contentSha1 && (snapshot.fileSizeBytes !== actual.fileSizeBytes || snapshot.contentSha1.toLowerCase() !== actual.contentSha1.toLowerCase()))) {
         throw Object.assign(new Error("恢复文件校验失败，原录音已保留"), { code: "RECOVERY_VERIFY_FAILED" });
       }
       if (info.expiresAtMs !== undefined && info.expiresAtMs <= adapters.clock.now()) throw Object.assign(new Error("恢复来源已过期，原录音已保留"), { code: "SHARE_EXPIRED" });
