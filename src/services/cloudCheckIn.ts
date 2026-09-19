@@ -1,4 +1,5 @@
 export const CHECK_IN_FUNCTION_NAME = "checkIn";
+const MAX_RECORDING_BYTES = 8 * 1024 * 1024;
 
 export interface CreateCheckInInput {
   recordingFileId: string;
@@ -58,6 +59,14 @@ export interface CheckInDetail extends CheckInSummary {
   isOwner: boolean;
 }
 
+export interface RecordingRecoverySource {
+  id: string;
+  recordingUrl: string;
+  expiresAtMs?: number;
+  fileSizeBytes?: number;
+  contentSha1?: string;
+}
+
 interface CloudFunctionResponse<T> {
   ok: boolean;
   data?: T;
@@ -105,6 +114,8 @@ const cloudErrorMessages = Object.freeze<Record<string, string>>({
   UNAUTHENTICATED: "无法识别当前微信用户",
   NOT_FOUND: "打卡记录不存在或已失效",
   RECORDING_INFO_INVALID: "无法读取有效的录音文件信息，请重试",
+  RECOVERY_SOURCE_INVALID: "云录音恢复信息异常，请稍后重试",
+  RECOVERY_RESPONSE_INVALID: "云录音恢复信息异常，请稍后重试",
   CLOUD_FUNCTION_NOT_FOUND: "云函数尚未部署，请先在微信开发者工具中上传并部署 checkIn 云函数",
   DATABASE_COLLECTION_NOT_FOUND: "云数据库尚未创建 checkins 集合，请先按部署说明完成初始化",
   STORAGE_ERROR: "录音上传失败，请检查网络或云存储配置后重试",
@@ -278,6 +289,26 @@ export const getCheckInDetail = (id: string, shareToken?: string) =>
     id,
     shareToken: shareToken || "",
   });
+
+export const getCheckInRecoverySource = async (id: string): Promise<RecordingRecoverySource> => {
+  const result = await callCheckInFunction<unknown>({ action: "recoverySource", id });
+  const value = result && typeof result === "object" ? result as Partial<RecordingRecoverySource> : null;
+  const validOptionalInteger = (field: unknown, max = Number.MAX_SAFE_INTEGER) => field === undefined ||
+    (Number.isSafeInteger(field) && (field as number) > 0 && (field as number) <= max);
+  if (!value || value.id !== id || typeof value.recordingUrl !== "string" ||
+      !/^https:\/\/[^\s]+$/i.test(value.recordingUrl) ||
+      !validOptionalInteger(value.expiresAtMs) || !validOptionalInteger(value.fileSizeBytes, MAX_RECORDING_BYTES) ||
+      (value.contentSha1 !== undefined && (typeof value.contentSha1 !== "string" || !/^[a-f0-9]{40}$/.test(value.contentSha1)))) {
+    throw shareResponseError("RECOVERY_RESPONSE_INVALID");
+  }
+  return {
+    id: value.id,
+    recordingUrl: value.recordingUrl,
+    ...(value.expiresAtMs === undefined ? {} : { expiresAtMs: value.expiresAtMs }),
+    ...(value.fileSizeBytes === undefined ? {} : { fileSizeBytes: value.fileSizeBytes }),
+    ...(value.contentSha1 === undefined ? {} : { contentSha1: value.contentSha1 }),
+  };
+};
 
 export const listMyCheckIns = () =>
   callCheckInFunction<CheckInSummary[]>({ action: "listMine" });

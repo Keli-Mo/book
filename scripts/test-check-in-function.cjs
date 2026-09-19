@@ -741,6 +741,58 @@ test("已有旧 fixture 的 owner、口令、列表及本人删除重试兼容",
   h.controls.deleteStatus = 0; assert.equal((await h.call("remove", { id })).ok, true); assert.equal(h.records.size, 0);
 });
 
+test("recoverySource 仅向可信 OPENID 对应 owner 返回精确恢复字段，分享口令不能越权", async () => {
+  const h = harness(), source = input({ shareVersion: 2 }), p = await h.prepare(source), event = { ...source, recordingFileId: h.upload(p) };
+  assert.equal((await h.call("commit", event)).ok, true);
+  const record = h.records.get(p.id), before = plain([...h.records]);
+  const recovered = await h.call("recoverySource", { id: p.id, shareToken: record.shareToken });
+  assert.equal(recovered.ok, true, recovered.message);
+  assert.deepEqual(plain(recovered.data), {
+    id: p.id,
+    recordingUrl: signing(record.recordingFileId).fileList[0].tempFileURL,
+    expiresAtMs: record.expiresAtMs,
+    fileSizeBytes: record.fileSizeBytes,
+    contentSha1: record.contentSha1,
+  });
+  assert.deepEqual(plain([...h.records]), before); assert.equal(h.metrics.deletes, 0); assert.equal(h.metrics.downloads, 1);
+  h.controls.owner = "visitor"; const signed = h.metrics.signed;
+  const forbidden = await h.call("recoverySource", { id: p.id, shareToken: record.shareToken });
+  assert.equal(forbidden.code, "FORBIDDEN"); assert.equal(h.metrics.signed, signed);
+  assert.equal((await h.call("detail", { id: p.id, shareToken: record.shareToken })).ok, true, "普通分享访问保持可用");
+});
+
+test("recoverySource 对过期、删除、未提交和引用矛盾均在签名前失败", async () => {
+  for (const mode of ["expired", "deleted", "pending", "conflict"]) {
+    const h = harness(), source = input({ shareVersion: 2 }), p = await h.prepare(source), event = { ...source, recordingFileId: h.upload(p) };
+    if (mode !== "pending") assert.equal((await h.call("commit", event)).ok, true);
+    const record = h.records.get(p.id);
+    if (mode === "expired") record.expiresAtMs = 1;
+    if (mode === "deleted") record.status = "deleted";
+    if (mode === "conflict") h.records.set("foreign-alias", { ...record, _id: "foreign-alias", _openid: "other" });
+    const signed = h.metrics.signed, result = await h.call("recoverySource", { id: p.id });
+    assert.equal(result.ok, false, mode); assert.equal(h.metrics.signed, signed, mode);
+  }
+  const legacy = harness(), legacyRecord = legacyFixture(legacy, { status: "pending" }), signed = legacy.metrics.signed;
+  assert.equal((await legacy.call("recoverySource", { id: legacyRecord._id })).ok, false);
+  assert.equal(legacy.metrics.signed, signed);
+});
+
+test("recoverySource 兼容本人合法旧记录且不伪造缺失指纹", async () => {
+  const h = harness(), record = legacyFixture(h);
+  const result = await h.call("recoverySource", { id: record._id });
+  assert.equal(result.ok, true, result.message);
+  assert.deepEqual(plain(result.data), { id: record._id, recordingUrl: signing(record.recordingFileId).fileList[0].tempFileURL });
+});
+
+test("recoverySource 对已存在的坏恢复元数据失败关闭且不签名", async () => {
+  for (const patch of [{ fileSizeBytes: 0 }, { fileSizeBytes: 1.5 }, { fileSizeBytes: 8 * 1024 * 1024 + 1 },
+    { contentSha1: "bad" }, { contentSha1: "A".repeat(40) }]) {
+    const h = harness(), record = legacyFixture(h, patch), signed = h.metrics.signed;
+    const result = await h.call("recoverySource", { id: record._id });
+    assert.equal(result.code, "RECOVERY_SOURCE_INVALID"); assert.equal(h.metrics.signed, signed);
+  }
+});
+
 (async () => { let failures = 0; for (const { name, run } of cases) {
   try { await run(); console.log(`PASS ${name}`); } catch (error) { failures++; console.error(`FAIL ${name}: ${error.message}`); }
 } assert.equal(failures, 0, `${failures}/${cases.length} 项云函数契约失败`);

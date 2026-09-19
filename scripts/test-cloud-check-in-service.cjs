@@ -50,6 +50,32 @@ test("分享核验只接受明确的状态枚举，不上传且拒绝畸形成�
   await assert.rejects(h.api.getCheckInShareStatus("id", "a".repeat(32)), error => error.code === "SHARE_STATUS_UNAVAILABLE");
   assert.equal(h.uploads.length, 0); assert.equal(h.deletes(), 0);
 });
+test("本人恢复源只发送 id，并严格校验云端恢复字段", async () => {
+  const h = harness();
+  assert.equal(typeof h.api.getCheckInRecoverySource, "function");
+  h.controls.response.data = { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3",
+    expiresAtMs: 1_800_000_000_000, fileSizeBytes: 1000, contentSha1: "a".repeat(40), ignored: "not-trusted" };
+  assert.deepEqual(plain(await h.api.getCheckInRecoverySource("record-id")), {
+    id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3",
+    expiresAtMs: 1_800_000_000_000, fileSizeBytes: 1000, contentSha1: "a".repeat(40) });
+  assert.deepEqual(plain(h.calls[0].data), { action: "recoverySource", id: "record-id" });
+  assert.equal(h.uploads.length, 0); assert.equal(h.deletes(), 0);
+  h.controls.response.data = { id: "legacy", recordingUrl: "https://temp.example.test/legacy.mp3" };
+  assert.deepEqual(plain(await h.api.getCheckInRecoverySource("legacy")), h.controls.response.data);
+  for (const data of [
+    { id: "other", recordingUrl: "https://temp.example.test/audio.mp3" },
+    { id: "record-id", recordingUrl: "http://temp.example.test/audio.mp3" },
+    { id: "record-id", recordingUrl: "not-a-url" },
+    { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3", fileSizeBytes: 0 },
+    { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3", fileSizeBytes: 1.5 },
+    { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3", fileSizeBytes: 8 * 1024 * 1024 + 1 },
+    { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3", contentSha1: "A".repeat(40) },
+    { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3", contentSha1: "bad" },
+  ]) {
+    h.controls.response.data = data;
+    await assert.rejects(h.api.getCheckInRecoverySource("record-id"), error => error.code === "RECOVERY_RESPONSE_INVALID");
+  }
+});
 test("新协议与原生 SHA1 接口存在", async () => {
   const { api } = harness();
   for (const name of ["prepareCheckIn", "commitCheckIn", "getCheckInRecordingInfo", "startPreparedCheckInUpload"])

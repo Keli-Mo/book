@@ -12,7 +12,7 @@ const checkIns = db.collection("checkins");
 const success = (data) => ({ ok: true, data });
 const failure = (message, code = "CHECK_IN_ERROR") => ({ ok: false, code, message });
 const reject = (code, message) => { throw Object.assign(new Error(message), { code }); };
-const knownActions = new Set(["prepare", "commit", "create", "detail", "listMine", "shareStatus", "remove"]);
+const knownActions = new Set(["prepare", "commit", "create", "detail", "recoverySource", "listMine", "shareStatus", "remove"]);
 const publicMessages = Object.freeze({
   CHECK_IN_ERROR: "云端服务暂时不可用，请稍后重试",
   INVALID_ARGUMENT: "提交的信息格式不正确，请重试",
@@ -30,6 +30,7 @@ const publicMessages = Object.freeze({
   SHARE_NOT_COMMITTED: "分享尚未完成，请稍后重试",
   INVALID_FILE_ID: "录音文件信息不匹配，请重试",
   RECORDING_FILE_MISMATCH: "录音文件校验失败，请重试",
+  RECOVERY_SOURCE_INVALID: "云录音恢复信息异常，请稍后重试",
   CLOUD_ENV_UNAVAILABLE: "云端服务配置暂不可用",
 });
 const safeCode = error => {
@@ -249,17 +250,34 @@ const toPublicSummary = (record) => ({
   ...(record.shareVersion === 2 ? { expiresAtMs: record.expiresAtMs } : {}),
 });
 
-const getDetail = async (event, openId) => {
-  const id = requireText(event.id, "打卡编号", 100);
-  const result = await checkIns.doc(id).get();
-  const record = result.data;
+const unavailableRecord = (record, rejectPending = false) => {
   if (record?.shareVersion === 2 && (isExpired(record) || record.status === "deletePending" || record.status === "deleted")) {
     return failure("分享已过期或失效", "SHARE_EXPIRED");
   }
   if (record?.shareVersion === 2 && record.status !== "active") return failure("分享尚未完成", "NOT_FOUND");
-  if (!record || record.status === "deletePending" || record.status === "deleted") {
+  if (!record || record.status === "deletePending" || record.status === "deleted" || (rejectPending && record.status === "pending")) {
     return failure("打卡记录不存在或已被删除", "NOT_FOUND");
   }
+  return null;
+};
+
+const signRecording = async (record) => {
+  await assertFileReferences(record.recordingFileId, record._openid);
+  // 引用分页可能耗时，核验后再算 maxAge（秒）；不足一秒不签发，避免越过期限。
+  const maxAge = record.shareVersion === 2 ? Math.min(300, Math.floor((record.expiresAtMs - Date.now()) / 1000)) : null;
+  if (maxAge !== null && !(maxAge > 0)) return { recordingUrl: null, expired: true };
+  const fileResult = await cloud.getTempFileURL({
+    fileList: [maxAge === null ? record.recordingFileId : { fileID: record.recordingFileId, maxAge }],
+  });
+  return { recordingUrl: fileResult.fileList?.[0]?.tempFileURL || null, expired: false };
+};
+
+const getDetail = async (event, openId) => {
+  const id = requireText(event.id, "打卡编号", 100);
+  const result = await checkIns.doc(id).get();
+  const record = result.data;
+  const unavailable = unavailableRecord(record);
+  if (unavailable) return unavailable;
 
   const isOwner = record._openid === openId;
   // 非本人访问必须携带不可枚举的分享口令，只授权当前这一条记录。
@@ -267,20 +285,40 @@ const getDetail = async (event, openId) => {
     return failure("分享链接无效或已经失效");
   }
 
-  await assertFileReferences(record.recordingFileId, record._openid);
-  // 引用分页可能耗时，核验后再算 maxAge（秒）；不足一秒不签发，避免越过期限。
-  const maxAge = record.shareVersion === 2 ? Math.min(300, Math.floor((record.expiresAtMs - Date.now()) / 1000)) : null;
-  if (maxAge !== null && !(maxAge > 0)) return failure("分享已过期", "SHARE_EXPIRED");
-  const fileResult = await cloud.getTempFileURL({
-    fileList: [maxAge === null ? record.recordingFileId : { fileID: record.recordingFileId, maxAge }],
-  });
-  const recordingUrl = fileResult.fileList?.[0]?.tempFileURL;
-  if (!recordingUrl) return failure("录音文件不存在或已失效");
+  const signed = await signRecording(record);
+  if (signed.expired) return failure("分享已过期", "SHARE_EXPIRED");
+  if (!signed.recordingUrl) return failure("录音文件不存在或已失效");
 
   return success({
     ...toPublicSummary(record),
-    recordingUrl,
+    recordingUrl: signed.recordingUrl,
     isOwner,
+  });
+};
+
+const getRecoverySource = async (event, openId) => {
+  const id = requireText(event.id, "打卡编号", 100);
+  const record = (await checkIns.doc(id).get()).data;
+  const unavailable = unavailableRecord(record, true);
+  if (unavailable) return unavailable;
+  // 恢复授权只信任运行时身份；分享口令不能扩大到原文件恢复权限。
+  if (record._openid !== openId) return failure("无权恢复这条录音", "FORBIDDEN");
+  const hasSize = Object.prototype.hasOwnProperty.call(record, "fileSizeBytes");
+  const hasSha1 = Object.prototype.hasOwnProperty.call(record, "contentSha1");
+  if ((hasSize && (!Number.isSafeInteger(record.fileSizeBytes) || record.fileSizeBytes <= 0 || record.fileSizeBytes > MAX_RECORDING_BYTES)) ||
+      (hasSha1 && (typeof record.contentSha1 !== "string" || !/^[a-f0-9]{40}$/.test(record.contentSha1))) ||
+      (record.shareVersion === 2 && (!Number.isSafeInteger(record.expiresAtMs) || record.expiresAtMs <= Date.now()))) {
+    return failure("云录音恢复信息异常，请稍后重试", "RECOVERY_SOURCE_INVALID");
+  }
+  const signed = await signRecording(record);
+  if (signed.expired) return failure("分享已过期或失效", "SHARE_EXPIRED");
+  if (!signed.recordingUrl) return failure("录音文件不存在或已失效", "NOT_FOUND");
+  return success({
+    id: record._id,
+    recordingUrl: signed.recordingUrl,
+    ...(record.shareVersion === 2 && Number.isSafeInteger(record.expiresAtMs) ? { expiresAtMs: record.expiresAtMs } : {}),
+    ...(hasSize ? { fileSizeBytes: record.fileSizeBytes } : {}),
+    ...(hasSha1 ? { contentSha1: record.contentSha1 } : {}),
   });
 };
 
@@ -422,6 +460,8 @@ exports.main = async (event = {}, runtimeContext) => {
         return failure("旧版新增已停用，请升级客户端后重试", "LEGACY_CREATE_DISABLED");
       case "detail":
         return await getDetail(event, OPENID);
+      case "recoverySource":
+        return await getRecoverySource(event, OPENID);
       case "listMine":
         return await listMine(OPENID);
       case "shareStatus":
