@@ -3,7 +3,21 @@
   "projectname": "haisha",
   "setting": {
     "compileHotReLoad": true,
-    "bigPackageSizeSupport": false
+    "bigPackageSizeSupport": false,
+    "urlCheck": true,
+    "coverView": false,
+    "lazyloadPlaceholderEnable": false,
+    "skylineRenderEnable": false,
+    "preloadBackgroundData": false,
+    "autoAudits": false,
+    "useApiHook": true,
+    "showShadowRootInWxmlPanel": false,
+    "useStaticServer": false,
+    "useLanDebug": false,
+    "showES6CompileOption": false,
+    "checkInvalidKey": true,
+    "ignoreDevUnusedFiles": true
   },
-  "libVersion": "3.8.8"
+  "libVersion": "3.17.3",
+  "condition": {}
 }

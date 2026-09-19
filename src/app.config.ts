@@ -1,5 +1,6 @@
 export default defineAppConfig({
   resizable: true,
+  lazyCodeLoading: "requiredComponents",
   pages: [
     "pages/Home/Home",
     "pages/BookLibrary/BookLibrary",

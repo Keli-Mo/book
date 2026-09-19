@@ -307,6 +307,11 @@ check("应用允许 Pad 调整窗口", () => {
   assert.ok(resizable?.kind === ts.SyntaxKind.TrueKeyword, "app.config.ts 应设置 resizable: true");
 });
 
+check("应用在全局配置启用组件按需注入", () => {
+  assert.equal(configValue(appConfig, "lazyCodeLoading")?.text, "requiredComponents",
+    "必须配置在 app.config.ts 顶层，project.config.json 的 setting 不会生成此应用配置");
+});
+
 for (const page of pages) {
   check(`${page.name}允许自动旋转`, () => {
     const config = defaultConfig(ast(page.config), "definePageConfig");
