@@ -144,8 +144,12 @@ const load = (file, overrides = {}, cache = new Map()) => {
   );
   assert.deepEqual(await hosted.fetchAppEntryMode(), { mode: "practice" });
   assert.equal(calls[0].path, "/api/app-entry");
+  assert.equal(calls[0].method, "GET");
   assert.equal(calls[0].header["X-WX-SERVICE"], "koa-hwx1");
+  assert.equal(calls[0].header["content-type"], undefined);
   assert.equal(calls[0].config.env, "cloud1-6geu18jg425a604e");
+  assert.equal(calls[0].timeout, 15000);
+  assert.equal(calls[0].dataType, "text");
 
   const appConfig = read("src/app.config.ts");
   assert.match(

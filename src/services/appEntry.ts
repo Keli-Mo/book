@@ -81,11 +81,14 @@ type CloudContainerClient = {
     path: string;
     method: string;
     header: Record<string, string>;
+    timeout: number;
+    dataType: string;
   }) => Promise<unknown>;
 };
 
 /**
  * 请求 haisha-server 的 GET /api/app-entry。开发者工具/真机走云托管；仅无 wx.cloud 时用 mock。
+ * GET 不要带 application/json：网关会按有 body 处理，callContainer 容易直接 500。
  */
 export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
   const cloud = initCloudHosting() as (WxCloud & Partial<CloudContainerClient>) | undefined;
@@ -101,8 +104,9 @@ export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
     method: "GET",
     header: {
       "X-WX-SERVICE": CLOUD_HOSTING_SERVICE,
-      "content-type": "application/json",
     },
+    timeout: 15000,
+    dataType: "text",
   });
   const mode = readAppEntryMode(response);
   if (!mode) throw new Error("invalid app entry");
