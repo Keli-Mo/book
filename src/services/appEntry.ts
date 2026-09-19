@@ -12,7 +12,7 @@ export const INTRO_URL = "/pages/Intro/Intro";
 export const CLOUD_HOSTING_SERVICE = "koa-hwx1";
 export const APP_ENTRY_PATH = "/api/app-entry";
 
-/** 本地无云托管时的回退开关，改这一处即可验证两条路径。 */
+/** 启动分流接口在独立仓库 haisha-server；本地无云托管时用此开关。 */
 export const MOCK_APP_ENTRY_MODE: AppEntryMode = "intro";
 
 const CLOUD_ENV_ID = "cloud1-6geu18jg425a604e";
@@ -72,7 +72,7 @@ const getCallContainer = () => {
 };
 
 /**
- * 启动分流只经过这里。有云托管则请求 koa-hwx1，没有 callContainer 时用本地 mock。
+ * 启动分流只经过这里。有云托管则请求 koa-hwx1（haisha-server），没有 callContainer 时用本地 mock。
  */
 export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
   const callContainer = getCallContainer();

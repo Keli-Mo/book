@@ -42,7 +42,7 @@ node scripts/test-share-expiry-cleanup.cjs
 ## 代码与部署说明
 
 - `src/`：页面、教材数据和录音/分享逻辑。
-- `server/`：微信云托管 Koa 服务；`server/Dockerfile` 与代码同级，发布时目标目录填 `server`，端口 80。
+- 启动分流接口在独立仓库 `haisha-server`（微信云托管 `koa-hwx1`），不在本仓库。
 - `cloudfunctions/checkIn/`：分享准备、确认、读取及本人恢复授权。
 - `cloudfunctions/cleanupExpiredShares/`：独立过期清理函数。
 - `scripts/`：回归测试和素材校验工具。
