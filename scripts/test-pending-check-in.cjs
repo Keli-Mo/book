@@ -61,17 +61,23 @@ const createAdapters = ({
   usageBehavior,
 } = {}) => {
   let savedRecords = JSON.parse(JSON.stringify(records));
+  const auxiliaryStorage = new Map();
   const calls = { save: [], remove: [], set: 0 };
   let savedFileSequence = 1;
   let requestIdSequence = 1;
   const existing = new Set(existingPaths || records.map((item) => item.localPath));
   const adapters = {
     storage: {
-      async get() {
+      async get(key) {
+        if (key !== "pending-check-ins-v1") return auxiliaryStorage.get(key);
         if (storageGetBehavior) await storageGetBehavior();
         return JSON.parse(JSON.stringify(savedRecords));
       },
-      async set(_key, nextRecords) {
+      async set(key, nextRecords) {
+        if (key !== "pending-check-ins-v1") {
+          auxiliaryStorage.set(key, JSON.parse(JSON.stringify(nextRecords)));
+          return;
+        }
         calls.set += 1;
         if (storageSetBehavior) await storageSetBehavior(nextRecords, calls.set);
         savedRecords = JSON.parse(JSON.stringify(nextRecords));
@@ -349,8 +355,8 @@ const createBarrier = () => {
   assert.equal(cleaned.persisted, true);
   assert.deepEqual(
     JSON.parse(JSON.stringify(cleanupStore.list().map((item) => item.requestId))),
-    [hex(11), hex(12), cleaned.item.requestId],
-    "8 天和 365 天的待上传录音仍须保留，只清理实际不存在的文件引用",
+    [hex(11), hex(12), hex(13), cleaned.item.requestId],
+    "旧录音与缺失文件引用均须保留",
   );
   assert.deepEqual(cleanup.calls.remove, [], "自动清理不得删除任何仍存在的录音文件");
   const capacityWithOldRecordings = await cleanupStore.saveRecording(recording({ fileSizeBytes: 1 }));
@@ -593,10 +599,10 @@ const createBarrier = () => {
   const uppercaseStore = createPendingCheckInStore(uppercaseGeneration.adapters);
   await uppercaseStore.ready();
   assert.equal(uppercaseStore.list()[0].requestId, "B".repeat(32), "旧本地 ID 保持原值，避免记录失联");
-  assert.equal(uppercaseStore.list()[0].shareRequestId, "a".repeat(32), "旧大写分享代次在读取时规范为小写");
+  assert.equal(uppercaseStore.list()[0].shareRequestId, "A".repeat(32), "读取旧分享代次时保留原值");
   const uppercaseMarked = await uppercaseStore.markShared("B".repeat(32), { id: "upper", shareToken: "token", expiresAtMs: expiry }, "a".repeat(32));
   assert.equal(uppercaseMarked.share.id, "upper", "混合大小写代次 guard 仍允许同代回写");
-  assert.equal(uppercaseGeneration.getRecords()[0].shareRequestId, "a".repeat(32));
+  assert.equal(uppercaseGeneration.getRecords()[0].shareRequestId, "A".repeat(32));
 
   const generationWriteFailure = createAdapters({
     records: [pending({ requestId: hex(92) })],
@@ -693,7 +699,9 @@ const createBarrier = () => {
   });
   const cleanupWriteFailStore = createPendingCheckInStore(cleanupWriteFails.adapters);
   await cleanupWriteFailStore.cleanup();
-  assert.equal(cleanupWriteFailStore.list().length, 0, "文件已删除后 list 不得暴露失效路径");
+  assert.equal(cleanupWriteFailStore.list().length, 1, "缺失文件引用仍保留供恢复");
+  assert.equal(cleanupWriteFailStore.list()[0].fileAvailability, "missing");
+  assert.equal(await cleanupWriteFailStore.remove(hex(81)), true, "显式删除后才清除引用");
   await cleanupWriteFailStore.saveRecording(
     recording({ tempFilePath: "/tmp/cleanup-retry.mp3", fileSizeBytes: 1 }),
   );

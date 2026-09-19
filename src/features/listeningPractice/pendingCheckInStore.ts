@@ -1,4 +1,5 @@
 export const PENDING_CHECK_IN_STORAGE_KEY = "pending-check-ins-v1";
+export const PENDING_CHECK_IN_BACKUP_KEY = "pending-check-ins-v1-upgrade-backup";
 export const MAX_PENDING_FILE_BYTES = 100 * 1024 * 1024;
 export const RECORDING_CAPACITY_RESERVE_BYTES = 10 * 1024 * 1024;
 export const MAX_RECORDING_FILE_BYTES = 8 * 1024 * 1024;
@@ -27,6 +28,7 @@ export type PendingCheckIn = {
   requestId: string;
   localPath: string;
   recoverable: boolean;
+  fileAvailability?: "available" | "missing" | "unavailable";
   context: CheckInContext;
   durationMs: number;
   fileSizeBytes: number;
@@ -43,7 +45,7 @@ export type PendingCheckIn = {
 
 export type PendingCheckInStorageAdapter = {
   get(key: string): unknown | Promise<unknown>;
-  set(key: string, value: PendingCheckIn[]): void | Promise<void>;
+  set(key: string, value: unknown): void | Promise<void>;
 };
 
 export type SavedPendingRecordingFile = {
@@ -161,8 +163,6 @@ const cloneItem = (item: PendingCheckIn): PendingCheckIn => ({
   ...item,
   context: { ...item.context },
   ...(item.share ? { share: { ...item.share } } : {}),
-  ...(item.shareRequestId ? { shareRequestId: item.shareRequestId.toLowerCase() } : {}),
-  ...(item.contentSha1 ? { contentSha1: item.contentSha1.toLowerCase() } : {}),
 });
 
 const isQuotaFailure = (error: unknown) => {
@@ -184,6 +184,11 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     try { adapters.diagnose?.(stage, details); } catch (_error) { /* 日志故障不阻断录音操作。 */ }
   };
   let persistedItems: PendingCheckIn[] = [];
+  // 原始项是索引的事实来源；无法识别或 ID 有歧义的项不能因读写有效项而丢失。
+  let rawItems: unknown[] = [];
+  let managedIds = new Set<string>();
+  let existingIndex = false;
+  let backupChecked = false;
   const temporaryItems = new Map<string, PendingCheckIn>();
   // 文件移动成功与索引写入成功是两个阶段；会话内牢记前者，避免重试移动失效路径。
   const savedTemporaryIds = new Set<string>();
@@ -206,17 +211,20 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     if (!readyPromise) {
       readyPromise = Promise.resolve().then(() => adapters.storage.get(PENDING_CHECK_IN_STORAGE_KEY))
         .then((raw) => {
-          persistedItems = Array.isArray(raw)
-            ? raw.reduce<PendingCheckIn[]>((items, item) => {
-                if (
-                  isPendingCheckIn(item) &&
-                  !items.some((current) => current.requestId === item.requestId)
-                ) {
-                  items.push(cloneItem(item));
-                }
-                return items;
-              }, [])
-            : [];
+          if (!Array.isArray(raw) && raw !== undefined && raw !== null && raw !== "") {
+            throw new Error("invalid recording index");
+          }
+          existingIndex = Array.isArray(raw);
+          rawItems = existingIndex ? raw as unknown[] : [];
+          const counts = new Map<string, number>();
+          for (const entry of rawItems) {
+            const id = (entry as Partial<PendingCheckIn> | null)?.requestId;
+            if (isRequestId(id)) counts.set(id.toLowerCase(), (counts.get(id.toLowerCase()) || 0) + 1);
+          }
+          persistedItems = rawItems.filter((item): item is PendingCheckIn =>
+            isPendingCheckIn(item) && counts.get(item.requestId.toLowerCase()) === 1,
+          ).map(cloneItem);
+          managedIds = new Set(persistedItems.map(item => item.requestId));
           metadataReadable = true;
         })
         .catch((error) => {
@@ -234,10 +242,40 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     freezeList([...persistedItems, ...temporaryItems.values()]);
 
   const persistItems = async (nextItems: PendingCheckIn[]) => {
+    if (!metadataReadable) throw new Error("recording index unavailable");
+    if (existingIndex && !backupChecked) {
+      try {
+        const backup = await adapters.storage.get(PENDING_CHECK_IN_BACKUP_KEY);
+        if (backup === undefined || backup === null || backup === "") {
+          await adapters.storage.set(PENDING_CHECK_IN_BACKUP_KEY, rawItems);
+        } else if (!Array.isArray(backup)) {
+          throw new Error("invalid recording index backup");
+        }
+        backupChecked = true;
+      } catch (error) {
+        diagnose("metadata.backup.failed", { error });
+        throw error;
+      }
+    }
+    const remaining = new Map(nextItems.map(item => [item.requestId, item]));
+    const nextRaw: unknown[] = [];
+    for (const entry of rawItems) {
+      if (isPendingCheckIn(entry) && managedIds.has(entry.requestId)) {
+        const replacement = remaining.get(entry.requestId);
+        if (replacement) nextRaw.push(cloneItem(replacement));
+        remaining.delete(entry.requestId);
+      } else {
+        nextRaw.push(entry);
+      }
+    }
+    nextRaw.push(...Array.from(remaining.values()).map(cloneItem));
     await adapters.storage.set(
       PENDING_CHECK_IN_STORAGE_KEY,
-      nextItems.map(cloneItem),
+      nextRaw,
     );
+    rawItems = nextRaw;
+    managedIds = new Set(nextItems.map(item => item.requestId));
+    existingIndex = true;
   };
 
   const flushDirtyMetadata = async () => {
@@ -255,27 +293,17 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const cleanupInternal = async () => {
     await ready();
     if (!metadataReadable) return;
-    const removableIds = new Set<string>();
-
     for (const item of persistedItems) {
-      let exists = false;
       try {
-        exists = await adapters.file.exists(item.localPath);
-      } catch (_error) {
-        continue;
+        const exists = await adapters.file.exists(item.localPath);
+        item.fileAvailability = exists ? "available" : "missing";
+        if (!exists) diagnose("cleanup.file.missing", { requestId: item.requestId });
+      } catch (error) {
+        item.fileAvailability = "unavailable";
+        diagnose("cleanup.file.unavailable", { requestId: item.requestId, error });
       }
-      // 未提交录音不按时间自动删除；这里只清理已确认不存在的文件引用。
-      if (exists) continue;
-      removableIds.add(item.requestId);
     }
-
-    if (removableIds.size > 0) {
-      // 文件已不存在就移除无效引用，持久化失败由 dirty 标记在后续 mutation 补写。
-      persistedItems = persistedItems.filter(
-        (item) => !removableIds.has(item.requestId),
-      );
-      metadataDirty = true;
-    }
+    // 检查结果先留在内存；读库不触发索引升级写入，后续实际变更会一并持久化。
     await flushDirtyMetadata();
   };
 
@@ -305,7 +333,10 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
         throw new Error("requestId 必须是 32 位十六进制随机值");
       }
       const exists =
-        persistedItems.some((item) => item.requestId === candidate) ||
+        rawItems.some((entry) => {
+          const id = (entry as Partial<PendingCheckIn> | null)?.requestId;
+          return isRequestId(id) && id.toLowerCase() === candidate.toLowerCase();
+        }) ||
         temporaryItems.has(candidate);
       if (!exists) {
         requestId = candidate;

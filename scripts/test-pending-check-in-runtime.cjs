@@ -220,6 +220,8 @@ const runtime = compile(
   assert.equal(removalMethods.at(-1), "removeSavedFile");
   assert.equal(files.has(restartRecord.item.localPath), false);
   await first.cleanup();
+  assert.equal(first.list().find(item => item.requestId === restartRecord.item.requestId).fileAvailability, "missing");
+  assert.equal(await first.remove(restartRecord.item.requestId), true);
 
   // 日志不能把错误对象内的路径/URL/凭证原样输出，也不能因 console 异常破坏流程。
   const logStart = logs.length;
@@ -291,7 +293,10 @@ const runtime = compile(
     files.delete(missing.item.localPath);
     accessError = error;
     await first.cleanup();
-    assert.equal(first.list().length, 0, "仅明确的文件不存在错误才能清除无效引用");
+    assert.equal(first.list().length, 1, "明确的文件不存在错误也必须保留恢复引用");
+    assert.equal(first.list()[0].fileAvailability, "missing");
+    assert.equal(saved.get(storeExports.PENDING_CHECK_IN_STORAGE_KEY).length, 1);
+    assert.equal(await first.remove(missing.item.requestId), true, "用户仍可显式删除缺失引用");
     assert.equal(saved.get(storeExports.PENDING_CHECK_IN_STORAGE_KEY).length, 0);
     accessError = null;
   }
