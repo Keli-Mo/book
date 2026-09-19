@@ -29,6 +29,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
     "exports",
     "require",
     "setTimeout",
+    "wx",
     compiled.get(file),
   )(
     loaded,
@@ -48,6 +49,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
       return require(request);
     },
     overrides.__setTimeout || setTimeout,
+    overrides.wx,
   );
   return loaded.exports;
 };
@@ -57,6 +59,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
     HOME_FALLBACK_URL,
     INTRO_URL,
     MOCK_APP_ENTRY_MODE,
+    readAppEntryMode,
     resolveLaunchUrl,
     resolvePracticeEntryUrl,
   } = load("src/services/appEntry.ts");
@@ -99,6 +102,10 @@ const load = (file, overrides = {}, cache = new Map()) => {
     "无进度时跟读入口应使用第一本可用教材",
   );
 
+  assert.equal(readAppEntryMode({ mode: "practice" }), "practice");
+  assert.equal(readAppEntryMode({ data: { ok: true, mode: "intro" } }), "intro");
+  assert.equal(readAppEntryMode({ data: { mode: "other" } }), null);
+
   const delayed = [];
   const mocked = load(
     "src/services/appEntry.ts",
@@ -114,6 +121,25 @@ const load = (file, overrides = {}, cache = new Map()) => {
   assert.equal(delayed.length, 1, "mock 接口应模拟一次网络等待");
   delayed[0]();
   assert.deepEqual(await pending, { mode: MOCK_APP_ENTRY_MODE });
+
+  const calls = [];
+  const hosted = load(
+    "src/services/appEntry.ts",
+    {
+      wx: {
+        cloud: {
+          callContainer: async (input) => {
+            calls.push(input);
+            return { data: { ok: true, mode: "practice" } };
+          },
+        },
+      },
+    },
+    new Map(),
+  );
+  assert.deepEqual(await hosted.fetchAppEntryMode(), { mode: "practice" });
+  assert.equal(calls[0].path, "/api/app-entry");
+  assert.equal(calls[0].header["X-WX-SERVICE"], "koa-hwx1");
 
   const appConfig = read("src/app.config.ts");
   assert.match(

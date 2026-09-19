@@ -51,6 +51,7 @@
     "test:responsive-pages": "node scripts/test-responsive-page-contract.cjs",
     "test:book-catalog": "node scripts/test-book-catalog.cjs",
     "test:app-entry": "node scripts/test-app-entry.cjs",
+    "test:cloud-hosting": "node scripts/test-cloud-hosting.cjs",
     "test:book-library-pages": "node scripts/test-book-library-pages.cjs",
     "test:home-navigation": "node scripts/test-home-navigation.cjs",
     "test:ui-refinements": "node scripts/test-ui-refinements.cjs",

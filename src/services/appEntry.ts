@@ -9,14 +9,25 @@ export type AppEntryResponse = {
 
 export const HOME_FALLBACK_URL = "/pages/Home/Home";
 export const INTRO_URL = "/pages/Intro/Intro";
+export const CLOUD_HOSTING_SERVICE = "koa-hwx1";
+export const APP_ENTRY_PATH = "/api/app-entry";
 
-/** 本地开关：改这一处即可验证介绍页 / 听音跟读两条启动路径。 */
+/** 本地无云托管时的回退开关，改这一处即可验证两条路径。 */
 export const MOCK_APP_ENTRY_MODE: AppEntryMode = "intro";
 
+const CLOUD_ENV_ID = "cloud1-6geu18jg425a604e";
 const MOCK_NETWORK_DELAY_MS = 180;
 
 export const isAppEntryMode = (value: unknown): value is AppEntryMode =>
   value === "intro" || value === "practice";
+
+export function readAppEntryMode(payload: unknown): AppEntryMode | null {
+  if (!payload || typeof payload !== "object") return null;
+  const body = "data" in payload ? (payload as { data: unknown }).data : payload;
+  if (!body || typeof body !== "object") return null;
+  const mode = (body as { mode?: unknown }).mode;
+  return isAppEntryMode(mode) ? mode : null;
+}
 
 export function resolvePracticeEntryUrl(
   progress: ReadingProgress | null,
@@ -40,12 +51,46 @@ export function resolveLaunchUrl(
   return HOME_FALLBACK_URL;
 }
 
+const delay = (ms: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+type CloudContainerClient = {
+  callContainer: (options: {
+    config: { env: string };
+    path: string;
+    method: string;
+    header: Record<string, string>;
+  }) => Promise<unknown>;
+};
+
+const getCallContainer = () => {
+  if (typeof wx === "undefined" || !wx.cloud) return undefined;
+  const callContainer = (wx.cloud as typeof wx.cloud & Partial<CloudContainerClient>).callContainer;
+  return typeof callContainer === "function" ? callContainer.bind(wx.cloud) : undefined;
+};
+
 /**
- * 启动分流只经过这里。接入真实云函数/HTTP 时替换 mock，保持 `{ mode }` 形状。
+ * 启动分流只经过这里。有云托管则请求 koa-hwx1，没有 callContainer 时用本地 mock。
  */
 export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, MOCK_NETWORK_DELAY_MS);
+  const callContainer = getCallContainer();
+  if (!callContainer) {
+    await delay(MOCK_NETWORK_DELAY_MS);
+    return { mode: MOCK_APP_ENTRY_MODE };
+  }
+
+  const response = await callContainer({
+    config: { env: CLOUD_ENV_ID },
+    path: APP_ENTRY_PATH,
+    method: "GET",
+    header: {
+      "X-WX-SERVICE": CLOUD_HOSTING_SERVICE,
+      "content-type": "application/json",
+    },
   });
-  return { mode: MOCK_APP_ENTRY_MODE };
+  const mode = readAppEntryMode(response);
+  if (!mode) throw new Error("invalid app entry");
+  return { mode };
 }

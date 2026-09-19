@@ -42,6 +42,7 @@ node scripts/test-share-expiry-cleanup.cjs
 ## 代码与部署说明
 
 - `src/`：页面、教材数据和录音/分享逻辑。
+- `server/`：微信云托管 Koa 服务；仓库根目录 `Dockerfile` 只打包该目录，端口 80。
 - `cloudfunctions/checkIn/`：分享准备、确认、读取及本人恢复授权。
 - `cloudfunctions/cleanupExpiredShares/`：独立过期清理函数。
 - `scripts/`：回归测试和素材校验工具。
