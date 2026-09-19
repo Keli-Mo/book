@@ -55,6 +55,7 @@ export type SavedPendingRecordingFile = {
 };
 
 export type PendingCheckInFileAdapter = {
+  info?(filePath: string): Promise<{ fileSizeBytes: number; contentSha1: string }>;
   usageBytes(): number | Promise<number>;
   save(tempFilePath: string):
     | SavedPendingRecordingFile
@@ -192,6 +193,8 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const temporaryItems = new Map<string, PendingCheckIn>();
   // 文件移动成功与索引写入成功是两个阶段；会话内牢记前者，避免重试移动失效路径。
   const savedTemporaryIds = new Set<string>();
+  // 仅会话内的两阶段恢复记录；写索引失败不能再次移动原下载临时路径。
+  const recoverySaves = new Map<string, { snapshot: PendingCheckIn; savedFilePath: string; info: { fileSizeBytes: number; contentSha1: string; expiresAtMs?: number } }>();
   let readyPromise: Promise<void> | null = null;
   let metadataReadable = false;
   let metadataDirty = false;
@@ -224,6 +227,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
           persistedItems = rawItems.filter((item): item is PendingCheckIn =>
             isPendingCheckIn(item) && counts.get(item.requestId.toLowerCase()) === 1,
           ).map(cloneItem);
+          if (persistedItems.length !== rawItems.length) diagnose("metadata.entries.quarantined");
           managedIds = new Set(persistedItems.map(item => item.requestId));
           metadataReadable = true;
         })
@@ -711,6 +715,67 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     return true;
   };
 
+  const matchesRecoverySnapshot = (snapshot: PendingCheckIn) => {
+    const current = persistedItems.find(item => item.requestId === snapshot.requestId);
+    if (!current) return false;
+    // access 探针只更新 fileAvailability，不构成身份变更。
+    const identity = ({ fileAvailability: _availability, ...item }: PendingCheckIn) => JSON.stringify(item);
+    return identity(current) === identity(snapshot);
+  };
+
+  const restoreRecordingInternal = async (
+    snapshot: PendingCheckIn,
+    tempFilePath: string,
+    info: { fileSizeBytes: number; contentSha1: string; expiresAtMs?: number },
+  ): Promise<PendingCheckIn | null> => {
+    await ready();
+    if (!metadataReadable || !matchesRecoverySnapshot(snapshot)) {
+      recoverySaves.delete(snapshot.requestId);
+      return null;
+    }
+    const checkInfo = (actual: { fileSizeBytes: number; contentSha1: string }) => {
+      if (!isPositiveInteger(actual.fileSizeBytes) || actual.fileSizeBytes > MAX_RECORDING_FILE_BYTES ||
+          !isContentSha1(actual.contentSha1) || actual.fileSizeBytes !== info.fileSizeBytes ||
+          actual.contentSha1.toLowerCase() !== info.contentSha1.toLowerCase() ||
+          (snapshot.contentSha1 && snapshot.contentSha1.toLowerCase() !== actual.contentSha1.toLowerCase())) {
+        throw Object.assign(new Error("恢复文件校验失败，原录音已保留"), { code: "RECOVERY_VERIFY_FAILED" });
+      }
+      if (info.expiresAtMs !== undefined && info.expiresAtMs <= adapters.clock.now()) throw Object.assign(new Error("恢复来源已过期，原录音已保留"), { code: "SHARE_EXPIRED" });
+    };
+    checkInfo(info);
+    if (!adapters.file.info) throw new Error("无法校验恢复文件");
+    let saved = recoverySaves.get(snapshot.requestId);
+    if (!saved) {
+      if (tempFilePath === snapshot.localPath || !isText(tempFilePath)) throw new Error("恢复路径无效");
+      checkInfo(await adapters.file.info(tempFilePath));
+      if (await readUsageBytes() + info.fileSizeBytes > PENDING_RECORDING_BYTES) throw Object.assign(new Error(capacityMessage()), { code: "RECOVERY_CAPACITY" });
+      let result: SavedPendingRecordingFile;
+      try { result = await adapters.file.save(tempFilePath); }
+      catch (error) { if (isQuotaFailure(error)) throw Object.assign(new Error(capacityMessage()), { code: "RECOVERY_CAPACITY" }); throw error; }
+      if (!isText(result.savedFilePath) || result.savedFilePath === snapshot.localPath || result.savedFilePath === tempFilePath) throw new Error("恢复保存路径无效");
+      saved = { snapshot: cloneItem(snapshot), savedFilePath: result.savedFilePath, info: { ...info } };
+      recoverySaves.set(snapshot.requestId, saved);
+    }
+    // saveFile 成功后必须重新核实；失败仍记住保存路径，下一次只重试校验/写索引。
+    checkInfo(await adapters.file.info(saved.savedFilePath));
+    if (await readUsageBytes() > PENDING_RECORDING_BYTES) throw Object.assign(new Error(capacityMessage()), { code: "RECOVERY_CAPACITY" });
+    if (!matchesRecoverySnapshot(snapshot)) return null;
+    const nextItem: PendingCheckIn = { ...snapshot, localPath: saved.savedFilePath, recoverable: true,
+      fileAvailability: "available", fileSizeBytes: info.fileSizeBytes, contentSha1: info.contentSha1.toLowerCase(), updatedAtMs: adapters.clock.now() };
+    const nextItems = persistedItems.map(item => item.requestId === snapshot.requestId ? nextItem : item);
+    try { await persistItems(nextItems); }
+    catch (_error) { throw Object.assign(new Error("恢复索引写入失败"), { code: "PENDING_PERSIST_FAILED" }); }
+    persistedItems = nextItems;
+    recoverySaves.delete(snapshot.requestId);
+    return freezeItem(nextItem);
+  };
+  const restoreRecording = (snapshot: PendingCheckIn, tempFilePath: string, info: { fileSizeBytes: number; contentSha1: string; expiresAtMs?: number }) =>
+    enqueueMutation(() => restoreRecordingInternal(snapshot, tempFilePath, info));
+  const retryRestoreRecording = (requestId: string) => enqueueMutation(async () => {
+    const saved = recoverySaves.get(requestId);
+    return saved ? restoreRecordingInternal(saved.snapshot, saved.savedFilePath, saved.info) : undefined;
+  });
+
   const cleanup = () => enqueueMutation(cleanupInternal);
   const saveRecording = (input: SavePendingRecordingInput) =>
     enqueueMutation(() => saveRecordingInternal(input));
@@ -739,6 +804,8 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
   return {
     ready,
+    restoreRecording,
+    retryRestoreRecording,
     list,
     cleanup,
     saveRecording,

@@ -24,7 +24,7 @@ const makePending = (share) => ({
   completedAtMs: 2,
   ...(share ? { share } : {}),
 });
-const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmitting = () => false, getActive = () => undefined, probe, expire, timers, deferAudioPlay = false } = {}) => {
+const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmitting = () => false, getActive = () => undefined, recover, activeRecovery = () => undefined, probe, expire, timers, deferAudioPlay = false } = {}) => {
   const items = [pending];
   const toasts = [], diagnostics = [];
   let cloudCalls = 0;
@@ -44,7 +44,9 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
     deferAudioPlay,
     ...(timers ? { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout } : {}),
     overrides: {
-      "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => store, logRecordingDiagnostic: (stage, details) => diagnostics.push({ stage, ...details }) },
+      "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => store, logRecordingDiagnostic: (stage, details) => diagnostics.push({ stage, ...details }),
+        diagnoseLocalRecordingFailure: (item, error) => diagnostics.push({ stage: "playback.local.failed", requestId: item.requestId, error }),
+        recoverPendingRecording: recover, getActivePendingRecovery: activeRecovery },
       "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => coordinator },
       "@/services/cloudCheckIn": {
         getCheckInDetail: async () => { cloudCalls += 1; throw new Error("本地详情不得访问云端"); },
@@ -58,6 +60,56 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
 };
 
 (async () => {
+  for (const outcome of ['success', 'hidden', 'failure', 'no-candidate', 'reopen']) {
+    const completion = deferred(); let recoveries = 0, adoptRecovery = false;
+    const pending = makePending(outcome === 'no-candidate' ? undefined : { id: 'old-cloud', shareToken: 'token', expiresAtMs: Date.now() + 60000 });
+    const recovered = { ...pending, localPath: 'wxfile://recovered.mp3' };
+    const h = createLocalPage({ pending, recover: () => { recoveries++; return completion.promise; }, activeRecovery: () => adoptRecovery ? completion.promise : undefined });
+    h.page.render(); await settle();
+    assert.equal(byClass(h.page.render(), 'shared-recording__recover'), undefined, '正常打开无恢复按钮');
+    await byClass(h.page.render(), 'shared-recording__play').props.onClick();
+    h.page.audios.findLast(a => a.src === pending.localPath).trigger('Error', { errCode: 10003, errMsg: 'private' });
+    assert.ok(h.diagnostics.some(log => log.stage === 'playback.local.failed'), '本机错误进入只读诊断');
+    let tree = h.page.render();
+    if (outcome === 'no-candidate') { assert.equal(byClass(tree, 'shared-recording__recover'), undefined); assert.match(textOf(tree), /没有可用分享/); h.page.dispose(); continue; }
+    const button = byClass(tree, 'shared-recording__recover'); assert.ok(button, '失败后显示主动恢复');
+    let attempt;
+    if (outcome === 'reopen') { adoptRecovery = true; h.page.show(); } else { attempt = button.props.onClick(); button.props.onClick(); }
+    tree = h.page.render(); assert.equal(byClass(tree, 'shared-recording__play').props.disabled, true); assert.equal(byClass(tree, 'check-in-actions__share').props.disabled, true);
+    assert.equal(recoveries, outcome === 'reopen' ? 0 : 1);
+    if (outcome === 'hidden') h.page.hide();
+    if (outcome === 'failure') completion.reject(new Error('private token'));
+    else { h.items[0] = recovered; completion.resolve(recovered); }
+    await attempt; await settle(); adoptRecovery = false;
+    if (outcome === 'hidden') { assert.equal(h.page.audios.some(a => a.src === recovered.localPath), false); h.page.show(); }
+    tree = h.page.render(); assert.equal(byClass(tree, 'shared-recording__play').props.disabled, false);
+    if (outcome !== 'failure') { await byClass(tree, 'shared-recording__play').props.onClick(); assert.ok(h.page.audios.some(a => a.src === recovered.localPath)); }
+    else assert.doesNotMatch(JSON.stringify(h.toasts), /private|token/);
+    assert.equal(h.cloudCalls, 0); h.page.dispose();
+  }
+  for (const [code, message] of [['FORBIDDEN', /只能恢复本人/], ['SHARE_EXPIRED', /分享已失效/], ['NOT_FOUND', /分享已失效/], ['RECOVERY_CAPACITY', /空间不足/], ['RECOVERY_VERIFY_FAILED', /校验失败/]]) {
+    const h = createLocalPage({ pending: makePending({ id: 'share', shareToken: 'token', expiresAtMs: 1 }), recover: () => Promise.reject({ code, message: 'private-path secret-token' }) });
+    h.page.render(); await settle(); await byClass(h.page.render(), 'shared-recording__play').props.onClick();
+    h.page.audios.findLast(a => a.src === 'wxfile://saved.mp3').trigger('Error', { errCode: 10003 });
+    const button = byClass(h.page.render(), 'shared-recording__recover');
+    await button.props.onClick();
+    assert.match(h.toasts.at(-1), message); assert.match(textOf(h.page.render()), message);
+    assert.match(button.props.className, /shared-recording__play/, '恢复按钮复用已验证手机/Pad触控样式');
+    assert.doesNotMatch(JSON.stringify(h.toasts), /private-path|secret-token/); h.page.dispose();
+  }
+  {
+    const completion = deferred(); const pending = makePending({ id: 'share', shareToken: 'token', expiresAtMs: Date.now() + 60000 });
+    const first = createLocalPage({ pending, recover: () => completion.promise }); first.page.render(); await settle();
+    await byClass(first.page.render(), 'shared-recording__play').props.onClick(); first.page.audios.findLast(a => a.src === pending.localPath).trigger('Error', {});
+    const attempt = byClass(first.page.render(), 'shared-recording__recover').props.onClick(); first.page.dispose();
+    let active = true;
+    const reopened = createLocalPage({ pending, activeRecovery: () => active ? completion.promise : undefined, recover: () => { throw new Error('不能重启下载'); } });
+    reopened.page.render(); reopened.page.show(); await settle(); assert.equal(byClass(reopened.page.render(), 'shared-recording__play').props.disabled, true);
+    const recovered = { ...pending, localPath: 'wxfile://after-reopen.mp3' }; reopened.items[0] = recovered; active = false; completion.resolve(recovered); await attempt; await settle();
+    assert.equal(byClass(reopened.page.render(), 'shared-recording__play').props.disabled, false);
+    assert.equal(reopened.page.audios.some(a => a.src === recovered.localPath), false, '重建页不自动启动播放');
+    await byClass(reopened.page.render(), 'shared-recording__play').props.onClick(); assert.ok(reopened.page.audios.some(a => a.src === recovered.localPath)); reopened.page.dispose();
+  }
   for (const state of ["active", "deleted", "expired", "missing", "invalid", "network", "unavailable", "persist-failed", "new-generation"]) {
     const share = { id: "old-cloud", shareToken: "old-token", expiresAtMs: Date.now() + 60_000 };
     const pending = { ...makePending(share), shareRequestId: "b".repeat(32) };

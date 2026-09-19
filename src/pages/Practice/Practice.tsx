@@ -52,7 +52,7 @@ import {
   type RecorderTerminalSink,
 } from "@/features/listeningPractice/recorderCoordinator";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
-import { getPendingCheckInStore, logRecordingDiagnostic } from "@/features/listeningPractice/pendingCheckInRuntime";
+import { getPendingCheckInStore, logRecordingDiagnostic, diagnoseLocalRecordingFailure } from "@/features/listeningPractice/pendingCheckInRuntime";
 import {
   useDeviceLayout,
   type DeviceLayoutState,
@@ -212,6 +212,7 @@ function PracticeSession({
     operationSeq: number;
   } | null>(null);
   const pendingCheckInRef = useRef<PendingCheckIn | null>(null);
+  const recordingPlaybackSnapshotRef = useRef<Pick<PendingCheckIn, "requestId" | "localPath" | "contentSha1"> | null>(null);
   const completionInFlightRef = useRef(false);
   const recorderUnsubscribeRef = useRef<(() => void) | null>(null);
   const recorderTerminalSinkRef = useRef<RecorderTerminalSink | null>(null);
@@ -503,7 +504,9 @@ function PracticeSession({
           setIsPlayingRecording(false);
         }
       },
-      () => {
+      (error) => {
+        const snapshot = recordingPlaybackSnapshotRef.current;
+        if (snapshot) void diagnoseLocalRecordingFailure(snapshot, error);
         if (mountedRef.current && !pageHiddenRef.current) {
           Taro.showToast({ title: "录音回听失败", icon: "none" });
         }
@@ -1381,6 +1384,9 @@ function PracticeSession({
 
     modelAudioControllerRef.current?.stop();
     setPlayingTrackId(null);
+    const pending = pendingCheckInRef.current;
+    recordingPlaybackSnapshotRef.current = pending?.localPath === tempRecordingPath ? pending : { requestId: "", localPath: tempRecordingPath };
+    logRecordingDiagnostic("playback.local.start", { requestId: pending?.requestId });
     controller.toggle("recording", tempRecordingPath);
   };
 

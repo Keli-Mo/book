@@ -30,7 +30,7 @@ const page = (...args) => { const result = createPage(...args); pages.push(resul
     cloudFileId: "", status: "local", updatedAtMs: 1, completedAtMs: 2,
   };
   const overrides = {
-    "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => ({ ready: async () => {}, list: () => [pending] }) },
+    "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => ({ ready: async () => {}, list: () => [pending] }), getActivePendingRecovery: () => undefined, logRecordingDiagnostic() {}, diagnoseLocalRecordingFailure() {} },
   };
   const pageStack = [{ route: "pages/BookLibrary/BookLibrary" }, { route: "pages/Practice/Practice" }, { route: "pages/CheckInDetail/CheckInDetail" }];
   practice.hide();

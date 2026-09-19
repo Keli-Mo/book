@@ -120,6 +120,7 @@ const runtime = compile(
   "src/features/listeningPractice/pendingCheckInRuntime.ts",
   {
     "./pendingCheckInStore": storeExports,
+    "./recordingRecovery": compile("src/features/listeningPractice/recordingRecovery.ts", { "./pendingCheckInStore": storeExports }),
     "../../services/cloudCheckIn": cloudExports,
   },
   { wx, console: diagnosticConsole },
@@ -215,6 +216,7 @@ const runtime = compile(
   const restartRecord = await first.saveRecording(input);
   const restartedRuntime = compile("src/features/listeningPractice/pendingCheckInRuntime.ts", {
     "./pendingCheckInStore": storeExports, "../../services/cloudCheckIn": cloudExports,
+    "./recordingRecovery": compile("src/features/listeningPractice/recordingRecovery.ts", { "./pendingCheckInStore": storeExports }),
   }, { wx, console: diagnosticConsole });
   assert.equal(await restartedRuntime.getPendingCheckInStore().remove(restartRecord.item.requestId), true);
   assert.equal(removalMethods.at(-1), "removeSavedFile");

@@ -347,7 +347,7 @@ const createPage = (file, params, options = {}) => {
       getReadableCloudError: (error) => error.message,
     },
     "@/features/listeningPractice/recorderCoordinator": { getRecorderCoordinator: () => recorderCoordinator },
-    "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => pendingStore, logRecordingDiagnostic() {} },
+    "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => pendingStore, logRecordingDiagnostic: options.recordingDiagnostic || (() => {}), diagnoseLocalRecordingFailure: options.recordingFailureProbe || (() => {}), getActivePendingRecovery: () => undefined },
     "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => submissionCoordinator },
     wx: {},
     __setTimeout: options.setTimeout,
@@ -1523,6 +1523,19 @@ async function testRoutes() {
   await byClass(modelPlaybackTree, "check-in-navigation__home").props.onClick();
   modelPlaybackLeavingPage.hide();
   assert.equal(modelPlaybackLeavingPage.audios.find((audio) => audio.src)?.events.at(-1), "destroy", "示范播放从房子离页必须销毁并停止会话");
+
+  const recordingDiagnostics = [], recordingProbes = [];
+  const diagnosticPage = createPage("src/pages/Practice/Practice.tsx", { bookId: "22", practice: "0" }, {
+    pendingItems: [oldPending], recordingDiagnostic: (...args) => recordingDiagnostics.push(args), recordingFailureProbe: (...args) => recordingProbes.push(args),
+  });
+  diagnosticPage.render(); diagnosticPage.render(); await settle();
+  elements(diagnosticPage.render()).find(node => node.type === "Button" && textOf(node) === "回听录音").props.onClick();
+  const nativePlaybackError = { errCode: 10003, errMsg: "private-path" };
+  diagnosticPage.audios.find(a => a.src === oldPending.localPath).trigger("Error", nativePlaybackError);
+  assert.ok(recordingDiagnostics.some(([stage]) => stage === "playback.local.start"), "训练回听记录本机来源");
+  assert.equal(recordingProbes[0]?.[0]?.localPath, oldPending.localPath, "失败只读探针检查实际回听路径");
+  assert.equal(recordingProbes[0]?.[1], nativePlaybackError, "原生错误交给脱敏边界，不打印原文");
+  diagnosticPage.dispose();
 
   const recordingPlaybackLeavingPage = createPage(
     "src/pages/Practice/Practice.tsx",

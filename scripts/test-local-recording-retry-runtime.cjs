@@ -29,7 +29,7 @@ const button = (tree, label) => elements(tree).find(node => node.type === "Butto
     const page = createPage(`src/pages/${kind}/${kind}.tsx`, kind === "Practice" ? { bookId: "22", practice: "0" } : { localId: saved.item.requestId }, {
       ...(failure === "permission" ? { getSetting: () => permission } : {}),
       overrides: {
-        "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => store },
+        "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => store, getActivePendingRecovery: () => undefined, logRecordingDiagnostic() {}, diagnoseLocalRecordingFailure() {} },
         "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => ({ isSubmitting: () => false, getActive: () => undefined, submit: () => { uploads++; throw new Error("不得隐式上传"); } }) },
       },
     });

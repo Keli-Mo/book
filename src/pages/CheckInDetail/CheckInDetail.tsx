@@ -6,8 +6,9 @@ import { createTrackAudioController, getPlaybackPositionMs } from "@/features/li
 import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import type { CheckInSubmissionHandle } from "@/features/listeningPractice/checkInSubmissionCoordinator";
 import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
-import { getPendingCheckInStore, logRecordingDiagnostic } from "@/features/listeningPractice/pendingCheckInRuntime";
+import { getPendingCheckInStore, logRecordingDiagnostic, diagnoseLocalRecordingFailure, recoverPendingRecording, getActivePendingRecovery } from "@/features/listeningPractice/pendingCheckInRuntime";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
+import { getRecordingRecoveryMessage } from "@/features/listeningPractice/recordingRecovery";
 import { getCheckInDetail, getCheckInShareStatus, getReadableCloudError, getShareFailureMessage, type CheckInDetail as CloudDetail } from "@/services/cloudCheckIn";
 import { sharedImage } from "@/constant";
 import { formatCheckInTime, formatPlaybackDurationLabel } from "@/utils/checkInFormat";
@@ -34,6 +35,11 @@ export default function CheckInDetail() {
   const [checkingShare, setCheckingShare] = useState(false);
   const checkingShareRef = useRef(false);
   const [saving, setSaving] = useState(false);
+  const [localPlaybackFailed, setLocalPlaybackFailed] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [recovering, setRecovering] = useState(false);
+  const recoveryRef = useRef<Promise<PendingCheckIn> | null>(null);
+  const playbackDetailRef = useRef<DetailView | null>(null);
   const savingRef = useRef(false);
   const [expiryTick, setExpiryTick] = useState(0);
   const audioControllerRef = useRef<ReturnType<typeof createTrackAudioController> | null>(null);
@@ -89,7 +95,7 @@ export default function CheckInDetail() {
 
   useShareAppMessage(() => {
     // 回调触发时再验一次期限，页面停留跨过期点也不能复活旧口令。
-    if (!values || !values.id || !values.shareToken || values.expiresAtMs <= Date.now()) {
+    if (recoveryRef.current || getActivePendingRecovery(localId) || !values || !values.id || !values.shareToken || values.expiresAtMs <= Date.now()) {
       return { title: "海沙牛娃英语跟读训练", path: "/pages/Home/Home", imageUrl: sharedImage };
     }
     return { title: `我完成了《${values.bookTitle}》${values.sectionTitle}跟读练习`, path: `/pages/CheckInDetail/CheckInDetail?id=${encodeURIComponent(values.id)}&token=${encodeURIComponent(values.shareToken)}`, imageUrl: values.imageUrl || sharedImage };
@@ -105,7 +111,12 @@ export default function CheckInDetail() {
           setPlaybackPositionMs(0);
         }
       },
-      () => {
+      (error) => {
+        const source = playbackDetailRef.current;
+        if (source?.source === "local") {
+          void diagnoseLocalRecordingFailure(source.pending, error);
+          if (mountedRef.current) setLocalPlaybackFailed(true);
+        } else logRecordingDiagnostic("playback.cloud.failed", { error });
         if (mountedRef.current && visibleRef.current) {
           Taro.showToast({ title: "录音播放失败", icon: "none" });
         }
@@ -149,7 +160,12 @@ export default function CheckInDetail() {
     visibleRef.current = true;
     if (!localId) return;
     const latest = pendingStore.list().find((item) => item.requestId === localId);
-    if (latest) setDetail({ source: "local", pending: latest, recordingUrl: latest.localPath });
+    if (latest) {
+      if (detail?.source === "local" && latest.localPath !== detail.recordingUrl) setLocalPlaybackFailed(false);
+      setDetail({ source: "local", pending: latest, recordingUrl: latest.localPath });
+    } else if (detail?.source === "local") { setDetail(null); setErrorMessage("这段本机录音不存在或已删除"); }
+    const recovery = getActivePendingRecovery(localId);
+    if (recovery) void observeRecovery(recovery);
     setSharing(submissionCoordinator.isSubmitting(localId));
     const handle = submissionCoordinator.getActive(localId);
     if (!handle || submissionRef.current === handle) return;
@@ -198,7 +214,7 @@ export default function CheckInDetail() {
 
   const toggleRecording = async () => {
     const controller = audioControllerRef.current;
-    if (!controller || !detail || !visibleRef.current || savingRef.current) return;
+    if (!controller || !detail || !visibleRef.current || savingRef.current || recoveryRef.current || getActivePendingRecovery(localId)) return;
     const attempt = playAttemptRef.current + 1;
     playAttemptRef.current = attempt;
     if (isPlaying) { controller.stop(); return; }
@@ -219,11 +235,49 @@ export default function CheckInDetail() {
     }
     if (!visibleRef.current || playAttemptRef.current !== attempt) return;
     setPlaybackPositionMs(0);
+    playbackDetailRef.current = detail;
+    logRecordingDiagnostic(`playback.${detail.source}.start`, detail.source === "local" ? { requestId: localId } : undefined);
     controller.toggle("recording", recordingUrl);
   };
 
+  const observeRecovery = async (promise: Promise<PendingCheckIn>) => {
+    if (recoveryRef.current === promise) return;
+    recoveryRef.current = promise;
+    setRecovering(true);
+    audioControllerRef.current?.stop();
+    playAttemptRef.current += 1;
+    try {
+      await promise;
+      if (!mountedRef.current || !visibleRef.current) return;
+      const latest = pendingStore.list().find(item => item.requestId === localId);
+      if (latest) {
+        setDetail({ source: "local", pending: latest, recordingUrl: latest.localPath });
+        setLocalPlaybackFailed(false);
+        setRecoveryMessage("");
+        Taro.showToast({ title: "录音已恢复，请重新播放", icon: "none" });
+      }
+    } catch (error) {
+      logRecordingDiagnostic("recovery.failed", { requestId: localId, error });
+      if (mountedRef.current && visibleRef.current) {
+        setLocalPlaybackFailed(true);
+        const message = getRecordingRecoveryMessage(error);
+        setRecoveryMessage(message);
+        Taro.showToast({ title: message, icon: "none" });
+      }
+    } finally {
+      if (recoveryRef.current === promise) recoveryRef.current = null;
+      if (mountedRef.current) setRecovering(false);
+    }
+  };
+
+  const recoverRecording = () => {
+    if (detail?.source !== "local" || !localPlaybackFailed || !detail.pending.share?.id ||
+        !mountedRef.current || !visibleRef.current || recoveryRef.current || savingRef.current || sharing || checkingShareRef.current) return;
+    return observeRecovery(recoverPendingRecording(localId));
+  };
+
   const retrySaveRecording = async () => {
-    if (!localId || detail?.source !== "local" || detail.pending.recoverable || savingRef.current || sharing || !visibleRef.current) return;
+    if (!localId || detail?.source !== "local" || detail.pending.recoverable || savingRef.current || sharing || recoveryRef.current || getActivePendingRecovery(localId) || !visibleRef.current) return;
     savingRef.current = true;
     setSaving(true);
     audioControllerRef.current?.stop();
@@ -242,7 +296,7 @@ export default function CheckInDetail() {
   };
 
   const prepareShare = async () => {
-    if (!localId || sharing || checkingShareRef.current || savingRef.current || hasValidShare || !visibleRef.current || detail?.source !== "local" || !detail.pending.recoverable) return;
+    if (!localId || sharing || checkingShareRef.current || savingRef.current || recoveryRef.current || getActivePendingRecovery(localId) || hasValidShare || !visibleRef.current || detail?.source !== "local" || !detail.pending.recoverable) return;
     const attempt = shareAttemptRef.current + 1;
     shareAttemptRef.current = attempt;
     setSharing(true);
@@ -288,7 +342,7 @@ export default function CheckInDetail() {
 
   const checkShare = async () => {
     if (detail?.source !== "local" || !detail.pending.share || !detail.pending.shareRequestId ||
-        sharing || checkingShareRef.current || savingRef.current || !visibleRef.current) return;
+        sharing || checkingShareRef.current || savingRef.current || recoveryRef.current || getActivePendingRecovery(localId) || !visibleRef.current) return;
     const { share, shareRequestId } = detail.pending;
     checkingShareRef.current = true;
     setCheckingShare(true);
@@ -338,9 +392,9 @@ export default function CheckInDetail() {
   }
 
   const shareButton = hasValidShare ? (
-    <Button className='check-in-actions__share device-touch-target' openType='share'>发送给朋友</Button>
+    <Button className='check-in-actions__share device-touch-target' disabled={recovering} openType={recovering ? undefined : 'share'}>发送给朋友</Button>
   ) : detail.source === "local" ? (
-    <Button className='check-in-actions__share device-touch-target' loading={sharing} disabled={sharing || checkingShare || saving || !detail.pending.recoverable} onClick={prepareShare}>
+    <Button className='check-in-actions__share device-touch-target' loading={sharing} disabled={recovering || sharing || checkingShare || saving || !detail.pending.recoverable} onClick={prepareShare}>
       {sharing ? "正在准备分享…" : "分享给朋友"}
     </Button>
   ) : (
@@ -365,18 +419,24 @@ export default function CheckInDetail() {
       <View className='shared-recording'>
         <Text className='shared-recording__label'>本次跟读录音</Text>
         <Text className='shared-recording__duration'>{formatPlaybackDurationLabel(isPlaying, playbackPositionMs, values.durationMs)}</Text>
-        <Button className='shared-recording__play device-touch-target' onClick={toggleRecording}>
+        <Button className='shared-recording__play device-touch-target' disabled={recovering} onClick={toggleRecording}>
           <Text className='shared-recording__play-icon'>{isPlaying ? "■" : "▶"}</Text>
           {isPlaying ? "停止播放" : "播放本次跟读"}
         </Button>
+        {detail.source === "local" && (localPlaybackFailed || recovering) && (
+          <View>
+            <Text className='shared-recording__privacy'>{recoveryMessage || (detail.pending.share?.id ? "本机录音暂时无法播放，可尝试从本人分享恢复；原文件会保留" : "没有可用分享，暂时不能恢复；原录音记录已保留")}</Text>
+            {detail.pending.share?.id && <Button className='shared-recording__recover shared-recording__play device-touch-target' loading={recovering} disabled={recovering || saving || sharing || checkingShare} onClick={recoverRecording}>{recovering ? "正在恢复…" : "从分享恢复"}</Button>}
+          </View>
+        )}
         {detail.source === "local" && !detail.pending.recoverable && (
           <View>
             <Text className='shared-recording__privacy'>录音保存失败，请重试保存；关闭小程序后可能无法恢复</Text>
-            <Button className='shared-recording__retry device-touch-target' loading={saving} disabled={saving || sharing} onClick={retrySaveRecording}>重试保存</Button>
+            <Button className='shared-recording__retry device-touch-target' loading={saving} disabled={recovering || saving || sharing} onClick={retrySaveRecording}>重试保存</Button>
           </View>
         )}
         {detail.source === "local" && detail.pending.share && detail.pending.shareRequestId && (
-          <Button className='check-in-actions__practice shared-recording__privacy shared-recording__repair device-touch-target' loading={checkingShare} disabled={checkingShare || sharing || saving} onClick={checkShare}>链接打不开？检查分享</Button>
+          <Button className='check-in-actions__practice shared-recording__privacy shared-recording__repair device-touch-target' loading={checkingShare} disabled={recovering || checkingShare || sharing || saving} onClick={checkShare}>链接打不开？检查分享</Button>
         )}
       </View>
       <View className='check-in-actions device-actions'>
