@@ -5,10 +5,13 @@ const http = require("http");
 const path = require("path");
 
 const projectRoot = path.resolve(__dirname, "..");
-const dockerfile = fs.readFileSync(path.join(projectRoot, "Dockerfile"), "utf8");
+const dockerfile = fs.readFileSync(
+  path.join(projectRoot, "server/Dockerfile"),
+  "utf8",
+);
 const server = require(path.join(projectRoot, "server/src/index.js"));
 
-assert.match(dockerfile, /COPY server\/package.json server\/package-lock.json/);
+assert.match(dockerfile, /COPY package.json package-lock.json/);
 assert.match(dockerfile, /EXPOSE 80/);
 assert.match(dockerfile, /CMD \["node", "src\/index\.js"\]/);
 assert.equal(server.resolveEntryMode(undefined), "intro");

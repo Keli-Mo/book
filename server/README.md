@@ -1,6 +1,11 @@
 # 微信云托管（koa-hwx1）
 
-小程序仓库根目录的 `Dockerfile` 只打包本目录。控制台绑定 `Keli-Mo/book` 的 `main` 时，容器端口填 **80**，服务名保持 `koa-hwx1`。
+`Dockerfile` 与本目录同级。控制台绑定 `Keli-Mo/book` 的 `main` 时：
+
+- 目标目录填 `server`
+- Dockerfile 名称填 `Dockerfile`
+- 容器端口填 **80**
+- 服务名保持 `koa-hwx1`
 
 ```sh
 cd server
