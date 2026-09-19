@@ -307,7 +307,7 @@ const getRecoverySource = async (event, openId) => {
   const hasSha1 = Object.prototype.hasOwnProperty.call(record, "contentSha1");
   if ((hasSize && (!Number.isSafeInteger(record.fileSizeBytes) || record.fileSizeBytes <= 0 || record.fileSizeBytes > MAX_RECORDING_BYTES)) ||
       (hasSha1 && (typeof record.contentSha1 !== "string" || !/^[a-f0-9]{40}$/.test(record.contentSha1))) ||
-      (record.shareVersion === 2 && (!Number.isSafeInteger(record.expiresAtMs) || record.expiresAtMs <= Date.now()))) {
+      (record.shareVersion === 2 && (!hasSize || !hasSha1 || !Number.isSafeInteger(record.expiresAtMs) || record.expiresAtMs <= Date.now()))) {
     return failure("云录音恢复信息异常，请稍后重试", "RECOVERY_SOURCE_INVALID");
   }
   const signed = await signRecording(record);

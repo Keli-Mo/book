@@ -66,6 +66,8 @@ test("本人恢复源只发送 id，并严格校验云端恢复字段", async ()
     { id: "other", recordingUrl: "https://temp.example.test/audio.mp3" },
     { id: "record-id", recordingUrl: "http://temp.example.test/audio.mp3" },
     { id: "record-id", recordingUrl: "not-a-url" },
+    { id: "record-id", recordingUrl: "https://?x=private" },
+    { id: "record-id", recordingUrl: "https:///audio" },
     { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3", fileSizeBytes: 0 },
     { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3", fileSizeBytes: 1.5 },
     { id: "record-id", recordingUrl: "https://temp.example.test/audio.mp3", fileSizeBytes: 8 * 1024 * 1024 + 1 },

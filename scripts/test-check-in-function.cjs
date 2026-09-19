@@ -777,6 +777,16 @@ test("recoverySource 对过期、删除、未提交和引用矛盾均在签名�
   assert.equal(legacy.metrics.signed, signed);
 });
 
+test("recoverySource v2 缺失任一内容字段必须在签名前拒绝", async () => {
+  for (const fields of [["fileSizeBytes"], ["contentSha1"], ["fileSizeBytes", "contentSha1"]]) {
+    const h = harness(), source = input({ shareVersion: 2 }), p = await h.prepare(source);
+    assert.equal((await h.call("commit", { ...source, recordingFileId: h.upload(p) })).ok, true);
+    for (const field of fields) delete h.records.get(p.id)[field];
+    const signed = h.metrics.signed;
+    assert.equal((await h.call("recoverySource", { id: p.id })).code, "RECOVERY_SOURCE_INVALID");
+    assert.equal(h.metrics.signed, signed);
+  }
+});
 test("recoverySource 兼容本人合法旧记录且不伪造缺失指纹", async () => {
   const h = harness(), record = legacyFixture(h);
   const result = await h.call("recoverySource", { id: record._id });

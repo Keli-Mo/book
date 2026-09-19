@@ -296,7 +296,7 @@ export const getCheckInRecoverySource = async (id: string): Promise<RecordingRec
   const validOptionalInteger = (field: unknown, max = Number.MAX_SAFE_INTEGER) => field === undefined ||
     (Number.isSafeInteger(field) && (field as number) > 0 && (field as number) <= max);
   if (!value || value.id !== id || typeof value.recordingUrl !== "string" ||
-      !/^https:\/\/[^\s]+$/i.test(value.recordingUrl) ||
+      !/^https:\/\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d{1,5})?(?:[/?#][^\s]*)?$/i.test(value.recordingUrl) ||
       !validOptionalInteger(value.expiresAtMs) || !validOptionalInteger(value.fileSizeBytes, MAX_RECORDING_BYTES) ||
       (value.contentSha1 !== undefined && (typeof value.contentSha1 !== "string" || !/^[a-f0-9]{40}$/.test(value.contentSha1)))) {
     throw shareResponseError("RECOVERY_RESPONSE_INVALID");
