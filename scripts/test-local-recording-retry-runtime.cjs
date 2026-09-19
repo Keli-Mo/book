@@ -19,8 +19,15 @@ const button = (tree, label) => elements(tree).find(node => node.type === "Butto
     const gate = new Promise(resolve => { release = resolve; });
     let allowPermission;
     const permission = new Promise(resolve => { allowPermission = resolve; });
+    const storage = new Map([[mod.exports.PENDING_CHECK_IN_STORAGE_KEY, []]]);
     const store = mod.exports.createPendingCheckInStore({
-      storage: { get: () => [], set: async () => { writes++; if (failure !== "file" && writes === 1) throw new Error("metadata failed"); await gate; } },
+      storage: { get: key => storage.get(key), set: async (key, value) => {
+        // 仅主索引写入参与本用例的失败/等待；独立日志和升级快照按真实 key 隔离。
+        if (key === mod.exports.PENDING_CHECK_IN_STORAGE_KEY) {
+          writes++; if (failure !== "file" && writes === 1) throw new Error("metadata failed"); await gate;
+        }
+        storage.set(key, JSON.parse(JSON.stringify(value)));
+      } },
       file: { usageBytes: () => 0, save: async () => { saves++; if (failure === "file" && saves === 1) throw new Error("save failed"); return { savedFilePath: "/saved/retry.mp3" }; }, exists: () => true, remove: () => { throw new Error("不得删除"); } },
       clock: { now: () => 100 }, random: { hex: () => "a".repeat(32) },
     });

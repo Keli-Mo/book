@@ -13,6 +13,7 @@ const files = [];
 const metadata = new Map();
 const modules = new Map();
 const network = [];
+const awaitingFingerprint = new Set();
 const sha1 = bytes => crypto.createHash("sha1").update(bytes).digest("hex");
 let sequence = 0;
 let uploadedBytes;
@@ -28,12 +29,18 @@ const wx = {
       const savedFilePath = path.join(folder, `saved-${++sequence}.mp3`);
       fs.renameSync(tempFilePath, savedFilePath);
       files.push(savedFilePath);
+      awaitingFingerprint.add(savedFilePath);
       success({ savedFilePath });
     } catch (error) { fail(error); }
   },
   getFileInfo({ filePath, digestAlgorithm, success, fail }) {
     try {
       assert.equal(digestAlgorithm, "sha1");
+      if (awaitingFingerprint.has(filePath)) {
+        const journal = metadata.get('pending-check-ins-v1-save-journal');
+        assert.ok(journal?.entries.some(entry => entry.item.localPath === filePath), '原生保存成功后、读取指纹前必须已记录实际路径');
+        awaitingFingerprint.delete(filePath);
+      }
       const bytes = fs.readFileSync(filePath);
       success({ size: bytes.length, digest: sha1(bytes) });
     } catch (error) { fail(error); }

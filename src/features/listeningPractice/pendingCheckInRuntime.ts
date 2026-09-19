@@ -75,7 +75,7 @@ export const diagnoseLocalRecordingFailure = async (item: Pick<PendingCheckIn, "
   }
 };
 
-const saveLocalFile = async (tempFilePath: string): Promise<SavedPendingRecordingFile> => {
+const saveLocalFile = async (tempFilePath: string, onSaved?: (savedFilePath: string) => Promise<void>): Promise<SavedPendingRecordingFile> => {
   logRecordingDiagnostic("save.file.start");
   const saved = await new Promise<{ savedFilePath: string }>((resolve, reject) => {
     wx.saveFile({
@@ -90,6 +90,8 @@ const saveLocalFile = async (tempFilePath: string): Promise<SavedPendingRecordin
       },
     });
   });
+  // 尽早落盘实际保存路径；指纹读取/主索引失败后仍有跨重启恢复线索。
+  if (onSaved) await onSaved(saved.savedFilePath);
   try {
     return { ...saved, ...await getCheckInRecordingInfo(saved.savedFilePath) };
   } catch (error) {

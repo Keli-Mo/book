@@ -1,5 +1,6 @@
 export const PENDING_CHECK_IN_STORAGE_KEY = "pending-check-ins-v1";
 export const PENDING_CHECK_IN_BACKUP_KEY = "pending-check-ins-v1-upgrade-backup";
+export const PENDING_RECORDING_JOURNAL_KEY = "pending-check-ins-v1-save-journal";
 export const MAX_PENDING_FILE_BYTES = 100 * 1024 * 1024;
 export const RECORDING_CAPACITY_RESERVE_BYTES = 10 * 1024 * 1024;
 export const MAX_RECORDING_FILE_BYTES = 8 * 1024 * 1024;
@@ -57,7 +58,7 @@ export type SavedPendingRecordingFile = {
 export type PendingCheckInFileAdapter = {
   info?(filePath: string): Promise<{ fileSizeBytes: number; contentSha1: string }>;
   usageBytes(): number | Promise<number>;
-  save(tempFilePath: string):
+  save(tempFilePath: string, onSaved?: (savedFilePath: string) => Promise<void>):
     | SavedPendingRecordingFile
     | Promise<SavedPendingRecordingFile>;
   exists(filePath: string): boolean | Promise<boolean>;
@@ -166,6 +167,9 @@ const cloneItem = (item: PendingCheckIn): PendingCheckIn => ({
   ...(item.share ? { share: { ...item.share } } : {}),
 });
 
+type SavedRecordingJournalEntry = { item: PendingCheckIn; before?: PendingCheckIn; deleting?: true; deletePath?: string };
+const recordingIdentity = ({ fileAvailability: _availability, ...item }: PendingCheckIn) => JSON.stringify(item);
+
 const isQuotaFailure = (error: unknown) => {
   const details = error as { code?: unknown; errMsg?: unknown; message?: unknown };
   const text = `${details?.code || ""} ${details?.errMsg || ""} ${details?.message || ""}`;
@@ -193,8 +197,11 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const temporaryItems = new Map<string, PendingCheckIn>();
   // 文件移动成功与索引写入成功是两个阶段；会话内牢记前者，避免重试移动失效路径。
   const savedTemporaryIds = new Set<string>();
-  // 仅会话内的两阶段恢复记录；写索引失败不能再次移动原下载临时路径。
+  // 会话内直接重试；跨重启由保存日志验证并重建，不能再次移动已失效临时路径。
   const recoverySaves = new Map<string, { snapshot: PendingCheckIn; savedFilePath: string; info: { fileSizeBytes: number; contentSha1: string; expiresAtMs?: number } }>();
+  let saveJournal: SavedRecordingJournalEntry[] = [];
+  let journalReadable = false;
+  const replayedSaveIds = new Set<string>();
   let readyPromise: Promise<void> | null = null;
   let metadataReadable = false;
   let metadataDirty = false;
@@ -213,7 +220,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   const ready = () => {
     if (!readyPromise) {
       readyPromise = Promise.resolve().then(() => adapters.storage.get(PENDING_CHECK_IN_STORAGE_KEY))
-        .then((raw) => {
+        .then(async (raw) => {
           if (!Array.isArray(raw) && raw !== undefined && raw !== null && raw !== "") {
             throw new Error("invalid recording index");
           }
@@ -230,6 +237,32 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
           if (persistedItems.length !== rawItems.length) diagnose("metadata.entries.quarantined");
           managedIds = new Set(persistedItems.map(item => item.requestId));
           metadataReadable = true;
+          // 仅在已保存路径的日志存在时补索引；不扫描猜测旧文件，也不读取云端。
+          try {
+            const journal = await adapters.storage.get(PENDING_RECORDING_JOURNAL_KEY);
+            if (journal !== undefined && journal !== null && journal !== "") {
+              const entries = (journal as { version?: unknown; entries?: unknown }).entries;
+              if ((journal as { version?: unknown }).version !== 1 || !Array.isArray(entries)) throw new Error("invalid recording journal");
+              const ids = new Set<string>();
+              for (const entry of entries) {
+                if (!entry || !isPendingCheckIn(entry.item) || !entry.item.recoverable ||
+                    (entry.before !== undefined && (!isPendingCheckIn(entry.before) || entry.before.requestId !== entry.item.requestId)) ||
+                    (entry.deleting !== undefined && entry.deleting !== true) ||
+                    (entry.deleting && !isText(entry.deletePath)) ||
+                    ids.has(entry.item.requestId.toLowerCase())) throw new Error("invalid recording journal entry");
+                ids.add(entry.item.requestId.toLowerCase());
+              }
+              saveJournal = entries.map(entry => ({ item: cloneItem(entry.item), ...(entry.before ? { before: cloneItem(entry.before) } : {}),
+                ...(entry.deleting ? { deleting: true as const, deletePath: entry.deletePath } : {}) }));
+            }
+            journalReadable = true;
+          } catch (error) {
+            // 仍可回听主索引，未知日志不得被当成空日志覆盖。
+            diagnose("journal.read.failed", { error });
+            journalReadable = false;
+            readyPromise = null;
+          }
+          if (journalReadable) await replaySavedJournal();
         })
         .catch((error) => {
           diagnose("metadata.read.failed", { error });
@@ -246,7 +279,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     freezeList([...persistedItems, ...temporaryItems.values()]);
 
   const persistItems = async (nextItems: PendingCheckIn[]) => {
-    if (!metadataReadable) throw new Error("recording index unavailable");
+    if (!metadataReadable || !journalReadable) throw new Error("recording index unavailable");
     if (existingIndex && !backupChecked) {
       try {
         const backup = await adapters.storage.get(PENDING_CHECK_IN_BACKUP_KEY);
@@ -280,6 +313,99 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     rawItems = nextRaw;
     managedIds = new Set(nextItems.map(item => item.requestId));
     existingIndex = true;
+  };
+
+  const writeSaveJournal = async (entries: SavedRecordingJournalEntry[]) => {
+    if (!journalReadable) throw new Error("recording journal unavailable");
+    await adapters.storage.set(PENDING_RECORDING_JOURNAL_KEY, { version: 1, entries });
+    saveJournal = entries;
+  };
+  const checkpointSavedFile = async (item: PendingCheckIn, before?: PendingCheckIn) => {
+    try {
+      await writeSaveJournal([...saveJournal.filter(entry => entry.item.requestId !== item.requestId),
+        { item: cloneItem(item), ...(before ? { before: cloneItem(before) } : {}) }]);
+    } catch (error) {
+      // 主索引仍可尝试直接落盘；两者都失败时必须继续报告未安全保存。
+      diagnose("journal.write.failed", { requestId: item.requestId, error });
+    }
+  };
+  const discardSaveJournal = async (requestId: string) => {
+    if (!journalReadable) throw new Error("recording journal unavailable");
+    if (!saveJournal.some(entry => entry.item.requestId === requestId)) return;
+    await writeSaveJournal(saveJournal.filter(entry => entry.item.requestId !== requestId));
+  };
+  const settleSaveJournal = async (requestId: string) => {
+    try { await discardSaveJournal(requestId); }
+    catch (error) { diagnose("journal.clear.pending", { requestId, error }); }
+  };
+  const markJournalDeleting = async (item: PendingCheckIn) => {
+    if (!journalReadable) throw new Error("recording journal unavailable");
+    const previous = saveJournal.find(entry => entry.item.requestId === item.requestId);
+    if (!previous) return;
+    // 留下取消标记而非先清空线索：删文件失败仍能重启看到待处理录音。
+    await writeSaveJournal([...saveJournal.filter(entry => entry.item.requestId !== item.requestId),
+      { ...previous, deleting: true, deletePath: item.localPath }]);
+  };
+  const verifyJournalFile = async (item: PendingCheckIn): Promise<PendingCheckIn> => {
+    if (!await adapters.file.exists(item.localPath)) throw new Error("saved recording missing");
+    if (!adapters.file.info) throw new Error("saved recording verification unavailable");
+    const info = await adapters.file.info(item.localPath);
+    if (!isPositiveInteger(info.fileSizeBytes) || info.fileSizeBytes > MAX_RECORDING_FILE_BYTES || !isContentSha1(info.contentSha1) ||
+        (item.contentSha1 && (info.fileSizeBytes !== item.fileSizeBytes || info.contentSha1.toLowerCase() !== item.contentSha1.toLowerCase()))) {
+      throw new Error("saved recording verification failed");
+    }
+    return { ...item, ...info, contentSha1: info.contentSha1.toLowerCase(), fileAvailability: "available" };
+  };
+  const replaySavedJournal = async () => {
+    for (const entry of [...saveJournal]) {
+      const id = entry.item.requestId;
+      const rawMatch = rawItems.some(raw => {
+        const candidate = (raw as Partial<PendingCheckIn> | null)?.requestId;
+        return isRequestId(candidate) && candidate.toLowerCase() === id.toLowerCase();
+      });
+      if (entry.deleting) {
+        let exists = true;
+        try { exists = await adapters.file.exists(entry.deletePath!); }
+        catch (error) { diagnose("journal.delete.pending", { requestId: id, error }); }
+        if (!exists) { await settleSaveJournal(id); continue; }
+        if (entry.before) {
+          if (!matchesRecoverySnapshot(entry.before)) await settleSaveJournal(id);
+          // 失败删除保留已下载副本，但只允许用户明确点击后恢复，不自动改主索引。
+          continue;
+        }
+        if (rawMatch) { await settleSaveJournal(id); continue; }
+        temporaryItems.set(id, { ...cloneItem(entry.item), recoverable: false });
+        savedTemporaryIds.add(id);
+        replayedSaveIds.add(id);
+        continue;
+      }
+      // 主索引已有新记录则以主索引为准；恢复必须匹配原始快照，删除后绝不重建。
+      if (entry.before ? !matchesRecoverySnapshot(entry.before) : rawMatch) {
+        await settleSaveJournal(id);
+        continue;
+      }
+      if (!entry.before) {
+        temporaryItems.set(id, { ...cloneItem(entry.item), recoverable: false });
+        savedTemporaryIds.add(id);
+        replayedSaveIds.add(id);
+      }
+      try {
+        const item = await verifyJournalFile(entry.item);
+        if (entry.before) recoverySaves.set(id, { snapshot: cloneItem(entry.before), savedFilePath: item.localPath,
+          info: { fileSizeBytes: item.fileSizeBytes, contentSha1: item.contentSha1! } });
+        const nextItems = entry.before ? persistedItems.map(current => current.requestId === id ? item : current) : [...persistedItems, item];
+        await persistItems(nextItems);
+        persistedItems = nextItems;
+        temporaryItems.delete(id);
+        savedTemporaryIds.delete(id);
+        replayedSaveIds.delete(id);
+        recoverySaves.delete(id);
+        await settleSaveJournal(id);
+        diagnose("journal.replay.success", { requestId: id });
+      } catch (error) {
+        diagnose("journal.replay.pending", { requestId: id, error });
+      }
+    }
   };
 
   const flushDirtyMetadata = async () => {
@@ -399,7 +525,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     // 先校验原生录音结果，避免为了“修复”无效数据而猜测时长或文件大小。
     validateRecordingInput(input);
     await cleanupInternal();
-    if (!metadataReadable) {
+    if (!metadataReadable || !journalReadable) {
       const item = retryItem || createItem(input, input.tempFilePath, false);
       return createTemporaryResult(item, "无法读取本地录音索引，请重试，现有录音不会被覆盖", "failed");
     }
@@ -425,15 +551,28 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
 
     let saved: SavedPendingRecordingFile;
     if (alreadySaved) {
-      saved = { savedFilePath: initialItem.localPath, fileSizeBytes: initialItem.fileSizeBytes, contentSha1: initialItem.contentSha1 };
+      // 重启日志恢复的待保存项不能绕过文件完整性检查。
+      let verified = initialItem;
+      if (replayedSaveIds.has(initialItem.requestId)) {
+        try { verified = await verifyJournalFile(initialItem); }
+        catch (_error) { return createTemporaryResult(initialItem, "无法核验已保存的录音，请稍后重试", "failed"); }
+      }
+      saved = { savedFilePath: verified.localPath, fileSizeBytes: verified.fileSizeBytes, contentSha1: verified.contentSha1 };
     } else {
+      const checkpoint = async (savedFilePath: string) => {
+        if (!isText(savedFilePath) || savedFilePath === input.tempFilePath) return;
+        const savedItem = { ...initialItem, localPath: savedFilePath, recoverable: true };
+        savedTemporaryIds.add(initialItem.requestId);
+        temporaryItems.set(initialItem.requestId, { ...savedItem, recoverable: false });
+        await checkpointSavedFile(savedItem);
+      };
       try {
-        saved = await adapters.file.save(input.tempFilePath);
+        saved = await adapters.file.save(input.tempFilePath, checkpoint);
       } catch (error) {
         if (isQuotaFailure(error)) {
           await cleanupInternal();
           try {
-            saved = await adapters.file.save(input.tempFilePath);
+            saved = await adapters.file.save(input.tempFilePath, checkpoint);
           } catch (_retryError) {
             return createTemporaryResult(
               initialItem,
@@ -466,6 +605,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     // 先保存移动后的真实路径；后续索引失败也不能丢失阶段和内容基准。
     savedTemporaryIds.add(item.requestId);
     temporaryItems.set(item.requestId, { ...item, recoverable: false });
+    await checkpointSavedFile(item);
     let actualCapacityMessage = "";
     try {
       if (await readUsageBytes() > PENDING_RECORDING_BYTES) actualCapacityMessage = capacityMessage();
@@ -479,7 +619,9 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       persistedItems = nextItems;
       temporaryItems.delete(item.requestId);
       savedTemporaryIds.delete(item.requestId);
+      replayedSaveIds.delete(item.requestId);
       metadataDirty = false;
+      await settleSaveJournal(item.requestId);
       // 已保存文件因实测修正而越限时仍保留恢复信息，后续录音按实际累计大小限制保存。
       return {
         item: freezeItem(item),
@@ -686,6 +828,10 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       diagnose("delete.access.failed", { requestId, error });
       return false;
     }
+    // 先撤销跨重启自动重放资格，再删音频；失败保留取消标记与准确路径。
+    try { if (!temporaryItem || savedTemporaryIds.has(requestId)) await markJournalDeleting(item); }
+    catch (error) { diagnose("delete.journal.failed", { requestId, error }); return false; }
+    recoverySaves.delete(requestId);
     try {
       if (exists) {
         // recoverable=false 也可能已完成 saveFile，仅索引写入失败，不能当作临时文件删除。
@@ -697,10 +843,12 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       return false;
     }
     diagnose(exists ? "delete.file.success" : "delete.file.already_missing", { requestId });
+    await settleSaveJournal(requestId);
 
     if (temporaryItem) {
       temporaryItems.delete(requestId);
       savedTemporaryIds.delete(requestId);
+      replayedSaveIds.delete(requestId);
       diagnose("delete.success", { requestId });
       return true;
     }
@@ -719,8 +867,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     const current = persistedItems.find(item => item.requestId === snapshot.requestId);
     if (!current) return false;
     // access 探针只更新 fileAvailability，不构成身份变更。
-    const identity = ({ fileAvailability: _availability, ...item }: PendingCheckIn) => JSON.stringify(item);
-    return identity(current) === identity(snapshot);
+    return recordingIdentity(current) === recordingIdentity(snapshot);
   };
 
   const restoreRecordingInternal = async (
@@ -729,7 +876,7 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     info: { fileSizeBytes: number; contentSha1: string; expiresAtMs?: number },
   ): Promise<PendingCheckIn | null> => {
     await ready();
-    if (!metadataReadable || !matchesRecoverySnapshot(snapshot)) {
+    if (!metadataReadable || !journalReadable || !matchesRecoverySnapshot(snapshot)) {
       recoverySaves.delete(snapshot.requestId);
       return null;
     }
@@ -750,7 +897,11 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       checkInfo(await adapters.file.info(tempFilePath));
       if (await readUsageBytes() + info.fileSizeBytes > PENDING_RECORDING_BYTES) throw Object.assign(new Error(capacityMessage()), { code: "RECOVERY_CAPACITY" });
       let result: SavedPendingRecordingFile;
-      try { result = await adapters.file.save(tempFilePath); }
+      try { result = await adapters.file.save(tempFilePath, async (savedFilePath) => {
+        if (!isText(savedFilePath) || savedFilePath === snapshot.localPath || savedFilePath === tempFilePath) return;
+        await checkpointSavedFile({ ...snapshot, localPath: savedFilePath, recoverable: true,
+          fileSizeBytes: info.fileSizeBytes, contentSha1: info.contentSha1.toLowerCase(), updatedAtMs: adapters.clock.now() }, snapshot);
+      }); }
       catch (error) { if (isQuotaFailure(error)) throw Object.assign(new Error(capacityMessage()), { code: "RECOVERY_CAPACITY" }); throw error; }
       if (!isText(result.savedFilePath) || result.savedFilePath === snapshot.localPath || result.savedFilePath === tempFilePath) throw new Error("恢复保存路径无效");
       saved = { snapshot: cloneItem(snapshot), savedFilePath: result.savedFilePath, info: { ...info } };
@@ -762,17 +913,32 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     if (!matchesRecoverySnapshot(snapshot)) return null;
     const nextItem: PendingCheckIn = { ...snapshot, localPath: saved.savedFilePath, recoverable: true,
       fileAvailability: "available", fileSizeBytes: info.fileSizeBytes, contentSha1: info.contentSha1.toLowerCase(), updatedAtMs: adapters.clock.now() };
+    await checkpointSavedFile(nextItem, snapshot);
     const nextItems = persistedItems.map(item => item.requestId === snapshot.requestId ? nextItem : item);
     try { await persistItems(nextItems); }
     catch (_error) { throw Object.assign(new Error("恢复索引写入失败"), { code: "PENDING_PERSIST_FAILED" }); }
     persistedItems = nextItems;
     recoverySaves.delete(snapshot.requestId);
+    await settleSaveJournal(snapshot.requestId);
     return freezeItem(nextItem);
   };
   const restoreRecording = (snapshot: PendingCheckIn, tempFilePath: string, info: { fileSizeBytes: number; contentSha1: string; expiresAtMs?: number }) =>
     enqueueMutation(() => restoreRecordingInternal(snapshot, tempFilePath, info));
   const retryRestoreRecording = (requestId: string) => enqueueMutation(async () => {
-    const saved = recoverySaves.get(requestId);
+    await ready();
+    let saved = recoverySaves.get(requestId);
+    if (!saved) {
+      const entry = saveJournal.find(current => current.item.requestId === requestId && current.before);
+      if (entry?.before) {
+        if (!matchesRecoverySnapshot(entry.before)) return null;
+        if (entry.deleting && !await adapters.file.exists(entry.deletePath!)) return null;
+        // 核验暂时失败要停在本地重试，不能退回云端重复下载。
+        const item = await verifyJournalFile(entry.item);
+        saved = { snapshot: cloneItem(entry.before), savedFilePath: item.localPath,
+          info: { fileSizeBytes: item.fileSizeBytes, contentSha1: item.contentSha1! } };
+        recoverySaves.set(requestId, saved);
+      }
+    }
     return saved ? restoreRecordingInternal(saved.snapshot, saved.savedFilePath, saved.info) : undefined;
   });
 
