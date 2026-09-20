@@ -40,6 +40,8 @@ assert.doesNotMatch(page, /submissionCoordinator\.submit\s*\(/, "列表展示和
 assert.match(page, /submissionCoordinator\.isSubmitting\s*\(/, "上传中的本机文件不得删除");
 assert.match(page, /pendingStore\.remove\s*\(/);
 assert.match(page, /setLocalRecords[\s\S]*?await\s+listMyCheckIns/, "本地录音必须先于云历史落屏");
+assert.match(page, /正在加载录音…/, "首屏必须先展示加载态，不能空列表闪成卡片");
+assert.match(page, /finally\s*\{[\s\S]*?setLoading\(false\)/, "云端成功或失败后都必须结束加载态");
 assert.match(page, /title:\s*["']删除本机录音？["']/);
 
 for (const copy of ["待上传", "已上传待确认", "继续提交"]) assert.equal(page.includes(copy), false);

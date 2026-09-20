@@ -34,7 +34,8 @@ assert.match(detail, /Math\.min\(expiresAtMs\s*-\s*Date\.now\(\)\s*\+\s*20,\s*2_
 assert.doesNotMatch(detail, /path:[^\n]*localId/, "分享卡片不得暴露本地编号");
 
 assert.match(library, /我的录音/);
-assert.match(library, /共\s*\{libraryRecords\.length\}\s*次/);
+assert.match(library, /共\s*\$\{libraryRecords\.length\}\s*次/);
+assert.match(library, /正在加载录音…/);
 assert.doesNotMatch(library, /待上传|已上传待确认|继续提交/);
 assert.match(library, /localId=/);
 

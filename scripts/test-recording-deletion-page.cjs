@@ -23,7 +23,13 @@ async function fixture({ remove = async () => true, confirm = true, sharing = fa
       "@/services/cloudCheckIn": { listMyCheckIns: listCloud, removeCheckIn: async () => { cloudDeletes++; return removeCloud(); } },
     },
   });
-  page.render(); page.show(); await settle();
+  page.render();
+  assert.equal(
+    textOf(byClass(page.render(), "my-check-ins-state__title")),
+    "正在加载录音…",
+    "进入列表先显示加载中，不能直接闪出空态或卡片",
+  );
+  page.show(); await settle();
   const click = () => byClass(page.render(), "check-in-list-card__delete").props.onClick();
   const hasCard = () => elements(page.render()).some(node => node.props?.className?.includes("check-in-list-card__delete"));
   return { page, click, hasCard, logs, toasts, calls: () => calls, cloudDeletes: () => cloudDeletes };

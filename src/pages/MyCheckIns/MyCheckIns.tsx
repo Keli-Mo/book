@@ -20,6 +20,7 @@ export default function MyCheckIns() {
   const [localRecords, setLocalRecords] = useState([...pendingStore.list()]);
   const [cloudRecords, setCloudRecords] = useState<CheckInSummary[]>([]);
   const [cloudNotice, setCloudNotice] = useState("");
+  const [loading, setLoading] = useState(true);
   const visibleRef = useRef(false);
   const deletingLocalRef = useRef(new Set<string>());
   const deletingCloudRef = useRef(new Set<string>());
@@ -35,19 +36,23 @@ export default function MyCheckIns() {
     const epoch = pageEpochRef.current;
     const refresh = ++refreshRef.current;
     const isCurrent = () => visibleRef.current && pageEpochRef.current === epoch && refreshRef.current === refresh;
-    await pendingStore.ready();
-    await pendingStore.cleanup();
-    if (!isCurrent()) return;
-    // 本地先落屏；云端失败只影响旧记录补充，不能遮住本机录音。
-    setLocalRecords([...pendingStore.list()]);
     try {
-      const cloud = await listMyCheckIns();
-      if (isCurrent()) {
-        setCloudRecords(cloud.filter(record => !deletedCloudRef.current.has(record.id)));
-        setCloudNotice("");
+      await pendingStore.ready();
+      await pendingStore.cleanup();
+      if (!isCurrent()) return;
+      // 本地先落屏；云端失败只影响旧记录补充，不能遮住本机录音。
+      setLocalRecords([...pendingStore.list()]);
+      try {
+        const cloud = await listMyCheckIns();
+        if (isCurrent()) {
+          setCloudRecords(cloud.filter(record => !deletedCloudRef.current.has(record.id)));
+          setCloudNotice("");
+        }
+      } catch (_error) {
+        if (isCurrent()) setCloudNotice("云端历史暂时无法刷新，本机录音仍可使用");
       }
-    } catch (_error) {
-      if (isCurrent()) setCloudNotice("云端历史暂时无法刷新，本机录音仍可使用");
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
@@ -130,10 +135,16 @@ export default function MyCheckIns() {
     <View className={`my-check-ins device-layout__content ${layoutClassName}`}>
       <View className='my-check-ins__intro'>
         <Text className='my-check-ins__title'>我的录音</Text>
-        <Text className='my-check-ins__tip'>共 {libraryRecords.length} 次</Text>
+        <Text className='my-check-ins__tip'>
+          {loading ? "加载中" : `共 ${libraryRecords.length} 次`}
+        </Text>
         {cloudNotice && <Text className='my-check-ins__tip'>{cloudNotice}</Text>}
       </View>
-      {libraryRecords.length === 0 ? (
+      {loading ? (
+        <View className='my-check-ins-state'>
+          <Text className='my-check-ins-state__title'>正在加载录音…</Text>
+        </View>
+      ) : libraryRecords.length === 0 ? (
         <View className='my-check-ins-state'>
           <Text className='my-check-ins-state__title'>还没有录音</Text>
         </View>
