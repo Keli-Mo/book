@@ -21,7 +21,7 @@ import { clampHotspotCenter, fitContainSize } from "@/features/listeningPractice
 import {
   isPracticeSwiperTouchChange,
   PAGE_TURN_DURATION_MS,
-  shouldRenderPracticeSlideImage,
+  retainPracticeSlideIndexes,
 } from "@/features/listeningPractice/practiceSwipe";
 import { buildPracticeDirectoryGroups } from "@/features/listeningPractice/practiceDirectory";
 import {
@@ -165,6 +165,20 @@ export default function Practice() {
   );
 }
 
+type NaturalImageSize = { width: number; height: number };
+const naturalImageSizeCache = new Map<string, NaturalImageSize>();
+
+const readNaturalImageSize = (value: unknown): NaturalImageSize | null => {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { width?: unknown; height?: unknown };
+  const width = Number(record.width);
+  const height = Number(record.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { width, height };
+};
+
 function PracticeSession({
   bundle,
   initialPracticeIndex,
@@ -208,6 +222,9 @@ function PracticeSession({
   const [bookSwiperCurrent, setBookSwiperCurrent] = useState(practiceIndex);
   const [bookSwiperDuration, setBookSwiperDuration] = useState(PAGE_TURN_DURATION_MS);
   const [bookSwipeLocked, setBookSwipeLocked] = useState(false);
+  const [retainedSlideIndexes, setRetainedSlideIndexes] = useState(
+    () => new Set(retainPracticeSlideIndexes([], initialPracticeIndex, bundle.practices.length)),
+  );
   const modelAudioControllerRef = useRef<ReturnType<
     typeof createTrackAudioController
   > | null>(null);
@@ -309,21 +326,37 @@ function PracticeSession({
   );
 
   useEffect(() => {
+    setRetainedSlideIndexes((previous) => {
+      const nextIndexes = retainPracticeSlideIndexes(
+        previous,
+        bookSwiperCurrent,
+        bundle.practices.length,
+      );
+      if (
+        nextIndexes.length === previous.size &&
+        nextIndexes.every((index) => previous.has(index))
+      ) {
+        return previous;
+      }
+      return new Set(nextIndexes);
+    });
+  }, [bookSwiperCurrent, bundle.practices.length]);
+
+  useEffect(() => {
+    const cached = naturalImageSizeCache.get(practice.imageUrl);
+    if (cached) {
+      setNaturalImageSize(cached);
+      return undefined;
+    }
     let cancelled = false;
     if (typeof Taro.getImageInfo !== "function") return undefined;
     Taro.getImageInfo({
       src: practice.imageUrl,
       success: (result) => {
-        if (
-          cancelled ||
-          !Number.isFinite(result.width) ||
-          !Number.isFinite(result.height) ||
-          result.width <= 0 ||
-          result.height <= 0
-        ) {
-          return;
-        }
-        setNaturalImageSize({ width: result.width, height: result.height });
+        const size = readNaturalImageSize(result);
+        if (cancelled || !size) return;
+        naturalImageSizeCache.set(practice.imageUrl, size);
+        setNaturalImageSize(size);
       },
     });
     return () => {
@@ -1626,7 +1659,7 @@ function PracticeSession({
                 {bundle.practices.map((item, index) => (
                   <SwiperItem key={item.id} className='practice-book-slide'>
                     <View className='practice-book-page'>
-                      {shouldRenderPracticeSlideImage(index, bookSwiperCurrent) ? (
+                      {retainedSlideIndexes.has(index) ? (
                         <Image
                           className={
                             index === practiceIndex
@@ -1636,7 +1669,14 @@ function PracticeSession({
                           src={item.imageUrl}
                           mode={fittedBookSize ? "scaleToFill" : "aspectFit"}
                           webp
-                          onLoad={() => {
+                          onLoad={(event) => {
+                            const size = readNaturalImageSize(event.detail);
+                            if (size) {
+                              naturalImageSizeCache.set(item.imageUrl, size);
+                              if (index === practiceContextRef.current.practiceIndex) {
+                                setNaturalImageSize(size);
+                              }
+                            }
                             if (index === practiceContextRef.current.practiceIndex) {
                               measureBookImage();
                             }
