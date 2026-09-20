@@ -75,6 +75,16 @@ const delay = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
+const logAppEntry = (label: string, payload: unknown) => {
+  let text = "";
+  try {
+    text = JSON.stringify(payload);
+  } catch (_error) {
+    text = String(payload);
+  }
+  console.log(`[app-entry] ${label}`, text);
+};
+
 /**
  * 按微信云托管官方示例调用 GET /api/app-entry。
  */
@@ -92,6 +102,7 @@ export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
   const callContainer = cloud?.callContainer;
   if (typeof callContainer !== "function") {
     await delay(MOCK_NETWORK_DELAY_MS);
+    logAppEntry("mock", { mode: MOCK_APP_ENTRY_MODE });
     return { mode: MOCK_APP_ENTRY_MODE };
   }
 
@@ -105,7 +116,9 @@ export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
     },
     method: "GET",
   });
+  logAppEntry("raw", response);
   const mode = readAppEntryMode(response);
+  logAppEntry("parsed", { mode });
   if (!mode) throw new Error("invalid app entry");
   return { mode };
 }

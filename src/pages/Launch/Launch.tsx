@@ -26,10 +26,14 @@ export default function Launch() {
     void (async () => {
       try {
         const response = await fetchAppEntryMode();
-        await Taro.reLaunch({
-          url: resolveLaunchUrl(response.mode, readReadingProgress()),
-        });
-      } catch (_error) {
+        const url = resolveLaunchUrl(response.mode, readReadingProgress());
+        console.log("[app-entry] launch", JSON.stringify({ mode: response.mode, url }));
+        await Taro.reLaunch({ url });
+      } catch (error) {
+        console.log(
+          "[app-entry] error",
+          error instanceof Error ? error.message : String(error),
+        );
         await Taro.reLaunch({ url: HOME_FALLBACK_URL });
       }
     })();
