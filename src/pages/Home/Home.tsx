@@ -12,7 +12,7 @@ import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
-import { sharedImage } from "@/constant";
+import { sharedImage, sharedTitle } from "@/constant";
 
 import "./Home.scss";
 
@@ -40,7 +40,7 @@ export default function Home() {
     : null;
 
   useShareAppMessage(() => ({
-    title: "海沙牛娃英语听力与跟读训练",
+    title: sharedTitle,
     path: "pages/Home/Home",
     imageUrl: sharedImage,
   }));

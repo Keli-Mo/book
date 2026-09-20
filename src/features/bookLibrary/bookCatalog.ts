@@ -36,9 +36,9 @@ export const BOOKS: BookCatalogItem[] = [
   {
     id: "3",
     seriesId: "casa",
-    title: "CASA 阅读与自然拼读 1",
+    title: "CASA 自拼&阅读启蒙 1",
     level: "第 1 册",
-    kind: "阅读与自然拼读",
+    kind: "自拼&阅读启蒙",
     cover: cover(
       "1.CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BC-%E5%9B%BE%E7%89%87/CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BCReading%20%26%20Phonics%201_1.png",
     ),
@@ -47,9 +47,9 @@ export const BOOKS: BookCatalogItem[] = [
   {
     id: "4",
     seriesId: "casa",
-    title: "CASA 阅读与自然拼读 2",
+    title: "CASA 自拼&阅读启蒙 2",
     level: "第 2 册",
-    kind: "阅读与自然拼读",
+    kind: "自拼&阅读启蒙",
     cover: cover(
       "2.CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BC-%E5%9B%BE%E7%89%87/CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BCReading%20%26%20Phonics%202_1.png",
     ),
@@ -58,9 +58,9 @@ export const BOOKS: BookCatalogItem[] = [
   {
     id: "5",
     seriesId: "casa",
-    title: "CASA 阅读与自然拼读 3",
+    title: "CASA 自拼&阅读启蒙 3",
     level: "第 3 册",
-    kind: "阅读与自然拼读",
+    kind: "自拼&阅读启蒙",
     cover: cover(
       "3.CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BC-%E5%9B%BE%E7%89%87/CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BCReading%20%26%20Phonics%203_1.png",
     ),
@@ -69,9 +69,9 @@ export const BOOKS: BookCatalogItem[] = [
   {
     id: "6",
     seriesId: "casa",
-    title: "CASA 阅读与自然拼读 4",
+    title: "CASA 自拼&阅读启蒙 4",
     level: "第 4 册",
-    kind: "阅读与自然拼读",
+    kind: "自拼&阅读启蒙",
     cover: cover(
       "4.CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BC-%E5%9B%BE%E7%89%87/CASA%E9%98%85%E8%AF%BB%E4%B8%8E%E8%87%AA%E6%8B%BCReading%20%26%20Phonics%204_1.png",
     ),
@@ -310,36 +310,36 @@ const createBookSeries = (
 export const BOOK_SERIES: BookSeries[] = [
   createBookSeries({
     id: "casa",
-    title: "CASA 阅读与自然拼读",
-    shortTitle: "CASA",
+    title: "CASA 自拼&阅读启蒙",
+    shortTitle: "自拼&阅读",
     rangeLabel: "1–4 册",
     cover: requireBook("3").cover,
   }),
   createBookSeries({
     id: "our-world",
     title: "Our World",
-    shortTitle: "Our World",
+    shortTitle: "OW",
     rangeLabel: "Starter · Level 1",
     cover: requireBook("12").cover,
   }),
   createBookSeries({
     id: "oxford-discover",
     title: "Oxford Discover",
-    shortTitle: "Oxford",
+    shortTitle: "OD",
     rangeLabel: "Level 1–5",
     cover: requireBook("19").cover,
   }),
   createBookSeries({
     id: "reading-explorer",
     title: "Reading Explorer",
-    shortTitle: "Reading Explorer",
+    shortTitle: "RE",
     rangeLabel: "Foundations · Level 1–5",
     cover: requireBook("23").cover,
   }),
   createBookSeries({
     id: "cambridge",
     title: "剑桥 KET / PET",
-    shortTitle: "剑桥",
+    shortTitle: "综合",
     rangeLabel: "A2 · B1 · 学生书 / 练习册",
     cover: requireBook("9").cover,
   }),
