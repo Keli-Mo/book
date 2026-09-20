@@ -10,12 +10,14 @@ import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavig
 import { readReadingProgress, type ReadingProgress } from "@/features/bookLibrary/readingProgress";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
+import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import { sharedImage } from "@/constant";
 
 import "./Home.scss";
 
 export default function Home() {
+  useAppEntryIntroGuard();
   const [readingProgress, setReadingProgress] = useState<ReadingProgress | null>(
     () => readReadingProgress(),
   );

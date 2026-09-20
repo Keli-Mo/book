@@ -12,6 +12,7 @@ import { getRecordingRecoveryMessage } from "@/features/listeningPractice/record
 import { getCheckInDetail, getShareReadFailure, getShareFailureMessage, type CheckInDetail as CloudDetail } from "@/services/cloudCheckIn";
 import { sharedImage } from "@/constant";
 import { formatCheckInTime, formatPlaybackDurationLabel } from "@/utils/checkInFormat";
+import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import CheckInNavigation from "./CheckInNavigation";
 import "./CheckInDetail.scss";
@@ -21,6 +22,7 @@ const submissionCoordinator = getCheckInSubmissionCoordinator();
 type DetailView = { source: "local"; pending: PendingCheckIn; recordingUrl: string } | { source: "cloud"; cloud: CloudDetail; recordingUrl: string };
 
 export default function CheckInDetail() {
+  useAppEntryIntroGuard();
   const layoutClassName = buildDeviceLayoutClassName(useDeviceLayout());
   const router = useRouter();
   const localId = router.params?.localId || "";

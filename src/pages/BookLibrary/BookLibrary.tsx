@@ -11,6 +11,7 @@ import {
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
+import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import { sharedImage } from "@/constant";
 
@@ -20,6 +21,7 @@ const isSeriesId = (value: string): value is BookSeriesId =>
   BOOK_SERIES.some((series) => series.id === value);
 
 export default function BookLibrary() {
+  useAppEntryIntroGuard();
   const layout = useDeviceLayout();
   const layoutClassName = buildDeviceLayoutClassName(layout);
   const router = useRouter();

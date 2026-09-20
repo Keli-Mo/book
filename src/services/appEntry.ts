@@ -70,6 +70,33 @@ export function resolveLaunchUrl(
   return HOME_FALLBACK_URL;
 }
 
+export type AppEntryPageGuardResult = "redirected" | "stay" | "error";
+
+/**
+ * 热启动可能直接落到跟读等子页，子页再问一次入口。
+ * 仅 mode=intro 时跳介绍页；practice、未知值和请求失败都留在当前页。
+ */
+export async function redirectToIntroIfNeeded(
+  reLaunch: (url: string) => Promise<unknown>,
+): Promise<AppEntryPageGuardResult> {
+  try {
+    const { mode } = await fetchAppEntryMode();
+    if (mode !== "intro") {
+      logAppEntry("page-gate", { mode, action: "stay" });
+      return "stay";
+    }
+    logAppEntry("page-gate", { mode, action: "redirect", url: INTRO_URL });
+    await reLaunch(INTRO_URL);
+    return "redirected";
+  } catch (error) {
+    logAppEntry(
+      "page-gate error",
+      error instanceof Error ? error.message : String(error),
+    );
+    return "error";
+  }
+}
+
 const delay = (ms: number) =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);

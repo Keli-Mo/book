@@ -7,6 +7,7 @@ import { mergeRecordingLibrary } from "@/features/listeningPractice/recordingLib
 import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
 import { listMyCheckIns, removeCheckIn, type CheckInSummary } from "@/services/cloudCheckIn";
 import { formatCheckInTime, formatRecordingDuration } from "@/utils/checkInFormat";
+import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import "./MyCheckIns.scss";
 
@@ -14,6 +15,7 @@ const pendingStore = getPendingCheckInStore();
 const submissionCoordinator = getCheckInSubmissionCoordinator();
 
 export default function MyCheckIns() {
+  useAppEntryIntroGuard();
   const layoutClassName = buildDeviceLayoutClassName(useDeviceLayout());
   const [localRecords, setLocalRecords] = useState([...pendingStore.list()]);
   const [cloudRecords, setCloudRecords] = useState<CheckInSummary[]>([]);

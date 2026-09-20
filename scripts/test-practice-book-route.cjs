@@ -349,6 +349,7 @@ const createPage = (file, params, options = {}) => {
     "@/features/listeningPractice/recorderCoordinator": { getRecorderCoordinator: () => recorderCoordinator },
     "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => pendingStore, logRecordingDiagnostic: options.recordingDiagnostic || (() => {}), diagnoseLocalRecordingFailure: options.recordingFailureProbe || (() => {}), getActivePendingRecovery: () => undefined },
     "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => submissionCoordinator },
+    "@/hooks/useAppEntryIntroGuard": { useAppEntryIntroGuard() {} },
     wx: {},
     __setTimeout: options.setTimeout,
     __clearTimeout: options.clearTimeout,

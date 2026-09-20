@@ -172,6 +172,93 @@ const load = (file, overrides = {}, cache = new Map()) => {
     /HOME_FALLBACK_URL/,
     "请求失败必须回落到书架首页",
   );
+  assert.doesNotMatch(
+    launch,
+    /useAppEntryIntroGuard/,
+    "闸门页自己分流，不再套子页 intro 门禁",
+  );
+
+  const hostedGuard = load(
+    "src/services/appEntry.ts",
+    {
+      wx: {
+        cloud: {
+          callContainer: async () => ({ data: { ok: true, mode: "intro" } }),
+        },
+      },
+    },
+    new Map(),
+  );
+  const introJumps = [];
+  assert.equal(
+    await hostedGuard.redirectToIntroIfNeeded(async (url) => {
+      introJumps.push(url);
+    }),
+    "redirected",
+  );
+  assert.deepEqual(introJumps, [INTRO_URL]);
+
+  const stayGuard = load(
+    "src/services/appEntry.ts",
+    {
+      wx: {
+        cloud: {
+          callContainer: async () => ({ data: { ok: true, mode: "practice" } }),
+        },
+      },
+    },
+    new Map(),
+  );
+  const stayJumps = [];
+  assert.equal(
+    await stayGuard.redirectToIntroIfNeeded(async (url) => {
+      stayJumps.push(url);
+    }),
+    "stay",
+  );
+  assert.deepEqual(stayJumps, []);
+
+  const errorGuard = load(
+    "src/services/appEntry.ts",
+    {
+      wx: {
+        cloud: {
+          callContainer: async () => {
+            throw new Error("network down");
+          },
+        },
+      },
+    },
+    new Map(),
+  );
+  const errorJumps = [];
+  assert.equal(
+    await errorGuard.redirectToIntroIfNeeded(async (url) => {
+      errorJumps.push(url);
+    }),
+    "error",
+  );
+  assert.deepEqual(errorJumps, []);
+
+  const hook = read("src/hooks/useAppEntryIntroGuard.ts");
+  assert.match(hook, /useDidShow/, "子页门禁必须在页面显示时触发，才能覆盖热启动");
+  assert.match(hook, /redirectToIntroIfNeeded/, "子页门禁必须复用入口接口");
+  assert.match(hook, /Taro\.reLaunch/, "intro 必须清栈进介绍页");
+
+  const guardedPages = [
+    "src/pages/Home/Home.tsx",
+    "src/pages/BookLibrary/BookLibrary.tsx",
+    "src/pages/Practice/Practice.tsx",
+    "src/pages/CheckInDetail/CheckInDetail.tsx",
+    "src/pages/MyCheckIns/MyCheckIns.tsx",
+  ];
+  for (const file of guardedPages) {
+    assert.match(
+      read(file),
+      /useAppEntryIntroGuard\(\)/,
+      `${file} 热启动时必须再问一次入口`,
+    );
+  }
 
   const intro = read("src/pages/Intro/Intro.tsx");
   assert.match(intro, /海沙牛娃/, "介绍页应展示机构名称");
@@ -181,6 +268,11 @@ const load = (file, overrides = {}, cache = new Map()) => {
     intro,
     /关注|私信|开始跟读|resolvePracticeEntryUrl|pages\/Practice\/Practice/,
     "介绍页是独立机构介绍页，不含关注私信，也不能跳到听音跟读页",
+  );
+  assert.doesNotMatch(
+    intro,
+    /useAppEntryIntroGuard|fetchAppEntryMode/,
+    "介绍页已是 intro 终点，不再回跳",
   );
 
   assert.equal(

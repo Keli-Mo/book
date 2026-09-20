@@ -53,6 +53,7 @@ import {
 } from "@/features/listeningPractice/recorderCoordinator";
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
 import { getPendingCheckInStore, logRecordingDiagnostic, diagnoseLocalRecordingFailure } from "@/features/listeningPractice/pendingCheckInRuntime";
+import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import {
   useDeviceLayout,
   type DeviceLayoutState,
@@ -93,6 +94,7 @@ const getRecorderTimeoutOperation = (error: unknown) => {
 };
 
 export default function Practice() {
+  useAppEntryIntroGuard();
   const layout = useDeviceLayout();
   const layoutClassName = buildDeviceLayoutClassName(layout);
   const router = useRouter();
