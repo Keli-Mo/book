@@ -13,7 +13,7 @@ import {
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
-import { sharedImage } from "@/constant";
+import { sharedImage, sharedTitle } from "@/constant";
 
 import "./BookLibrary.scss";
 
@@ -38,7 +38,7 @@ export default function BookLibrary() {
   const currentSeries = BOOK_SERIES.find((series) => series.id === seriesId);
 
   useShareAppMessage(() => ({
-    title: "海沙牛娃 · 全部英语教材",
+    title: sharedTitle,
     path: "pages/Home/Home",
     imageUrl: sharedImage,
   }));

@@ -10,7 +10,7 @@ import { getPendingCheckInStore, logRecordingDiagnostic, diagnoseLocalRecordingF
 import type { PendingCheckIn } from "@/features/listeningPractice/pendingCheckInStore";
 import { getRecordingRecoveryMessage } from "@/features/listeningPractice/recordingRecovery";
 import { getCheckInDetail, getShareReadFailure, getShareFailureMessage, type CheckInDetail as CloudDetail } from "@/services/cloudCheckIn";
-import { sharedImage } from "@/constant";
+import { sharedImage, sharedTitle } from "@/constant";
 import { formatCheckInTime, formatPlaybackDurationLabel } from "@/utils/checkInFormat";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
@@ -97,7 +97,7 @@ export default function CheckInDetail() {
   useShareAppMessage(() => {
     // 回调触发时再验一次期限，页面停留跨过期点也不能复活旧口令。
     if (recoveryRef.current || getActivePendingRecovery(localId) || !values || !values.id || !values.shareToken || values.expiresAtMs <= Date.now()) {
-      return { title: "海沙牛娃英语跟读训练", path: "/pages/Home/Home", imageUrl: sharedImage };
+      return { title: sharedTitle, path: "/pages/Home/Home", imageUrl: sharedImage };
     }
     return { title: `我完成了《${values.bookTitle}》${values.sectionTitle}跟读练习`, path: `/pages/CheckInDetail/CheckInDetail?id=${encodeURIComponent(values.id)}&token=${encodeURIComponent(values.shareToken)}`, imageUrl: values.imageUrl || sharedImage };
   });

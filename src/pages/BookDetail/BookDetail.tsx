@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLaunch, useLoad, useRouter, useShareAppMessage } from "@tarojs/taro";
 import BookPreview from "./Components/BookPreview/BookPreview";
-import { sharedImage } from "@/constant";
+import { sharedImage, sharedTitle } from "@/constant";
 
 export default function BookDetail() {
   const router = useRouter();
@@ -11,7 +11,7 @@ export default function BookDetail() {
 
   useShareAppMessage(() => {
     return {
-      title: '海沙牛娃电子书', // 转发标题
+      title: sharedTitle, // 转发标题
       path: 'pages/BookDetail/BookDetail?id=' + (id) + ('&page=' + currentPage), // 转发路径，可以携带参数
       imageUrl: sharedImage, // 自定义分享图片
       success: function (res) {
