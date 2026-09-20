@@ -4,5 +4,6 @@ export default definePageConfig({
   navigationBarBackgroundColor: "#ffffff",
   navigationBarTextStyle: "black",
   backgroundColor: "#f7faf9",
+  disableScroll: true,
   enableShareAppMessage: true,
 });

@@ -1,5 +1,9 @@
 .book-library {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   box-sizing: border-box;
   padding-top: 32rpx;
   padding-right: 18PX;
@@ -9,6 +13,16 @@
     radial-gradient(circle at 88% 2%, rgba(210, 239, 229, 0.34), transparent 25%),
     #f7faf9;
   color: #24362f;
+
+  &__toolbar {
+    flex: none;
+  }
+
+  &__scroller {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 0;
+  }
 
   &__heading {
     display: flex;

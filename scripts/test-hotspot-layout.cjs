@@ -77,11 +77,16 @@ const loadTypeScriptModule = (modulePath) => {
   return moduleContainer.exports;
 };
 
-const { clampHotspotCenter } = loadTypeScriptModule(sourcePath);
+const { clampHotspotCenter, fitContainSize } = loadTypeScriptModule(sourcePath);
 assert.equal(
   typeof clampHotspotCenter,
   "function",
   "教材热点布局模型应导出 clampHotspotCenter",
+);
+assert.equal(
+  typeof fitContainSize,
+  "function",
+  "教材热点布局模型应导出 fitContainSize",
 );
 
 const normalize = (value) => JSON.parse(JSON.stringify(value));
@@ -220,6 +225,19 @@ clampHotspotCenter(originalPoint, originalImageSize);
 assert.deepEqual(originalPoint, pointSnapshot, "输入不可变：不得修改热点坐标对象");
 assert.deepEqual(originalImageSize, imageSizeSnapshot, "输入不可变：不得修改图片尺寸对象");
 
+assert.deepEqual(
+  normalize(fitContainSize({ width: 320, height: 200 }, { width: 1600, height: 2000 })),
+  { width: 160, height: 200 },
+  "高图应先受槽位高度限制",
+);
+assert.deepEqual(
+  normalize(fitContainSize({ width: 320, height: 200 }, { width: 1600, height: 800 })),
+  { width: 320, height: 160 },
+  "宽图应先受槽位宽度限制",
+);
+assert.equal(fitContainSize({ width: 0, height: 200 }, { width: 100, height: 100 }), null);
+assert.equal(fitContainSize({ width: 100, height: 100 }, { width: 50, height: 0 }), null);
+
 console.log(
-  "教材热点布局测试通过：默认与自定义半径、四边收敛、非法输入及不可变契约均正确。",
+  "教材热点布局测试通过：默认与自定义半径、四边收敛、非法输入、视口等比缩放及不可变契约均正确。",
 );

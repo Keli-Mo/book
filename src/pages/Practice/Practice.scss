@@ -1,7 +1,9 @@
 .practice-screen {
   display: flex;
   flex-direction: column;
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   background: #f4f7f5;
 
   > .practice-page,
@@ -13,7 +15,10 @@
 }
 
 .practice-page {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   padding: 34rpx 26rpx 80rpx;
   padding-bottom: 24PX;
   box-sizing: border-box;
@@ -21,10 +26,17 @@
   color: #24362f;
 }
 
-.practice-page__content { min-width: 0; }
+.practice-page__content {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
 
 .practice-header {
   display: flex;
+  flex: none;
   flex-direction: column;
   padding: 8rpx 10rpx 28rpx;
 
@@ -54,11 +66,14 @@
   position: relative;
   overflow: hidden;
   width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   border-radius: 24rpx;
   background: #ffffff;
   box-shadow: 0 16rpx 40rpx rgba(37, 69, 58, 0.12);
 
-  &__image { display: block; width: 100%; }
+  &__image { display: block; width: 100%; height: 100%; }
   &__hotspots {
     position: absolute;
     inset: 0;
@@ -66,15 +81,39 @@
   }
 }
 
-.practice-workspace__book,
-.practice-workspace__controls { min-width: 0; }
+.practice-workspace {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.practice-workspace__book {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.practice-workspace__controls {
+  flex: none;
+  min-width: 0;
+}
 
 // 宽 Pad 的教材与录音控制同时可见；手机横屏仍走单栏。
 .device-layout--split .practice-workspace {
   display: grid;
   grid-template-columns: minmax(480PX, 1fr) minmax(320PX, 420PX);
   gap: 24PX;
-  align-items: start;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.device-layout--split .practice-workspace__book,
+.device-layout--split .practice-workspace__controls {
+  min-height: 0;
 }
 
 .audio-hotspot {
@@ -257,7 +296,7 @@ button[disabled] { opacity: 0.5; }
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  min-height: 0;
   padding: 32rpx;
   padding-bottom: 24PX;
   box-sizing: border-box;

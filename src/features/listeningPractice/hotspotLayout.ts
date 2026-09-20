@@ -44,3 +44,28 @@ export const clampHotspotCenter = (
     top: clampAxis(point.top, imageSize.height, safeRadius),
   };
 };
+
+/** 在可用槽位内等比放下教材图，避免 widthFix 把整页撑出滚动。 */
+export const fitContainSize = (
+  slot: HotspotImageSize,
+  natural: HotspotImageSize,
+): HotspotImageSize | null => {
+  if (
+    !Number.isFinite(slot.width) ||
+    !Number.isFinite(slot.height) ||
+    !Number.isFinite(natural.width) ||
+    !Number.isFinite(natural.height) ||
+    slot.width <= 0 ||
+    slot.height <= 0 ||
+    natural.width <= 0 ||
+    natural.height <= 0
+  ) {
+    return null;
+  }
+
+  const scale = Math.min(slot.width / natural.width, slot.height / natural.height);
+  return {
+    width: Math.round(natural.width * scale),
+    height: Math.round(natural.height * scale),
+  };
+};

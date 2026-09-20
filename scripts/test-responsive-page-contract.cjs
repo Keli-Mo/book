@@ -516,32 +516,37 @@ check("训练 split 工作区为教材与控制双列", () => {
   );
 });
 
-check("教材图保持自然比例并按实际节点测量热点", () => {
+check("教材图在剩余视口内等比缩放并按实际节点测量热点", () => {
   const image = byClass(practice.ast, "practice-book-page__image", "Image")[0];
   assert.ok(image);
-  assert.equal(literalAttribute(image, "mode"), "widthFix");
+  assert.ok(practice.source.includes("aspectFit"), "槽位未定时教材图应等比放入，避免撑破一屏");
+  assert.ok(practice.source.includes("scaleToFill"), "定框后应铺满图面，热点百分比才能对齐课文");
   assert.ok(attribute(image, "onLoad"), "教材图应在 onLoad 后测量");
-  assert.ok(propertyCalls(practice.ast, "select", ".practice-book-page__image"));
+  assert.ok(propertyCalls(practice.ast, "select", ".practice-book-page"));
+  assert.ok(propertyCalls(practice.ast, "select", ".practice-workspace__book"));
   assert.ok(propertyCalls(practice.ast, "boundingClientRect"));
   const clamp = importedName(
     practice.ast,
     "@/features/listeningPractice/hotspotLayout",
     "clampHotspotCenter",
   );
+  const fit = importedName(
+    practice.ast,
+    "@/features/listeningPractice/hotspotLayout",
+    "fitContainSize",
+  );
   assert.ok(calls(practice.ast, clamp));
+  assert.ok(calls(practice.ast, fit));
   assert.ok(
     matchingRules(practice.styles, [".practice-book-page__image"]).some((rule) =>
-      has(rule, "width", "100%"),
+      has(rule, "width", "100%") && has(rule, "height", "100%"),
     ),
   );
-  for (const selector of [".practice-book-page", ".practice-book-page__image"]) {
-    const heights = matchingRules(practice.styles, [selector]).flatMap((rule) =>
-      ["height", "min-height", "max-height"].flatMap((property) =>
-        values(rule, property),
-      ),
-    );
-    assert.ok(heights.every((value) => /^(?:auto|none|unset)$/.test(value)));
-  }
+  assert.ok(
+    matchingRules(practice.styles, [".practice-workspace__book"]).some(
+      (rule) => has(rule, "flex", "1") || has(rule, "flex-grow", "1"),
+    ),
+  );
   assert.ok(
     ruleWith(practice.styles, [".practice-book-page__hotspots"], {
       position: "absolute",

@@ -17,7 +17,7 @@ import {
   type BookPracticeBundle,
   type ListeningPractice,
 } from "@/features/listeningPractice/bookPractice";
-import { clampHotspotCenter } from "@/features/listeningPractice/hotspotLayout";
+import { clampHotspotCenter, fitContainSize } from "@/features/listeningPractice/hotspotLayout";
 import { buildPracticeDirectoryGroups } from "@/features/listeningPractice/practiceDirectory";
 import {
   getRecordingErrorMessage,
@@ -198,6 +198,8 @@ function PracticeSession({
   const [isSavingRecording, setIsSavingRecording] = useState(false);
   const [pendingRestoreRefresh, setPendingRestoreRefresh] = useState(0);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [bookSlotSize, setBookSlotSize] = useState({ width: 0, height: 0 });
+  const [naturalImageSize, setNaturalImageSize] = useState({ width: 0, height: 0 });
   const modelAudioControllerRef = useRef<ReturnType<
     typeof createTrackAudioController
   > | null>(null);
@@ -265,30 +267,78 @@ function PracticeSession({
   const measureBookImage = useMemo(
     () => () => {
       if (typeof Taro.createSelectorQuery !== "function") return;
-      Taro.createSelectorQuery()
-        .select(".practice-book-page__image")
-        .boundingClientRect((rect) => {
-          if (
-            !rect ||
-            Array.isArray(rect) ||
-            !Number.isFinite(rect.width) ||
-            !Number.isFinite(rect.height) ||
-            rect.width <= 0 ||
-            rect.height <= 0
-          ) {
-            return;
-          }
-          setImageSize({ width: rect.width, height: rect.height });
-        })
-        .exec();
+      const query = Taro.createSelectorQuery();
+      query.select(".practice-workspace__book").boundingClientRect();
+      query.select(".practice-book-page").boundingClientRect();
+      query.exec((results) => {
+        const slot = Array.isArray(results) ? results[0] : null;
+        const image = Array.isArray(results) ? results[1] : results;
+        if (
+          slot &&
+          !Array.isArray(slot) &&
+          Number.isFinite(slot.width) &&
+          Number.isFinite(slot.height) &&
+          slot.width > 0 &&
+          slot.height > 0
+        ) {
+          setBookSlotSize({ width: slot.width, height: slot.height });
+        }
+        if (
+          image &&
+          !Array.isArray(image) &&
+          Number.isFinite(image.width) &&
+          Number.isFinite(image.height) &&
+          image.width > 0 &&
+          image.height > 0
+        ) {
+          setImageSize({ width: image.width, height: image.height });
+        }
+      });
     },
     [],
   );
 
   useEffect(() => {
-    // 图片加载和窗口尺寸变化都复用同一次实测，不触碰音频或录音实例。
+    let cancelled = false;
+    setNaturalImageSize({ width: 0, height: 0 });
+    if (typeof Taro.getImageInfo !== "function") return undefined;
+    Taro.getImageInfo({
+      src: practice.imageUrl,
+      success: (result) => {
+        if (
+          cancelled ||
+          !Number.isFinite(result.width) ||
+          !Number.isFinite(result.height) ||
+          result.width <= 0 ||
+          result.height <= 0
+        ) {
+          return;
+        }
+        setNaturalImageSize({ width: result.width, height: result.height });
+      },
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [practice.imageUrl]);
+
+  const fittedBookSize = useMemo(
+    () => fitContainSize(bookSlotSize, naturalImageSize),
+    [bookSlotSize, naturalImageSize],
+  );
+
+  useEffect(() => {
+    // 图片加载、窗口变化、等比缩放和录音控件增高后都重测可用槽位与热点参考尺寸。
     measureBookImage();
-  }, [layout.windowHeight, layout.windowWidth, measureBookImage]);
+  }, [
+    fittedBookSize?.height,
+    fittedBookSize?.width,
+    layout.windowHeight,
+    layout.windowWidth,
+    measureBookImage,
+    practice.imageUrl,
+    recordingState,
+  ]);
 
   const clampedHotspots = useMemo(
     () =>
@@ -1492,11 +1542,21 @@ function PracticeSession({
 
         <View className='practice-workspace'>
           <View className='practice-workspace__book'>
-            <View className='practice-book-page'>
+            <View
+              className='practice-book-page'
+              style={
+                fittedBookSize
+                  ? {
+                      width: `${fittedBookSize.width}px`,
+                      height: `${fittedBookSize.height}px`,
+                    }
+                  : undefined
+              }
+            >
               <Image
                 className='practice-book-page__image'
                 src={practice.imageUrl}
-                mode='widthFix'
+                mode={fittedBookSize ? "scaleToFill" : "aspectFit"}
                 webp
                 lazyLoad
                 onLoad={measureBookImage}
