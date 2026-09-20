@@ -61,12 +61,8 @@ export function resolvePracticeEntryUrl(
     : HOME_FALLBACK_URL;
 }
 
-export function resolveLaunchUrl(
-  mode: unknown,
-  progress: ReadingProgress | null,
-): string {
+export function resolveLaunchUrl(mode: unknown): string {
   if (mode === "intro") return INTRO_URL;
-  if (mode === "practice") return resolvePracticeEntryUrl(progress);
   return HOME_FALLBACK_URL;
 }
 

@@ -2,7 +2,6 @@ import { Text, View } from "@tarojs/components";
 import Taro, { useLoad } from "@tarojs/taro";
 import { useRef } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
-import { readReadingProgress } from "@/features/bookLibrary/readingProgress";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import {
   fetchAppEntryMode,
@@ -26,7 +25,7 @@ export default function Launch() {
     void (async () => {
       try {
         const response = await fetchAppEntryMode();
-        const url = resolveLaunchUrl(response.mode, readReadingProgress());
+        const url = resolveLaunchUrl(response.mode);
         console.log("[app-entry] launch", JSON.stringify({ mode: response.mode, url }));
         await Taro.reLaunch({ url });
       } catch (error) {

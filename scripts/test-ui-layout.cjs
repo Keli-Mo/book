@@ -78,6 +78,10 @@ const check = (label, run) => { try { run(); } catch (error) { failures.push(`${
     });
     assert.ok(safeRules.some(rule => rule.includes("calc(8PX + constant(safe-area-inset-left))")), "constant 左安全区必须置于 @supports");
   });
+  check("打卡导航吸顶", () => {
+    assert.ok(values("CheckInNavigation", ".check-in-navigation", "position").includes("sticky"), "滚动时导航必须吸顶");
+    assert.ok(values("CheckInNavigation", ".check-in-navigation", "top").includes("0"), "吸顶导航必须对齐视口顶部");
+  });
   check("打卡导航视觉顺序", () => {
     assert.ok(values("CheckInNavigation", ".check-in-navigation__back", "order").includes("0"), "返回箭头应排第一");
     assert.ok(values("CheckInNavigation", ".check-in-navigation__home", "order").includes("1"), "房子应紧邻返回箭头");

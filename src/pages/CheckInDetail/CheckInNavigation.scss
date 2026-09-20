@@ -1,6 +1,12 @@
 .check-in-navigation {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+  z-index: 200;
   box-sizing: border-box;
   width: 100%;
+  flex-shrink: 0;
+  background: #f4f7f5;
 
   &__main {
     display: flex;

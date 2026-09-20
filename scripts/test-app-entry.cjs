@@ -72,27 +72,22 @@ const load = (file, overrides = {}, cache = new Map()) => {
   );
 
   assert.equal(
-    resolveLaunchUrl("intro", null),
+    resolveLaunchUrl("intro"),
     INTRO_URL,
     "intro 应进入介绍页",
   );
   assert.equal(
-    resolveLaunchUrl("practice", null),
-    "/pages/Practice/Practice?bookId=3&practice=0",
-    "无阅读进度时 practice 应进入第一本可用教材",
+    resolveLaunchUrl("practice"),
+    HOME_FALLBACK_URL,
+    "practice 应进入书架首页",
   );
   assert.equal(
-    resolveLaunchUrl("practice", { version: 1, bookId: "9", practiceIndex: 4 }),
-    "/pages/Practice/Practice?bookId=9&practice=4",
-    "有阅读进度时 practice 应回到上次跟读位置",
-  );
-  assert.equal(
-    resolveLaunchUrl("unknown", { version: 1, bookId: "9", practiceIndex: 4 }),
+    resolveLaunchUrl("unknown"),
     HOME_FALLBACK_URL,
     "未知 mode 应回落到书架首页",
   );
   assert.equal(
-    resolveLaunchUrl(undefined, null),
+    resolveLaunchUrl(undefined),
     HOME_FALLBACK_URL,
     "缺失 mode 应回落到书架首页",
   );
@@ -285,7 +280,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
   );
 
   console.log(
-    "启动分流契约通过：mock intro/practice、未知值回首页、无进度用首册、闸门为入口。",
+    "启动分流契约通过：mock intro/practice、practice 进首页、未知值回首页、闸门为入口。",
   );
 })().catch((error) => {
   console.error(error);

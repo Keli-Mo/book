@@ -122,6 +122,8 @@ const assertNavigationShell = tree => {
   assert.equal(byClass(byClass(practiceTree, "practice-empty"), "check-in-navigation"), undefined, "教材导航不能位于错误正文内");
 
   const scss = fs.readFileSync(path.join(projectRoot, "src/pages/CheckInDetail/CheckInNavigation.scss"), "utf8");
+  assert.match(scss, /position:\s*sticky/, "自定义导航必须在页面滚动时钉在顶部");
+  assert.match(scss, /top:\s*0/, "自定义导航必须贴齐视口顶部");
   assert.match(scss, /min-(?:width|height):\s*44px/i);
   assert.match(scss, /box-shadow:\s*none/, "纯图标导航必须显式取消阴影");
   assert.doesNotMatch(scss, /border-radius\s*:\s*50%/, "首页图标不应绘制圆形底色");
