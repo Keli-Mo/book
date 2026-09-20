@@ -339,7 +339,7 @@ const createPage = (file, params, options = {}) => {
       __esModule: true,
       default: (props) => ({ type: "Text", props }),
     },
-    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "ScrollView"].map((name) => [name, name])),
+    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "ScrollView", "Swiper", "SwiperItem"].map((name) => [name, name])),
     "@tarojs/taro": { __esModule: true, default: taro, ...taro },
     "@/constant": { sharedImage: "share.png" },
     "@/services/cloudCheckIn": {
@@ -451,6 +451,11 @@ async function testRoutes() {
   const practiceSource = read("src/pages/Practice/Practice.tsx");
   assert.doesNotMatch(practiceSource, /SAMPLE_BOOK_(?:ID|TITLE|COVER|PRACTICES)|book3Practice/, "Practice 必须移除固定 CASA 模型，改为实际 router 选择教材");
   assert.doesNotMatch(practiceSource, /DEFAULT_BOOK_ID/, "训练页不得自行猜默认教材");
+  assert.match(
+    practiceSource,
+    /requestPracticeSwitch\(nextIndex, \{ animate: false \}\)/,
+    "目录点选必须瞬时切页，不能走翻页滑动",
+  );
   assert.equal(fs.existsSync(path.join(projectRoot, "src/features/listeningPractice/book3Practice.ts")), false, "固定 CASA 死文件应在替换引用后删除");
   for (const bookId of ["3", "22", "25"]) {
     const bundle = buildBookPracticeBundle(bookId);
@@ -478,9 +483,23 @@ async function testRoutes() {
       assert.match(navigation()[boundaryButton].props.className, /practice-navigation__button--disabled/);
       await navigation()[boundaryButton].props.onClick();
       assert.equal(byClass(page.render(), "practice-book-page__image").props.src, practice.imageUrl, "首尾点击不能夹页或跨教材");
-      await navigation()[1 - boundaryButton].props.onClick();
+      const bookSwiper = () => elements(page.render()).find((node) => node.type === "Swiper");
+      assert.ok(bookSwiper(), "课文区域应使用原生 Swiper 翻页");
+      assert.equal(typeof bookSwiper().props.onChange, "function", "Swiper 应把手指翻页交给训练切换");
+      const swipeBook = async (nextIndex) => {
+        await bookSwiper().props.onChange({ detail: { current: nextIndex, source: "touch" } });
+      };
+      if (index === 0) {
+        await swipeBook(-1);
+        assert.equal(byClass(page.render(), "practice-book-page__image").props.src, practice.imageUrl, "首页右滑不能夹页");
+        await swipeBook(1);
+      } else {
+        await swipeBook(index + 1);
+        assert.equal(byClass(page.render(), "practice-book-page__image").props.src, practice.imageUrl, "末页左滑不能夹页");
+        await swipeBook(index - 1);
+      }
       const adjacent = index === 0 ? 1 : index - 1;
-      assert.equal(byClass(page.render(), "practice-book-page__image").props.src, bundle.practices[adjacent].imageUrl, "上下页应在当前 bundle 内切换");
+      assert.equal(byClass(page.render(), "practice-book-page__image").props.src, bundle.practices[adjacent].imageUrl, "左右滑应在当前 bundle 内切换");
       await navigation()[boundaryButton].props.onClick();
       tree = page.render();
       const startButton = elements(tree).find((node) => node.type === "Button" && textOf(node).includes("开始跟读录音"));

@@ -1,4 +1,4 @@
-import { Button, Image, Text, View } from "@tarojs/components";
+import { Button, Image, Swiper, SwiperItem, Text, View } from "@tarojs/components";
 import Taro, {
   useDidHide,
   useDidShow,
@@ -18,6 +18,11 @@ import {
   type ListeningPractice,
 } from "@/features/listeningPractice/bookPractice";
 import { clampHotspotCenter, fitContainSize } from "@/features/listeningPractice/hotspotLayout";
+import {
+  isPracticeSwiperTouchChange,
+  PAGE_TURN_DURATION_MS,
+  shouldRenderPracticeSlideImage,
+} from "@/features/listeningPractice/practiceSwipe";
 import { buildPracticeDirectoryGroups } from "@/features/listeningPractice/practiceDirectory";
 import {
   getRecordingErrorMessage,
@@ -200,6 +205,9 @@ function PracticeSession({
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [bookSlotSize, setBookSlotSize] = useState({ width: 0, height: 0 });
   const [naturalImageSize, setNaturalImageSize] = useState({ width: 0, height: 0 });
+  const [bookSwiperCurrent, setBookSwiperCurrent] = useState(practiceIndex);
+  const [bookSwiperDuration, setBookSwiperDuration] = useState(PAGE_TURN_DURATION_MS);
+  const [bookSwipeLocked, setBookSwipeLocked] = useState(false);
   const modelAudioControllerRef = useRef<ReturnType<
     typeof createTrackAudioController
   > | null>(null);
@@ -218,6 +226,8 @@ function PracticeSession({
   const pendingCheckInRef = useRef<PendingCheckIn | null>(null);
   const recordingPlaybackSnapshotRef = useRef<Pick<PendingCheckIn, "requestId" | "localPath" | "contentSha1"> | null>(null);
   const completionInFlightRef = useRef(false);
+  const bookSwiperCurrentRef = useRef(practiceIndex);
+  bookSwiperCurrentRef.current = bookSwiperCurrent;
   const recorderUnsubscribeRef = useRef<(() => void) | null>(null);
   const recorderTerminalSinkRef = useRef<RecorderTerminalSink | null>(null);
   const mountedRef = useRef(true);
@@ -300,7 +310,6 @@ function PracticeSession({
 
   useEffect(() => {
     let cancelled = false;
-    setNaturalImageSize({ width: 0, height: 0 });
     if (typeof Taro.getImageInfo !== "function") return undefined;
     Taro.getImageInfo({
       src: practice.imageUrl,
@@ -1240,21 +1249,43 @@ function PracticeSession({
     // 同步提交上下文后再 setState，切页提交后的迟到录音不能趁下一次 render 前挂到新训练。
     pendingRestoreAttemptRef.current += 1;
     practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
+    setBookSwiperCurrent(nextIndex);
     setCurrentPractice({ practiceIndex: nextIndex, practice: nextPractice });
     saveReadingProgress(bundle.book.id, nextIndex);
-    Taro.pageScrollTo({ scrollTop: 0, duration: 200 });
   };
 
-  const requestPracticeSwitch = async (nextIndex: number) => {
-    if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= bundle.practices.length) return;
-    if (nextIndex === practiceIndex) {
-      setIsDirectoryOpen(false);
+  const restoreBookSwiper = (index: number) => {
+    setBookSwiperDuration(0);
+    setBookSwiperCurrent(index);
+    setTimeout(() => {
+      if (mountedRef.current) setBookSwiperDuration(PAGE_TURN_DURATION_MS);
+    }, 50);
+  };
+
+  const requestPracticeSwitch = async (
+    nextIndex: number,
+    options?: { animate?: boolean; fromSwiper?: boolean },
+  ) => {
+    if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= bundle.practices.length) {
+      if (options?.fromSwiper) restoreBookSwiper(practiceContextRef.current.practiceIndex);
       return;
     }
+    if (nextIndex === practiceContextRef.current.practiceIndex) {
+      setIsDirectoryOpen(false);
+      if (options?.fromSwiper) setBookSwiperCurrent(nextIndex);
+      return;
+    }
+    const animate = options?.animate !== false && !options?.fromSwiper;
+    const fromSwiper = options?.fromSwiper === true;
     // 训练切换意图出现后，旧训练尚在等待权限的 continuation 永远不得启动录音。
     recordingStartAttemptRef.current += 1;
 
+    const revertSwiper = () => {
+      if (fromSwiper) restoreBookSwiper(practiceContextRef.current.practiceIndex);
+    };
+
     if (practiceSwitchInFlightRef.current) {
+      revertSwiper();
       Taro.showToast({ title: "正在切换训练，请稍候", icon: "none" });
       return;
     }
@@ -1267,6 +1298,7 @@ function PracticeSession({
       currentMachine.state === "starting" ||
       currentMachine.state === "stopping"
     ) {
+      revertSwiper();
       Taro.showToast({ title: "录音正在处理，请稍候", icon: "none" });
       return;
     }
@@ -1275,6 +1307,7 @@ function PracticeSession({
       currentMachine.state === "uploading" ||
       policy === "block-uploading"
     ) {
+      revertSwiper();
       Taro.showToast({ title: "打卡上传中，请稍候", icon: "none" });
       return;
     }
@@ -1289,6 +1322,7 @@ function PracticeSession({
       saveGeneration: saveGenerationRef.current,
     };
     practiceSwitchInFlightRef.current = true;
+    setBookSwipeLocked(true);
     try {
       if (policy === "confirm-discard") {
         const confirmation = await Taro.showModal({
@@ -1297,15 +1331,36 @@ function PracticeSession({
           confirmText: "放弃并切换",
           confirmColor: "#d85b3f",
         });
-        if (!confirmation.confirm || !canContinuePracticeSwitch(switchRequest)) return;
+        if (!confirmation.confirm || !canContinuePracticeSwitch(switchRequest)) {
+          revertSwiper();
+          return;
+        }
       }
 
       setIsDirectoryOpen(false);
+      if (!fromSwiper) {
+        setBookSwiperDuration(animate ? PAGE_TURN_DURATION_MS : 0);
+        setBookSwiperCurrent(nextIndex);
+      }
       await performPracticeSwitch(nextIndex, switchRequest);
+      if (practiceContextRef.current.practiceIndex !== nextIndex) {
+        revertSwiper();
+        return;
+      }
+      if (!animate && mountedRef.current) {
+        setBookSwiperDuration(PAGE_TURN_DURATION_MS);
+      }
     } finally {
       // 同一时刻只允许一个切页事务；文件删除真正收口后才重新开放录音和提交。
       practiceSwitchInFlightRef.current = false;
+      if (mountedRef.current) setBookSwipeLocked(false);
     }
+  };
+
+  const handleBookSwiperChange = (event: { detail: { current: number; source: string } }) => {
+    if (!isPracticeSwiperTouchChange(event.detail)) return;
+    setBookSwiperCurrent(event.detail.current);
+    void requestPracticeSwitch(event.detail.current, { fromSwiper: true });
   };
 
   const openPracticeDirectory = () => {
@@ -1543,7 +1598,7 @@ function PracticeSession({
         <View className='practice-workspace'>
           <View className='practice-workspace__book'>
             <View
-              className='practice-book-page'
+              className='practice-book-viewport'
               style={
                 fittedBookSize
                   ? {
@@ -1553,33 +1608,66 @@ function PracticeSession({
                   : undefined
               }
             >
-              <Image
-                className='practice-book-page__image'
-                src={practice.imageUrl}
-                mode={fittedBookSize ? "scaleToFill" : "aspectFit"}
-                webp
-                lazyLoad
-                onLoad={measureBookImage}
-              />
-              <View className='practice-book-page__hotspots'>
-                {clampedHotspots.map((hotspot, index) => (
-                  <View
-                    key={hotspot.id}
-                    className={`audio-hotspot device-touch-target ${
-                      playingTrackId === hotspot.id ? "audio-hotspot--playing" : ""
-                    }`}
-                    style={{ left: hotspot.left, top: hotspot.top }}
-                    onClick={() => playModelAudio(hotspot.id, hotspot.url)}
-                  >
-                    <View className='audio-hotspot__visual'>
-                      <Text className='audio-hotspot__icon'>
-                        {playingTrackId === hotspot.id ? "◼" : "▶"}
-                      </Text>
-                      <Text className='audio-hotspot__number'>{index + 1}</Text>
+              <Swiper
+                className='practice-book-swiper'
+                current={bookSwiperCurrent}
+                duration={bookSwiperDuration}
+                circular={false}
+                easingFunction='easeOutCubic'
+                disableTouch={
+                  bookSwipeLocked ||
+                  recordingState === "uploading" ||
+                  recordingState === "starting" ||
+                  recordingState === "stopping" ||
+                  isSavingRecording
+                }
+                onChange={handleBookSwiperChange}
+              >
+                {bundle.practices.map((item, index) => (
+                  <SwiperItem key={item.id} className='practice-book-slide'>
+                    <View className='practice-book-page'>
+                      {shouldRenderPracticeSlideImage(index, bookSwiperCurrent) ? (
+                        <Image
+                          className={
+                            index === practiceIndex
+                              ? "practice-book-page__image"
+                              : "practice-book-page__neighbor"
+                          }
+                          src={item.imageUrl}
+                          mode={fittedBookSize ? "scaleToFill" : "aspectFit"}
+                          webp
+                          onLoad={() => {
+                            if (index === practiceContextRef.current.practiceIndex) {
+                              measureBookImage();
+                            }
+                          }}
+                        />
+                      ) : null}
+                      {index === practiceIndex ? (
+                        <View className='practice-book-page__hotspots'>
+                          {clampedHotspots.map((hotspot, hotspotIndex) => (
+                            <View
+                              key={hotspot.id}
+                              className={`audio-hotspot device-touch-target ${
+                                playingTrackId === hotspot.id ? "audio-hotspot--playing" : ""
+                              }`}
+                              style={{ left: hotspot.left, top: hotspot.top }}
+                              onClick={() => playModelAudio(hotspot.id, hotspot.url)}
+                            >
+                              <View className='audio-hotspot__visual'>
+                                <Text className='audio-hotspot__icon'>
+                                  {playingTrackId === hotspot.id ? "◼" : "▶"}
+                                </Text>
+                                <Text className='audio-hotspot__number'>{hotspotIndex + 1}</Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
                     </View>
-                  </View>
+                  </SwiperItem>
                 ))}
-              </View>
+              </Swiper>
             </View>
           </View>
 
@@ -1778,7 +1866,7 @@ function PracticeSession({
         currentPracticeIndex={practiceIndex}
         open={isDirectoryOpen}
         onClose={() => setIsDirectoryOpen(false)}
-        onSelect={(nextIndex) => requestPracticeSwitch(nextIndex)}
+        onSelect={(nextIndex) => requestPracticeSwitch(nextIndex, { animate: false })}
       />
     </View>
   );

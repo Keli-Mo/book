@@ -48,6 +48,7 @@
     "test:audio-playback": "node scripts/test-audio-playback.cjs",
     "test:device-layout": "node scripts/test-device-layout.cjs",
     "test:hotspot-layout": "node scripts/test-hotspot-layout.cjs",
+    "test:practice-swipe": "node scripts/test-practice-swipe.cjs",
     "test:responsive-pages": "node scripts/test-responsive-page-contract.cjs",
     "test:book-catalog": "node scripts/test-book-catalog.cjs",
     "test:app-entry": "node scripts/test-app-entry.cjs",
