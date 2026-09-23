@@ -8,7 +8,7 @@ import {
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
 import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavigation";
-import { readReadingProgress, type ReadingProgress } from "@/features/bookLibrary/readingProgress";
+import { readReadingProgress, resolveReadingProgressUrl, type ReadingProgress } from "@/features/bookLibrary/readingProgress";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
@@ -39,6 +39,7 @@ export default function Home() {
   const progressPractice = progressBundle && readingProgress
     ? progressBundle.practices[readingProgress.practiceIndex]
     : null;
+  const progressUrl = readingProgress ? resolveReadingProgressUrl(readingProgress) : null;
 
   useShareAppMessage(() => ({
     title: sharedTitle,
@@ -57,13 +58,11 @@ export default function Home() {
   };
 
   const startPractice = () => {
-    if (!readingProgress || !progressBundle || !progressPractice) {
+    if (!progressBundle || !progressPractice || !progressUrl) {
       openLibrary("all");
       return;
     }
-    Taro.navigateTo({
-      url: `/pages/Practice/Practice?bookId=${encodeURIComponent(readingProgress.bookId)}&practice=${readingProgress.practiceIndex}`,
-    });
+    Taro.navigateTo({ url: progressUrl });
   };
 
   const openMyCheckIns = () => {

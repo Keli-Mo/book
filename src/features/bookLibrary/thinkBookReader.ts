@@ -1,6 +1,7 @@
 import type { BookCatalogItem } from "@/features/bookLibrary/bookCatalog";
 import {
   buildBookPracticeBundle,
+  type BookPracticeBundle,
   type ListeningPractice,
   type PracticeTrack,
 } from "@/features/listeningPractice/bookPractice";
@@ -18,6 +19,7 @@ export type ThinkReaderChapter = {
 export type ThinkReaderPage = {
   imageIndex: number;
   imageUrl: string;
+  pageNumber: number;
   pageLabel: string;
   sectionTitle: string;
   tracks: PracticeTrack[];
@@ -90,6 +92,7 @@ export const buildThinkBookReader = (bookId: string): ThinkBookReader | null => 
     pages.push({
       imageIndex,
       imageUrl,
+      pageNumber: printedPage,
       pageLabel: `第 ${printedPage} 页`,
       sectionTitle,
       tracks: indexedPractice?.practice.tracks ?? [],
@@ -113,6 +116,29 @@ export const buildThinkBookReader = (bookId: string): ThinkBookReader | null => 
     sourcePageCount: imageUrls.length,
     pages,
     chapters,
+  };
+};
+
+/** 将筛选后的 Think 页面交给现有跟读界面，同时保留原音频页的训练数据。 */
+export const buildThinkPracticeBundle = (reader: ThinkBookReader): BookPracticeBundle => {
+  const originalBundle = buildBookPracticeBundle(reader.book.id);
+  if (!originalBundle) throw new Error(`Think 教材 ${reader.book.id} 找不到音频训练数据`);
+
+  const originalByImageIndex = new Map(
+    originalBundle.practices.map((practice) => [practice.imageIndex, practice]),
+  );
+  return {
+    book: reader.book,
+    coverUrl: originalBundle.coverUrl,
+    practices: reader.pages.map((page) => originalByImageIndex.get(page.imageIndex) ?? {
+      id: `${reader.book.id}-page-${page.pageNumber}`,
+      bookId: reader.book.id,
+      imageIndex: page.imageIndex,
+      pageNumber: page.pageNumber,
+      imageUrl: page.imageUrl,
+      sectionTitle: page.sectionTitle,
+      tracks: [],
+    }),
   };
 };
 

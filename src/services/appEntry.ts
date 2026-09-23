@@ -1,5 +1,5 @@
 import { BOOKS, resolveBookAction } from "@/features/bookLibrary/bookCatalog";
-import type { ReadingProgress } from "@/features/bookLibrary/readingProgress";
+import { resolveReadingProgressUrl, type ReadingProgress } from "@/features/bookLibrary/readingProgress";
 import { CLOUD_ENV_ID, CLOUD_RUN_ENV_ID, initCloudHosting } from "@/cloud";
 
 export type AppEntryMode = "intro" | "practice";
@@ -51,9 +51,8 @@ export function readAppEntryMode(payload: unknown): AppEntryMode | null {
 export function resolvePracticeEntryUrl(
   progress: ReadingProgress | null,
 ): string {
-  if (progress) {
-    return `/pages/Practice/Practice?bookId=${encodeURIComponent(progress.bookId)}&practice=${progress.practiceIndex}`;
-  }
+  const progressUrl = progress ? resolveReadingProgressUrl(progress) : null;
+  if (progressUrl) return progressUrl;
 
   const firstAvailable = BOOKS.find((book) => book.available);
   return firstAvailable
