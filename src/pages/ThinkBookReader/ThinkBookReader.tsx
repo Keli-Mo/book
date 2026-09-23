@@ -3,7 +3,7 @@ import Taro, { useDidHide, useRouter, useShareAppMessage } from "@tarojs/taro";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildThinkBookReader,
-  parseThinkReaderPage,
+  resolveThinkReaderPage,
   type ThinkBookReader as ThinkBookReaderData,
 } from "@/features/bookLibrary/thinkBookReader";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
@@ -22,7 +22,7 @@ export default function ThinkBookReader() {
   const rawPage = router.params?.page;
   const route = useMemo(() => {
     const reader = buildThinkBookReader(bookId || "");
-    const initialPage = reader ? parseThinkReaderPage(rawPage, reader.pages.length) : null;
+    const initialPage = reader ? resolveThinkReaderPage(rawPage, reader) : null;
     return { reader, initialPage };
   }, [bookId, rawPage]);
 
@@ -73,6 +73,15 @@ function ReaderSession({
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const audioController = useRef<ReturnType<typeof createTrackAudioController> | null>(null);
   const page = reader.pages[pageIndex];
+  const activeTrack = useMemo(() => {
+    if (!playingTrackId) return null;
+    for (const readerPage of reader.pages) {
+      const track = readerPage.tracks.find((item) => item.id === playingTrackId);
+      if (track) return { url: track.url, pageLabel: readerPage.pageLabel };
+    }
+    return null;
+  }, [playingTrackId, reader.pages]);
+  const activeTrackOnPage = activeTrack && page.tracks.some((track) => track.url === activeTrack.url);
 
   useEffect(() => {
     const controller = createTrackAudioController(
@@ -93,7 +102,7 @@ function ReaderSession({
 
   useShareAppMessage(() => ({
     title: `${reader.book.title} · ${page.pageLabel}`,
-    path: `/pages/ThinkBookReader/ThinkBookReader?bookId=${encodeURIComponent(reader.book.id)}&page=${pageIndex}`,
+    path: `/pages/ThinkBookReader/ThinkBookReader?bookId=${encodeURIComponent(reader.book.id)}&page=${page.imageIndex}`,
     imageUrl: reader.book.cover,
   }));
 
@@ -122,6 +131,8 @@ function ReaderSession({
     const center = clampHotspotCenter(
       { left: Number.parseFloat(track.left), top: Number.parseFloat(track.top) },
       imageSize,
+      undefined,
+      8,
     );
     return { ...track, left: `${center.left}%`, top: `${center.top}%` };
   }), [page.tracks, imageSize]);
@@ -132,17 +143,15 @@ function ReaderSession({
       setDirectoryOpen(false);
       return;
     }
-    audioController.current?.stop();
     setImageSize({ width: 0, height: 0 });
     setPageIndex(nextIndex);
     setDirectoryOpen(false);
   };
 
   const openPractice = () => {
-    const practiceIndex = page.practiceIndex ?? 0;
     audioController.current?.stop();
     Taro.navigateTo({
-      url: `/pages/Practice/Practice?bookId=${encodeURIComponent(reader.book.id)}&practice=${practiceIndex}`,
+      url: `/pages/Practice/Practice?bookId=${encodeURIComponent(reader.book.id)}&practice=${page.practiceIndex}`,
     });
   };
 
@@ -167,21 +176,30 @@ function ReaderSession({
           {hotspots.map((track, index) => (
             <View
               key={track.id}
-              className={`think-reader__hotspot device-touch-target ${playingTrackId === track.id ? "is-playing" : ""}`}
+              className={`think-reader__hotspot device-touch-target ${activeTrack?.url === track.url ? "is-playing" : ""}`}
               style={{ left: track.left, top: track.top }}
-              onClick={() => audioController.current?.toggle(track.id, track.url)}
-              aria-label={`播放第 ${index + 1} 段示范音频`}
+              onClick={() => activeTrack?.url === track.url
+                ? audioController.current?.stop()
+                : audioController.current?.toggle(track.id, track.url)}
+              aria-label={`${activeTrack?.url === track.url ? "停止" : "播放"}第 ${index + 1} 段示范音频`}
             >
-              <Text>{playingTrackId === track.id ? "■" : "▶"}</Text>
+              <Text>{activeTrack?.url === track.url ? "■" : "▶"}</Text>
             </View>
           ))}
         </View>
       </View>
 
+      {activeTrack && !activeTrackOnPage && (
+        <View className='think-reader__playback'>
+          <Text>{activeTrack.pageLabel}音频正在播放</Text>
+          <Button onClick={() => audioController.current?.stop()}>停止当前音频</Button>
+        </View>
+      )}
+
       <View className='think-reader__actions'>
         <Button className='think-reader__action' onClick={() => setDirectoryOpen(true)}>章节目录</Button>
         <Button className='think-reader__action think-reader__action--primary' onClick={openPractice}>
-          {page.practiceIndex === null ? "进入跟读训练" : "跟读本页"}
+          {page.tracks.length === 0 ? "跟读相关音频" : "跟读本页"}
         </Button>
       </View>
       <View className='think-reader__navigation'>
@@ -197,12 +215,11 @@ function ReaderSession({
               <Text onClick={() => setDirectoryOpen(false)}>关闭</Text>
             </View>
             <ScrollView scrollY className='think-reader__directory-list'>
-              <View className='think-reader__directory-item' onClick={() => turnTo(0)}>封面</View>
               {reader.chapters.map((chapter) => (
                 <View
                   key={`${chapter.name}:${chapter.imageIndex}`}
                   className='think-reader__directory-item'
-                  onClick={() => turnTo(chapter.imageIndex)}
+                  onClick={() => turnTo(chapter.pageIndex)}
                 >
                   {chapter.name}
                 </View>

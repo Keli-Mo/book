@@ -14687,8 +14687,6 @@ const thinkAudioUrl = (book: "student-book" | "workbook", file: string) =>
 
 const audioList26 = {
     6: [
-        // Thk2e_BrE_L1_SB_Welcome_Unit_p004_t00.mp3: page-title-inference
-        { offset: ["83.000%", "8.000%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p004_t00.mp3"), flag: "Percentage" },
         { offset: ["13.859%", "42.238%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p004_t01.mp3"), flag: "Percentage" },
         { offset: ["13.859%", "61.047%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p004_t02.mp3"), flag: "Percentage" },
     ],
@@ -14965,9 +14963,12 @@ const audioList26 = {
 
 const audioList27 = {
     3: [
-        // Thk2e_BrE_L1_WB_Welcome_Unit_p004_t00.mp3: page-title-inference
-        { offset: ["83.000%", "8.000%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p004_t00.mp3"), flag: "Percentage" },
         { offset: ["50.490%", "68.087%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p004_t01.mp3"), flag: "Percentage" },
+    ],
+    4: [
+        // p5 两道 Listen again 跨页沿用 p4 的 W.01 对话。
+        { offset: ["13.859%", "6.662%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p004_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "30.333%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p004_t01.mp3"), flag: "Percentage" },
     ],
     5: [
         { offset: ["58.080%", "55.596%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p006_t02.mp3"), flag: "Percentage" },
@@ -15100,8 +15101,11 @@ const audioList27 = {
     ],
     115: [
         { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p116_t04.mp3"), flag: "Percentage" },
-        // Thk2e_BrE_L1_WB_Unit_12_p116_t05.mp3: page-order-inference
-        { offset: ["13.859%", "37.581%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p116_t05.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "37.581%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p116_t04.mp3"), flag: "Percentage" },
+    ],
+    116: [
+        // 文件名写 p116，但原书的 12.05 印刷在 p117 的 Dialogue 练习 7。
+        { offset: ["13.859%", "50.319%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p116_t05.mp3"), flag: "Percentage" },
     ],
     117: [
         { offset: ["13.859%", "45.812%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_01_p118_t01.mp3"), flag: "Percentage" },
@@ -15133,10 +15137,6 @@ const audioList27 = {
         { offset: ["13.859%", "94.332%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p121_t01.mp3"), flag: "Percentage" },
         { offset: ["58.080%", "39.314%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p121_t01.mp3"), flag: "Percentage" },
         { offset: ["58.080%", "46.895%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p121_t01.mp3"), flag: "Percentage" },
-    ],
-    127: [
-        // Thk2e_BrE_L1_WB_Irregular_Verbs_List.mp3: section-title-inference
-        { offset: ["91.000%", "8.000%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Irregular_Verbs_List.mp3"), flag: "Percentage" },
     ],
 }
 export const allAudioList = {

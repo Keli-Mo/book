@@ -62,15 +62,15 @@ const testRealConstantCollection = () => {
   assert.equal(constants.seriesCovers.length, 6, "远端校验必须覆盖 6 张首页系列封面");
   const assets = collectBookAssets(constants);
   const sources = assets.flatMap((asset) => asset.sources);
-  assert.equal(assets.length, 6_548, "新增 Think 1 后，教材页、音频及封面应有 6,548 个唯一素材");
+  assert.equal(assets.length, 6_545, "修正 Think 1 非正式音频后，教材页、音频及封面应有 6,545 个唯一素材");
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type !== "audio")).length,
     4_329,
   );
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type === "audio")).length,
-    2_219,
-    "新增 Think 1 后，音频唯一 URL 应为 2,219",
+    2_216,
+    "修正 Think 1 非正式音频后，音频唯一 URL 应为 2,216",
   );
   assert.equal(sources.filter((source) => source.type === "image").length, 4_314);
   assert.equal(sources.filter((source) => source.type === "cover").length, 25);

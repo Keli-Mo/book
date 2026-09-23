@@ -301,14 +301,14 @@ function PracticeSession({
         const center = clampHotspotCenter(originalCenter, {
           width: imageSize.width,
           height: imageSize.height,
-        });
+        }, undefined, bundle.book.seriesId === "think" ? 8 : 0);
         return {
           ...track,
           left: `${center.left}%`,
           top: `${center.top}%`,
         };
       }),
-    [imageSize.height, imageSize.width, practice.tracks],
+    [bundle.book.seriesId, imageSize.height, imageSize.width, practice.tracks],
   );
 
   const clearHiddenStopRetry = useCallback(() => {

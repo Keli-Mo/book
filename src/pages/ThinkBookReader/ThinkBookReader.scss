@@ -53,6 +53,32 @@
     &.is-playing text { background: #b2642b; }
   }
 
+  &__playback {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10PX;
+    margin-top: 12PX;
+    padding: 8PX 12PX;
+    border-radius: 10PX;
+    background: #e6f1eb;
+    color: #247d60;
+    font-size: 13PX;
+
+    button {
+      flex-shrink: 0;
+      min-height: 40PX;
+      margin: 0;
+      padding: 0 12PX;
+      border: 1PX solid #247d60;
+      border-radius: 8PX;
+      background: #ffffff;
+      color: #247d60;
+      font-size: 13PX;
+      line-height: 40PX;
+    }
+  }
+
   &__actions, &__navigation { display: flex; gap: 10PX; margin-top: 16PX; }
   &__action, &__navigation button {
     display: flex;
