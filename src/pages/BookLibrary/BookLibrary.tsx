@@ -46,7 +46,7 @@ export default function BookLibrary() {
   const openBook = (book: BookCatalogItem) => {
     const action = resolveBookAction(book);
 
-    // 沿用已验证的训练页，录音、暂停、回听、目录和云打卡逻辑不在此处复制。
+    // Think 两册进入完整阅读页；既有教材继续进入已验证的跟读训练页。
     Taro.navigateTo({ url: action.url });
   };
 

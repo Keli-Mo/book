@@ -158,6 +158,14 @@ const concatImages = {
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Reading_Explorer_L5_Studentbook-%E5%9B%BE%E7%89%87/ReadingExplorer_L5_Studentbook_' + (index + 1) + '.jpg'
         )
     ],
+    // Think 1 学生书：PDF 零基索引 4 起与印刷页号相同。
+    "26": Array.from({ length: 132 }, (_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l1/student-book/pages/think-1-sb_' + index + '.jpg'
+    ),
+    // Think 1 练习册：封面为 0，PDF 零基索引 1 起对应印刷页 index + 3。
+    "27": Array.from({ length: 126 }, (_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l1/workbook/pages/think-1-wb_' + (index === 0 ? 0 : index + 3) + '.jpg'
+    ),
     
     ...images,
 }

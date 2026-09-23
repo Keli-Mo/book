@@ -7,11 +7,49 @@ const projectRoot = path.resolve(__dirname, "..");
 const report = validateBookData({ log: false });
 
 assert.equal(report.mappingVersion, "audio-key-minus-2/v1");
-assert.equal(report.books.length, 23, "应覆盖教材 3–25");
-assert.equal(report.imageCount, 4056, "教材图片总数应保持 4,056");
-assert.equal(report.practicePageCount, 1393, "训练页总数应保持 1,393");
-assert.equal(report.audioSegmentCount, 2081, "音频段总数应保持 2,081");
-assert.equal(report.mappings.length, 2081, "每段音频都应保留一条可追踪映射");
+assert.equal(report.books.length, 25, "应覆盖教材 3–27");
+assert.equal(report.imageCount, 4314, "教材图片总数应为 4,314");
+assert.equal(report.practicePageCount, 1501, "训练页总数应为 1,501");
+assert.equal(report.audioSegmentCount, 2310, "音频热点总数应为 2,310");
+assert.equal(report.mappings.length, 2310, "每个音频热点都应保留一条可追踪映射");
+assert.deepEqual(
+  report.books.slice(-2).map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) =>
+    ({ bookId, imageCount, audioPageCount, audioSegmentCount })),
+  [
+    { bookId: "26", imageCount: 132, audioPageCount: 71, audioSegmentCount: 132 },
+    { bookId: "27", imageCount: 126, audioPageCount: 37, audioSegmentCount: 97 },
+  ],
+  "Think 1 两书应保留所有页面及逐页音频热点",
+);
+
+const thinkRepeatedTrack = report.mappings.filter(({ bookId, audioFilename }) =>
+  bookId === "26" && audioFilename === "Thk2e_BrE_L1_SB_Unit_1_p15_t04.mp3");
+assert.deepEqual(
+  thinkRepeatedTrack.map(({ imageIndex, imagePageNumber, leftPercent, topPercent }) =>
+    ({ imageIndex, imagePageNumber, leftPercent, topPercent })),
+  [
+    { imageIndex: 15, imagePageNumber: 15, leftPercent: 13.859, topPercent: 9.422 },
+    { imageIndex: 15, imagePageNumber: 15, leftPercent: 13.859, topPercent: 39.603 },
+  ],
+  "学生书 p15 同一段音频的两处印刷标签都应有热点",
+);
+const workbookP16 = report.mappings.filter(({ bookId, imagePageNumber }) =>
+  bookId === "27" && imagePageNumber === 16);
+assert.deepEqual(
+  workbookP16.map(({ imageIndex, audioFilename, leftPercent, topPercent }) =>
+    ({ imageIndex, audioFilename, leftPercent, topPercent })),
+  [
+    { imageIndex: 13, audioFilename: "Thk2e_BrE_L1_WB_Unit_01_p016_t03.mp3", leftPercent: 13.859, topPercent: 9.422 },
+    { imageIndex: 13, audioFilename: "Thk2e_BrE_L1_WB_Unit_01_p016_t04.mp3", leftPercent: 13.859, topPercent: 44.043 },
+    { imageIndex: 13, audioFilename: "Thk2e_BrE_L1_WB_Unit_01_p016_t05.mp3", leftPercent: 58.129, topPercent: 53.971 },
+  ],
+  "练习册 p16 的三个音轨应映射到正确的 PDF 页和印刷标签",
+);
+assert.equal(
+  report.mappings.some(({ audioFilename }) => audioFilename === "Thk2e_BrE_L1_WB_Wordlist.mp3"),
+  false,
+  "没有对应印刷页的 Wordlist 音频不能被随意放到教材页上",
+);
 
 const correctedPercentageMappings = [
   ["3", 84, 1, ["6.8%", "95%"], [6.8, 95]],
@@ -117,5 +155,5 @@ assert.match(
 assert.match(cli.stdout, /坐标轻微越界 2 处（仅警告）/);
 
 console.log(
-  "教材音频映射校验器测试通过：23 本、4,056 图、1,393 页、2,081 段，4 个热点已校正，2 个待复核越界仅警告。",
+  "教材音频映射校验器测试通过：25 本、4,314 图、1,501 页、2,310 个热点，Think 1 页码与重复音轨已核对，2 个历史越界仅警告。",
 );

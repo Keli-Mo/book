@@ -7,7 +7,7 @@ const constantsRoot = path.join(
   projectRoot,
   "src/pages/BookDetail/Components/BookPreview/constants",
 );
-const BOOK_IDS = Array.from({ length: 23 }, (_, index) => String(index + 3));
+const BOOK_IDS = Array.from({ length: 25 }, (_, index) => String(index + 3));
 const MAPPING_VERSION = "audio-key-minus-2/v1";
 
 // 常量文件没有运行时依赖，转译后直接读取，避免再维护一份音频清单。
@@ -232,7 +232,7 @@ const validateBookData = ({ log = true } = {}) => {
       console.log(formatCoordinateWarning(warning)),
     );
     console.log(
-      `映射校验通过：23 本教材，${report.imageCount} 张教材图片，${report.practicePageCount} 个训练页，${report.audioSegmentCount} 段音频；坐标轻微越界 ${report.coordinateWarnings.length} 处（仅警告）。`,
+      `映射校验通过：${BOOK_IDS.length} 本教材，${report.imageCount} 张教材图片，${report.practicePageCount} 个训练页，${report.audioSegmentCount} 段音频；坐标轻微越界 ${report.coordinateWarnings.length} 处（仅警告）。`,
     );
   }
   return report;

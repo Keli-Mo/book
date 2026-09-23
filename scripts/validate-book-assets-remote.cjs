@@ -7,7 +7,7 @@ const constantsRoot = path.join(
   projectRoot,
   "src/pages/BookDetail/Components/BookPreview/constants",
 );
-const BOOK_IDS = Array.from({ length: 23 }, (_, index) => String(index + 3));
+const BOOK_IDS = Array.from({ length: 25 }, (_, index) => String(index + 3));
 const DEFAULT_ALLOWED_HOSTS = ["636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la"];
 const DEFAULT_CONFIG = Object.freeze({
   concurrency: 6,

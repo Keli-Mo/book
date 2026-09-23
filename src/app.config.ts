@@ -9,6 +9,7 @@ export default defineAppConfig({
     "pages/Launch/Launch",
     "pages/Home/Home",
     "pages/BookLibrary/BookLibrary",
+    "pages/ThinkBookReader/ThinkBookReader",
     "pages/Practice/Practice",
     "pages/CheckInDetail/CheckInDetail",
     "pages/MyCheckIns/MyCheckIns",

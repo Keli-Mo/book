@@ -1591,7 +1591,12 @@ async function testRoutes() {
   await testHistory({ bookId: "book &1", practiceIndex: 0 }, true, { "@/features/listeningPractice/bookPractice": { buildBookPracticeBundle: () => buildBookPracticeBundle("22") } });
   await testHistory({ bookId: "22", practiceIndex: 0 }, false, { "@/features/listeningPractice/bookPractice": { buildBookPracticeBundle() { throw new Error("损坏教材"); } } });
   const { BOOKS, resolveBookAction } = load("src/features/bookLibrary/bookCatalog.ts");
-  for (const book of BOOKS) assert.equal(resolveBookAction(book).url, `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`);
+  for (const book of BOOKS.filter((item) => item.seriesId !== "think")) {
+    assert.equal(resolveBookAction(book).url, `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`);
+  }
+  for (const book of BOOKS.filter((item) => item.seriesId === "think")) {
+    assert.equal(resolveBookAction(book).url, `/pages/ThinkBookReader/ThinkBookReader?bookId=${encodeURIComponent(book.id)}&page=0`);
+  }
   assert.equal(resolveBookAction({ ...BOOKS[0], id: "book &1" }).url, "/pages/Practice/Practice?bookId=book%20%261&practice=0");
   console.log("教材路由测试通过：真实路由、首尾边界、恢复页、教材内容、打卡与历史回跳正确。");
 }
