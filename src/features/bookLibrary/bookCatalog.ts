@@ -3,7 +3,8 @@ export type BookSeriesId =
   | "our-world"
   | "oxford-discover"
   | "reading-explorer"
-  | "cambridge";
+  | "cambridge"
+  | "think";
 
 export type BookCatalogItem = {
   id: string;
@@ -24,7 +25,7 @@ export type BookSeries = {
   availableCount: number;
 };
 
-export type BookOpenAction = { type: "practice"; url: string };
+export type BookOpenAction = { type: "practice" | "reader"; url: string };
 
 const COVER_ORIGIN =
   "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la";
@@ -287,6 +288,42 @@ export const BOOKS: BookCatalogItem[] = [
     ),
     available: true,
   },
+  {
+    id: "26",
+    seriesId: "think",
+    title: "新版美国思维 Think 1 · 学生书",
+    level: "Level 1 · A2",
+    kind: "学生书",
+    cover: cover("think-l1/student-book/pages/think-1-sb_0.jpg"),
+    available: true,
+  },
+  {
+    id: "27",
+    seriesId: "think",
+    title: "新版美国思维 Think 1 · 练习册",
+    level: "Level 1 · A2",
+    kind: "练习册",
+    cover: cover("think-l1/workbook/pages/think-1-wb_0.jpg"),
+    available: true,
+  },
+  {
+    id: "28",
+    seriesId: "think",
+    title: "新版美国思维 Think 2 · 学生书",
+    level: "Level 2",
+    kind: "学生书",
+    cover: cover("think-l2/student-book/pages/think-2-sb_0.jpg"),
+    available: true,
+  },
+  {
+    id: "29",
+    seriesId: "think",
+    title: "新版美国思维 Think 2 · 练习册",
+    level: "Level 2",
+    kind: "练习册",
+    cover: cover("think-l2/workbook/pages/think-2-wb_0.jpg"),
+    available: true,
+  },
 ];
 
 const bookById = new Map(BOOKS.map((book) => [book.id, book]));
@@ -343,6 +380,13 @@ export const BOOK_SERIES: BookSeries[] = [
     rangeLabel: "A2 · B1 · 学生书 / 练习册",
     cover: requireBook("9").cover,
   }),
+  createBookSeries({
+    id: "think",
+    title: "新版美国思维 Think",
+    shortTitle: "Think",
+    rangeLabel: "Level 1–2 · 学生书 / 练习册",
+    cover: requireBook("26").cover,
+  }),
 ];
 
 /**
@@ -362,11 +406,14 @@ export const filterBooks = (
   });
 };
 
-/**
- * 所有书籍入口统一在这里携带教材 ID，训练页无需猜测用户选择的教材。
- */
+/** 书架统一携带教材 ID；Think 教材进入筛选后的阅读页，其他教材沿用跟读入口。 */
 export const resolveBookAction = (book: BookCatalogItem): BookOpenAction =>
-  ({
-    type: "practice",
-    url: `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`,
-  });
+  book.seriesId === "think"
+    ? {
+        type: "reader",
+        url: `/pages/ThinkBookReader/ThinkBookReader?bookId=${encodeURIComponent(book.id)}&page=0`,
+      }
+    : {
+        type: "practice",
+        url: `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`,
+      };

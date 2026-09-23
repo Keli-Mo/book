@@ -1757,10 +1757,84 @@ export const catalogLists = {
             page: 247
         }
     ],
+
+    // Think 1 学生书：图片索引与印刷页码一致（封面及目录除外）。
+    "26": [
+        { name: "Welcome", page: 4 },
+        { name: "Unit 1", page: 12 },
+        { name: "Unit 2", page: 20 },
+        { name: "Unit 3", page: 30 },
+        { name: "Unit 4", page: 38 },
+        { name: "Unit 5", page: 48 },
+        { name: "Unit 6", page: 56 },
+        { name: "Unit 7", page: 66 },
+        { name: "Unit 8", page: 74 },
+        { name: "Unit 9", page: 84 },
+        { name: "Unit 10", page: 92 },
+        { name: "Unit 11", page: 102 },
+        { name: "Unit 12", page: 110 },
+        { name: "Pronunciation", page: 120 },
+        { name: "Get it right!", page: 122 },
+        { name: "Speaking activities", page: 127 },
+    ],
+    // Think 1 练习册：图片索引 = 印刷页码 - 3。
+    "27": [
+        { name: "Welcome", page: 1 },
+        { name: "Unit 1", page: 7 },
+        { name: "Unit 2", page: 15 },
+        { name: "Unit 3", page: 25 },
+        { name: "Unit 4", page: 33 },
+        { name: "Unit 5", page: 43 },
+        { name: "Unit 6", page: 51 },
+        { name: "Unit 7", page: 61 },
+        { name: "Unit 8", page: 69 },
+        { name: "Unit 9", page: 79 },
+        { name: "Unit 10", page: 87 },
+        { name: "Unit 11", page: 97 },
+        { name: "Unit 12", page: 105 },
+        { name: "Pronunciation", page: 115 },
+        { name: "Grammar Reference", page: 119 },
+        { name: "Irregular Verbs", page: 125 },
+    ],
+    // Think 2 学生书：图片索引与印刷页码一致（封面及目录除外）。
+    "28": [
+        { name: "Welcome", page: 4 },
+        { name: "Unit 1", page: 12 },
+        { name: "Unit 2", page: 20 },
+        { name: "Unit 3", page: 30 },
+        { name: "Unit 4", page: 38 },
+        { name: "Unit 5", page: 48 },
+        { name: "Unit 6", page: 56 },
+        { name: "Unit 7", page: 66 },
+        { name: "Unit 8", page: 74 },
+        { name: "Unit 9", page: 84 },
+        { name: "Unit 10", page: 92 },
+        { name: "Unit 11", page: 102 },
+        { name: "Unit 12", page: 110 },
+        { name: "Pronunciation", page: 120 },
+        { name: "Get it right!", page: 122 },
+        { name: "Speaking activities", page: 127 },
+    ],
+    // Think 2 练习册：图片索引 = 印刷页码 - 3。
+    "29": [
+        { name: "Welcome", page: 1 },
+        { name: "Unit 1", page: 7 },
+        { name: "Unit 2", page: 15 },
+        { name: "Unit 3", page: 25 },
+        { name: "Unit 4", page: 33 },
+        { name: "Unit 5", page: 43 },
+        { name: "Unit 6", page: 51 },
+        { name: "Unit 7", page: 61 },
+        { name: "Unit 8", page: 69 },
+        { name: "Unit 9", page: 79 },
+        { name: "Unit 10", page: 87 },
+        { name: "Unit 11", page: 97 },
+        { name: "Unit 12", page: 105 },
+        { name: "Pronunciation", page: 115 },
+        { name: "Grammar Reference", page: 119 },
+        { name: "Irregular Verbs", page: 125 },
+    ],
 }
-
-
-
 
 
 

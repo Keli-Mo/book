@@ -28,11 +28,11 @@ vm.runInNewContext(compiled.outputText, {
 const { BOOKS, BOOK_SERIES, filterBooks, resolveBookAction } =
   moduleContainer.exports;
 
-assert.equal(BOOKS.length, 23, "应展示 23 本真实教材，不包含两张课程海报");
+assert.equal(BOOKS.length, 27, "应展示 27 本真实教材，不包含两张课程海报");
 assert.deepEqual(
   Array.from(BOOKS, (book) => Number(book.id)),
-  Array.from({ length: 23 }, (_, index) => index + 3),
-  "教材 ID 应与现有详情页的 3–25 保持一致",
+  Array.from({ length: 27 }, (_, index) => index + 3),
+  "教材 ID 应连续覆盖 3–29",
 );
 assert.ok(
   BOOKS.every((book) => book.cover.startsWith("https://")),
@@ -40,10 +40,10 @@ assert.ok(
 );
 assert.deepEqual(
   Array.from(BOOKS.filter((book) => book.available), (book) => book.id),
-  Array.from({ length: 23 }, (_, index) => String(index + 3)),
-  "ID 3–25 的 23 本教材都应开放跟读",
+  Array.from({ length: 27 }, (_, index) => String(index + 3)),
+  "ID 3–29 的 27 本教材都应开放跟读",
 );
-assert.equal(BOOK_SERIES.length, 5, "首页应展示 5 个教材系列");
+assert.equal(BOOK_SERIES.length, 6, "首页应展示 6 个教材系列");
 assert.deepEqual(
   Object.fromEntries(
     Array.from(BOOK_SERIES, (series) => [series.id, series.availableCount]),
@@ -54,8 +54,40 @@ assert.deepEqual(
     "oxford-discover": 5,
     "reading-explorer": 6,
     cambridge: 4,
+    think: 4,
   },
-  "五个系列的开放数量应与各自教材数量一致",
+  "六个系列的开放数量应与各自教材数量一致",
+);
+assert.deepEqual(
+  Array.from(filterBooks(BOOKS, "think", ""), (book) => book.id),
+  ["26", "27", "28", "29"],
+  "Think 1 与 Think 2 的学生书和练习册应归于同一系列",
+);
+assert.deepEqual(
+  Array.from(filterBooks(BOOKS, "all", "美国思维"), (book) => book.id),
+  ["26", "27", "28", "29"],
+  "中文教材名应能找到四本 Think",
+);
+assert.deepEqual(
+  Array.from(filterBooks(BOOKS, "think", "Level 2"), (book) => book.id),
+  ["28", "29"],
+  "Think 系列可按 Level 2 搜索新增两书",
+);
+assert.deepEqual(
+  Array.from(BOOKS.slice(25), ({ id, kind, cover }) => ({ id, kind, cover })),
+  [
+    {
+      id: "28",
+      kind: "学生书",
+      cover: "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l2/student-book/pages/think-2-sb_0.jpg",
+    },
+    {
+      id: "29",
+      kind: "练习册",
+      cover: "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l2/workbook/pages/think-2-wb_0.jpg",
+    },
+  ],
+  "Think 2 两册应使用各自的云端 PDF 封面",
 );
 
 assert.deepEqual(
@@ -84,13 +116,30 @@ assert.deepEqual(
   "ID 25 应使用其自身教材 ID 进入跟读页",
 );
 assert.deepEqual(
-  Array.from(BOOKS, (book) => resolveBookAction(book).url),
+  JSON.parse(JSON.stringify(resolveBookAction(BOOKS[23]))),
+  { type: "reader", url: "/pages/ThinkBookReader/ThinkBookReader?bookId=26&page=0" },
+  "Think 1 学生书应从封面进入完整阅读页",
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(resolveBookAction(BOOKS[24]))),
+  { type: "reader", url: "/pages/ThinkBookReader/ThinkBookReader?bookId=27&page=0" },
+  "Think 1 练习册应从封面进入完整阅读页",
+);
+for (const [book, id] of [[BOOKS[25], "28"], [BOOKS[26], "29"]]) {
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(resolveBookAction(book))),
+    { type: "reader", url: `/pages/ThinkBookReader/ThinkBookReader?bookId=${id}&page=0` },
+    `Think 2 教材 ${id} 应从封面进入阅读页`,
+  );
+}
+assert.deepEqual(
+  Array.from(BOOKS.slice(0, 23), (book) => resolveBookAction(book).url),
   Array.from(
-    BOOKS,
+    BOOKS.slice(0, 23),
     (book) =>
       `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`,
   ),
-  "每本教材都应生成带自身编码 ID 的跟读路由",
+  "既有教材应保留带自身编码 ID 的跟读路由",
 );
 
-console.log("教材目录测试通过：23 本教材、5 个系列、开放状态、路由和搜索筛选均正确。");
+console.log("教材目录测试通过：27 本教材、6 个系列、开放状态、路由和搜索筛选均正确。");

@@ -90,8 +90,8 @@ assert.equal(
 );
 
 const normalize = (value) => JSON.parse(JSON.stringify(value));
-const assertHotspot = (scenario, point, imageSize, expected, hitRadiusPx) => {
-  const actual = normalize(clampHotspotCenter(point, imageSize, hitRadiusPx));
+const assertHotspot = (scenario, point, imageSize, expected, hitRadiusPx, leftShiftPx) => {
+  const actual = normalize(clampHotspotCenter(point, imageSize, hitRadiusPx, leftShiftPx));
   assert.deepEqual(actual, expected, `${scenario}：热点中心收敛结果不符合契约`);
   assert.ok(Number.isFinite(actual.left), `${scenario}：left 必须是有限数`);
   assert.ok(Number.isFinite(actual.top), `${scenario}：top 必须是有限数`);
@@ -115,6 +115,22 @@ assertHotspot(
   { left: 50, top: 40 },
   { width: 320, height: 480 },
   { left: 50, top: 40 },
+);
+assertHotspot(
+  "Think 音频图标向左移动 8px 但纵坐标不变",
+  { left: 50, top: 40 },
+  { width: 400, height: 600 },
+  { left: 48, top: 40 },
+  undefined,
+  8,
+);
+assertHotspot(
+  "左移后仍保持在图片触控边界内",
+  { left: 2, top: 40 },
+  { width: 400, height: 600 },
+  { left: 5.5, top: 40 },
+  undefined,
+  8,
 );
 
 const edgeCases = [

@@ -3,6 +3,8 @@ const assert = require("assert/strict");
 const fs = require("fs");
 const path = require("path");
 const sass = require("sass");
+const ts = require("typescript");
+const vm = require("vm");
 
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -11,6 +13,60 @@ const library = read("src/pages/BookLibrary/BookLibrary.tsx");
 const practice = read("src/pages/Practice/Practice.tsx");
 const homeCss = sass.compileString(read("src/pages/Home/Home.scss")).css;
 const libraryCss = sass.compileString(read("src/pages/BookLibrary/BookLibrary.scss")).css;
+
+const renderHomeSummary = (seriesCount, bookCount) => {
+  const compiled = ts.transpileModule(home, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+  }).outputText;
+  const moduleContainer = { exports: {} };
+  const noop = () => {};
+  const requireStub = (id) => {
+    if (id === "react/jsx-runtime") {
+      return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
+    }
+    if (id === "react") return { useState: (initial) => [initial(), noop] };
+    if (id === "@tarojs/components") return { Image: "Image", Text: "Text", View: "View" };
+    if (id === "@tarojs/taro") {
+      return {
+        default: { getMenuButtonBoundingClientRect: () => ({}) },
+        useDidShow: noop,
+        useShareAppMessage: noop,
+      };
+    }
+    if (id === "@/features/bookLibrary/bookCatalog") {
+      return {
+        BOOK_SERIES: Array.from({ length: seriesCount }, (_, index) => ({ id: String(index) })),
+        BOOKS: Array.from({ length: bookCount }, (_, index) => ({ id: String(index) })),
+      };
+    }
+    if (id === "@/features/bookLibrary/readingProgress") return { readReadingProgress: () => null };
+    if (id === "@/features/bookLibrary/homeNavigation") return { calculateHomeNavigationMetrics: () => ({}) };
+    if (id === "@/features/layout/deviceLayout") return { buildDeviceLayoutClassName: () => "" };
+    if (id === "@/hooks/useAppEntryIntroGuard") return { useAppEntryIntroGuard: noop };
+    if (id === "@/hooks/useDeviceLayout") return { useDeviceLayout: () => ({}) };
+    return {};
+  };
+  vm.runInNewContext(compiled, {
+    module: moduleContainer,
+    exports: moduleContainer.exports,
+    require: requireStub,
+  });
+  const tree = moduleContainer.exports.default();
+  const findSummary = (node) => {
+    if (!node || typeof node !== "object") return null;
+    if (node.props?.className === "series-section__summary") return node.props.children;
+    const children = node.props?.children;
+    return (Array.isArray(children) ? children : [children]).map(findSummary).find(Boolean) ?? null;
+  };
+  return findSummary(tree);
+};
+
+assert.equal(renderHomeSummary(6, 25), "6 个系列 · 25 册", "首页摘要应显示当前教材数量");
+assert.equal(renderHomeSummary(2, 7), "2 个系列 · 7 册", "首页摘要应随教材目录变化");
 
 assert.doesNotMatch(home, /可跟读|册可练/, "首页不得显示可跟读数量标签");
 assert.doesNotMatch(library, />可跟读</, "书库不得显示可跟读标签");

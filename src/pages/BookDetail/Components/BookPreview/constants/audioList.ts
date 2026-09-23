@@ -14680,6 +14680,1073 @@ const audioList25 = {
     ],
 }
 
+// Think 1 的音频热点按原书印刷音轨标签中心逐页定位；同一音频重复出现时保留多个热点。
+const thinkAudioOrigin = "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l1";
+const thinkAudioUrl = (book: "student-book" | "workbook", file: string) =>
+    `${thinkAudioOrigin}/${book}/audio/${file}`;
+
+const audioList26 = {
+    6: [
+        { offset: ["13.859%", "42.238%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p004_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "61.047%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p004_t02.mp3"), flag: "Percentage" },
+    ],
+    7: [
+        { offset: ["13.859%", "61.047%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p005_t03.mp3"), flag: "Percentage" },
+        { offset: ["60.284%", "59.097%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p005_t04.mp3"), flag: "Percentage" },
+        { offset: ["60.333%", "82.130%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p005_t05.mp3"), flag: "Percentage" },
+    ],
+    8: [
+        { offset: ["13.859%", "64.513%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p006_t06.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "40.686%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p006_t07.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "63.935%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p006_t08.mp3"), flag: "Percentage" },
+    ],
+    10: [
+        { offset: ["13.859%", "41.733%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p008_t09.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "67.401%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p008_t10.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "26.823%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p008_t11.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "34.693%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p008_t12.mp3"), flag: "Percentage" },
+    ],
+    11: [
+        { offset: ["58.129%", "72.635%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p009_t13.mp3"), flag: "Percentage" },
+    ],
+    13: [
+        { offset: ["13.859%", "64.838%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p011_t14.mp3"), flag: "Percentage" },
+        { offset: ["58.472%", "42.130%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p011_t15.mp3"), flag: "Percentage" },
+        { offset: ["58.472%", "46.715%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Welcome_Unit_p011_t15.mp3"), flag: "Percentage" },
+    ],
+    14: [
+        { offset: ["67.336%", "92.671%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_1_p12_t01.mp3"), flag: "Percentage" },
+    ],
+    17: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_1_p15_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "39.603%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_1_p15_t04.mp3"), flag: "Percentage" },
+    ],
+    18: [
+        { offset: ["13.859%", "9.458%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_1_p16_t05.mp3"), flag: "Percentage" },
+    ],
+    20: [
+        { offset: ["13.859%", "8.664%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_1_p18_t06.mp3"), flag: "Percentage" },
+    ],
+    22: [
+        { offset: ["13.859%", "56.606%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p020_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "59.495%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p020_t02.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "67.870%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p020_t03.mp3"), flag: "Percentage" },
+    ],
+    25: [
+        { offset: ["13.859%", "85.415%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p023_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "95.090%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p023_t04.mp3"), flag: "Percentage" },
+    ],
+    26: [
+        { offset: ["13.859%", "37.365%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p024_t07.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "81.877%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p024_t08.mp3"), flag: "Percentage" },
+    ],
+    28: [
+        { offset: ["13.859%", "23.863%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p026_t09.mp3"), flag: "Percentage" },
+    ],
+    30: [
+        { offset: ["58.080%", "33.249%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p028_t10.mp3"), flag: "Percentage" },
+    ],
+    32: [
+        { offset: ["58.080%", "53.141%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p030_t01.mp3"), flag: "Percentage" },
+    ],
+    34: [
+        { offset: ["13.859%", "11.372%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p032_t02.mp3"), flag: "Percentage" },
+    ],
+    35: [
+        { offset: ["13.859%", "38.375%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p033_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "80.722%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p033_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "88.700%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p033_t04.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "6.679%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p033_t05.mp3"), flag: "Percentage" },
+    ],
+    36: [
+        { offset: ["13.859%", "20.542%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p034_t08.mp3"), flag: "Percentage" },
+    ],
+    38: [
+        { offset: ["13.859%", "8.664%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p036_t09.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "41.408%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p036_t09.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "57.690%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p036_t10.mp3"), flag: "Percentage" },
+    ],
+    40: [
+        { offset: ["58.080%", "70.686%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_4_p038_t01.mp3"), flag: "Percentage" },
+    ],
+    43: [
+        { offset: ["13.859%", "64.368%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_4_p041_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "70.794%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_4_p041_t02.mp3"), flag: "Percentage" },
+    ],
+    44: [
+        { offset: ["13.859%", "66.679%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_4_p042_t05.mp3"), flag: "Percentage" },
+    ],
+    46: [
+        { offset: ["13.859%", "19.964%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_4_p044_t06.mp3"), flag: "Percentage" },
+    ],
+    48: [
+        { offset: ["58.080%", "71.300%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_4_p046_t07.mp3"), flag: "Percentage" },
+    ],
+    50: [
+        { offset: ["13.810%", "64.982%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p048_t01.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "66.643%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p048_t02.mp3"), flag: "Percentage" },
+    ],
+    52: [
+        { offset: ["58.129%", "11.372%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p050_t05.mp3"), flag: "Percentage" },
+    ],
+    53: [
+        { offset: ["13.859%", "71.516%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p051_t06.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "80.939%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p051_t06.mp3"), flag: "Percentage" },
+    ],
+    54: [
+        { offset: ["13.859%", "77.870%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p052_t07.mp3"), flag: "Percentage" },
+    ],
+    56: [
+        { offset: ["13.859%", "8.664%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p054_t08.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "41.733%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p054_t08.mp3"), flag: "Percentage" },
+    ],
+    58: [
+        { offset: ["58.080%", "65.307%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p056_t01.mp3"), flag: "Percentage" },
+    ],
+    61: [
+        { offset: ["13.859%", "39.061%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p059_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "48.773%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p059_t02.mp3"), flag: "Percentage" },
+    ],
+    62: [
+        { offset: ["13.859%", "17.148%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p060_t03.mp3"), flag: "Percentage" },
+    ],
+    64: [
+        { offset: ["15.769%", "21.986%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p062_t06.mp3"), flag: "Percentage" },
+        { offset: ["15.769%", "26.570%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p062_t06.mp3"), flag: "Percentage" },
+    ],
+    66: [
+        { offset: ["58.080%", "68.989%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p064_t07.mp3"), flag: "Percentage" },
+    ],
+    68: [
+        { offset: ["13.859%", "53.466%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p066_t01.mp3"), flag: "Percentage" },
+        { offset: ["48.825%", "50.686%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p066_t02.mp3"), flag: "Percentage" },
+        { offset: ["48.825%", "77.690%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p066_t03.mp3"), flag: "Percentage" },
+    ],
+    70: [
+        { offset: ["58.129%", "11.372%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p068_t04.mp3"), flag: "Percentage" },
+    ],
+    71: [
+        { offset: ["13.859%", "55.307%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p069_t05.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "77.365%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p069_t05.mp3"), flag: "Percentage" },
+    ],
+    72: [
+        { offset: ["13.859%", "22.058%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p070_t06.mp3"), flag: "Percentage" },
+    ],
+    73: [
+        { offset: ["13.859%", "28.231%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p071_t09.mp3"), flag: "Percentage" },
+    ],
+    74: [
+        { offset: ["13.859%", "8.664%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p072_t10.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "43.466%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p072_t10.mp3"), flag: "Percentage" },
+    ],
+    76: [
+        { offset: ["58.080%", "65.632%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_8_p074_t01.mp3"), flag: "Percentage" },
+    ],
+    79: [
+        { offset: ["58.080%", "6.679%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_8_p077_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "60.614%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_8_p077_t04.mp3"), flag: "Percentage" },
+    ],
+    80: [
+        { offset: ["13.859%", "74.585%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_8_p078_t05.mp3"), flag: "Percentage" },
+    ],
+    82: [
+        { offset: ["13.859%", "26.968%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_8_p080_t06.mp3"), flag: "Percentage" },
+    ],
+    84: [
+        { offset: ["13.859%", "66.895%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_8_p082_t07.mp3"), flag: "Percentage" },
+    ],
+    86: [
+        { offset: ["50.979%", "54.765%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p084_t01.mp3"), flag: "Percentage" },
+    ],
+    88: [
+        { offset: ["13.859%", "46.354%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p086_t02.mp3"), flag: "Percentage" },
+    ],
+    89: [
+        { offset: ["13.859%", "43.646%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p087_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "56.643%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p087_t03.mp3"), flag: "Percentage" },
+    ],
+    90: [
+        { offset: ["13.859%", "7.437%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p088_t04.mp3"), flag: "Percentage" },
+    ],
+    91: [
+        { offset: ["13.859%", "60.000%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p089_t07.mp3"), flag: "Percentage" },
+    ],
+    92: [
+        { offset: ["13.859%", "8.664%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p090_t08.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "46.968%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p090_t08.mp3"), flag: "Percentage" },
+    ],
+    94: [
+        { offset: ["52.253%", "59.928%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p092_t01.mp3"), flag: "Percentage" },
+        { offset: ["52.204%", "67.942%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p092_t01.mp3"), flag: "Percentage" },
+    ],
+    97: [
+        { offset: ["13.713%", "9.356%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p095_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.713%", "13.929%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p095_t02.mp3"), flag: "Percentage" },
+    ],
+    98: [
+        { offset: ["13.859%", "93.646%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p096_t03.mp3"), flag: "Percentage" },
+    ],
+    100: [
+        { offset: ["13.859%", "26.570%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p098_t06.mp3"), flag: "Percentage" },
+    ],
+    102: [
+        { offset: ["58.080%", "14.404%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p100_t07.mp3"), flag: "Percentage" },
+    ],
+    104: [
+        { offset: ["13.859%", "79.350%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p102_t01.mp3"), flag: "Percentage" },
+    ],
+    106: [
+        { offset: ["13.859%", "82.274%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p104_t04.mp3"), flag: "Percentage" },
+    ],
+    107: [
+        { offset: ["13.810%", "61.769%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p105_t05.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "66.318%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p105_t05.mp3"), flag: "Percentage" },
+    ],
+    108: [
+        { offset: ["13.859%", "13.863%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p106_t06.mp3"), flag: "Percentage" },
+    ],
+    109: [
+        { offset: ["60.039%", "71.661%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p107_t07.mp3"), flag: "Percentage" },
+    ],
+    110: [
+        { offset: ["13.859%", "8.664%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p108_t08.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "45.018%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p108_t08.mp3"), flag: "Percentage" },
+    ],
+    112: [
+        { offset: ["58.080%", "65.199%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p110_t01.mp3"), flag: "Percentage" },
+    ],
+    115: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p113_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "23.791%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p113_t02.mp3"), flag: "Percentage" },
+    ],
+    116: [
+        { offset: ["13.859%", "80.650%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p114_t05.mp3"), flag: "Percentage" },
+    ],
+    117: [
+        { offset: ["58.080%", "48.484%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p115_t06.mp3"), flag: "Percentage" },
+    ],
+    118: [
+        { offset: ["13.859%", "28.700%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p116_t07.mp3"), flag: "Percentage" },
+    ],
+    120: [
+        { offset: ["58.080%", "64.296%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p118_t08.mp3"), flag: "Percentage" },
+    ],
+    122: [
+        { offset: ["13.859%", "18.809%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_1_p120_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "34.585%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_1_p120_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "45.126%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p120_t05.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "60.072%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_2_p120_t06.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "70.650%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p120_t06.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "83.357%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_3_p120_t07.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "18.809%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_4_p120_t03.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "33.249%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_4_p120_t04.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "45.379%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p120_t03.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "63.177%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_5_p120_t04.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "73.718%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p120_t04.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "86.462%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_6_p120_t05.mp3"), flag: "Percentage" },
+    ],
+    123: [
+        { offset: ["13.859%", "11.372%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p121_t07.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "29.206%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_7_p121_t08.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "39.711%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_8_p121_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "57.509%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_8_p121_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "68.087%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p121_t05.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "85.884%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_9_p121_t06.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "11.372%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p121_t04.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "26.101%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_10_p121_t05.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "36.643%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p121_t02.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "54.693%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_11_p121_t03.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "65.235%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p121_t03.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "79.675%"], url: thinkAudioUrl("student-book", "Thk2e_BrE_L1_SB_Unit_12_p121_t04.mp3"), flag: "Percentage" },
+    ],
+}
+
+const audioList27 = {
+    3: [
+        { offset: ["50.490%", "68.087%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p004_t01.mp3"), flag: "Percentage" },
+    ],
+    4: [
+        // p5 两道 Listen again 跨页沿用 p4 的 W.01 对话。
+        { offset: ["13.859%", "6.662%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p004_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "30.333%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p004_t01.mp3"), flag: "Percentage" },
+    ],
+    5: [
+        { offset: ["58.080%", "55.596%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p006_t02.mp3"), flag: "Percentage" },
+    ],
+    7: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p008_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "31.119%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p008_t03.mp3"), flag: "Percentage" },
+    ],
+    8: [
+        { offset: ["58.080%", "42.744%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Welcome_Unit_p009_t04.mp3"), flag: "Percentage" },
+    ],
+    15: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_01_p016_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "44.043%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_01_p016_t04.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "53.971%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_01_p016_t05.mp3"), flag: "Percentage" },
+    ],
+    23: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p024_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "27.545%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p024_t03.mp3"), flag: "Percentage" },
+    ],
+    24: [
+        { offset: ["13.859%", "14.404%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p025_t04.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "14.332%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p025_t05.mp3"), flag: "Percentage" },
+    ],
+    25: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p026_t06.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "57.870%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p026_t06.mp3"), flag: "Percentage" },
+    ],
+    26: [
+        { offset: ["13.859%", "50.433%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p027_t07.mp3"), flag: "Percentage" },
+    ],
+    33: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_03_p034_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "25.704%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_03_p034_t01.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "32.238%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_03_p034_t02.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "61.805%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_03_p034_t03.mp3"), flag: "Percentage" },
+    ],
+    41: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_04_p042_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "22.202%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_04_p042_t02.mp3"), flag: "Percentage" },
+    ],
+    42: [
+        { offset: ["58.080%", "14.404%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_04_p043_t03.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "64.729%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_04_p043_t04.mp3"), flag: "Percentage" },
+    ],
+    43: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_04_p044_t05.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "37.581%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_04_p044_t05.mp3"), flag: "Percentage" },
+    ],
+    44: [
+        { offset: ["13.859%", "42.816%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_04_p045_t06.mp3"), flag: "Percentage" },
+    ],
+    51: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_05_p052_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "71.733%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_05_p052_t03.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "39.097%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_05_p052_t04.mp3"), flag: "Percentage" },
+    ],
+    59: [
+        { offset: ["13.859%", "44.079%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p060_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "58.412%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p060_t03.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "9.458%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p060_t04.mp3"), flag: "Percentage" },
+    ],
+    60: [
+        { offset: ["13.859%", "14.404%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p061_t05.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "65.343%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p061_t06.mp3"), flag: "Percentage" },
+    ],
+    61: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p062_t07.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "49.964%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p062_t07.mp3"), flag: "Percentage" },
+    ],
+    62: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p063_t08.mp3"), flag: "Percentage" },
+    ],
+    69: [
+        { offset: ["13.859%", "9.928%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_07_p070_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "40.181%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_07_p070_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "63.213%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_07_p070_t02.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "62.419%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_07_p070_t03.mp3"), flag: "Percentage" },
+    ],
+    77: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p078_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "54.910%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p078_t02.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "6.679%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p078_t03.mp3"), flag: "Percentage" },
+    ],
+    78: [
+        { offset: ["13.859%", "14.404%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p079_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "64.007%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p079_t05.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "46.137%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p079_t06.mp3"), flag: "Percentage" },
+    ],
+    79: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p080_t07.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "39.097%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p080_t07.mp3"), flag: "Percentage" },
+    ],
+    80: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p081_t08.mp3"), flag: "Percentage" },
+    ],
+    87: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_09_p088_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "33.321%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_09_p088_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "69.495%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_09_p088_t05.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "44.621%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_09_p088_t06.mp3"), flag: "Percentage" },
+    ],
+    95: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_10_p096_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "25.415%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_10_p096_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "60.505%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_10_p096_t02.mp3"), flag: "Percentage" },
+    ],
+    97: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_10_p098_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "28.845%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_10_p098_t04.mp3"), flag: "Percentage" },
+    ],
+    98: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_10_p099_t05.mp3"), flag: "Percentage" },
+    ],
+    104: [
+        { offset: ["19.001%", "10.975%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p105_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "22.202%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p105_t02.mp3"), flag: "Percentage" },
+        { offset: ["58.129%", "57.906%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p105_t03.mp3"), flag: "Percentage" },
+    ],
+    105: [
+        { offset: ["13.859%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p106_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "41.047%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p106_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "66.570%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p106_t05.mp3"), flag: "Percentage" },
+        { offset: ["57.933%", "41.480%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p106_t06.mp3"), flag: "Percentage" },
+    ],
+    113: [
+        { offset: ["13.859%", "45.523%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p114_t02.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "58.484%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p114_t02.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "9.422%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p114_t03.mp3"), flag: "Percentage" },
+    ],
+    115: [
+        { offset: ["13.859%", "12.455%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p116_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "37.581%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p116_t04.mp3"), flag: "Percentage" },
+    ],
+    116: [
+        // 文件名写 p116，但原书的 12.05 印刷在 p117 的 Dialogue 练习 7。
+        { offset: ["13.859%", "50.319%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p116_t05.mp3"), flag: "Percentage" },
+    ],
+    117: [
+        { offset: ["13.859%", "45.812%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_01_p118_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "75.054%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_01_p118_t02.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "14.043%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p118_t01.mp3"), flag: "Percentage" },
+        { offset: ["57.884%", "28.664%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_02_p118_t02.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "37.653%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_03_p118_t04.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "94.116%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_03_p118_t05.mp3"), flag: "Percentage" },
+    ],
+    118: [
+        { offset: ["13.859%", "37.581%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_04_p119_t01.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "66.318%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_05_p119_t01.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "25.740%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_05_p119_t02.mp3"), flag: "Percentage" },
+        { offset: ["57.835%", "60.614%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p119_t01.mp3"), flag: "Percentage" },
+        { offset: ["57.884%", "92.599%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_06_p119_t02.mp3"), flag: "Percentage" },
+    ],
+    119: [
+        { offset: ["13.859%", "11.372%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_07_p120_t04.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "62.780%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_07_p120_t05.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "93.032%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_07_p120_t06.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "47.617%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p120_t01.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "53.394%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_08_p120_t01.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "79.278%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_09_p120_t01.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "93.718%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_09_p120_t02.mp3"), flag: "Percentage" },
+    ],
+    120: [
+        { offset: ["13.859%", "11.083%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_09_p121_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "46.498%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_10_p121_t03.mp3"), flag: "Percentage" },
+        { offset: ["13.859%", "94.332%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_11_p121_t01.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "39.314%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p121_t01.mp3"), flag: "Percentage" },
+        { offset: ["58.080%", "46.895%"], url: thinkAudioUrl("workbook", "Thk2e_BrE_L1_WB_Unit_12_p121_t01.mp3"), flag: "Percentage" },
+    ],
+}
+// Think 2 的音频热点按印刷音轨标记定位；同一音源可跨页或在多处题目使用。
+const think2AudioOrigin = "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l2";
+const think2AudioUrl = (book: "student-book" | "workbook", file: string) =>
+    `${think2AudioOrigin}/${book}/audio/${encodeURIComponent(file)}`;
+
+const audioList28 = {
+    7: [
+        // W.01: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "59.627%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p005_t01.mp3"), flag: "Percentage" },
+        // W.01: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "65.644%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p005_t01.mp3"), flag: "Percentage" },
+        // W.02: printed pill visually verified; OCR missed label
+        { offset: ["58.075%", "71.781%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p005_t02.mp3"), flag: "Percentage" },
+    ],
+    8: [
+        // W.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "71.661%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p006_t03.mp3"), flag: "Percentage" },
+    ],
+    10: [
+        // W.04: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "11.372%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p008_t04.mp3"), flag: "Percentage" },
+    ],
+    11: [
+        // W.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.326%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p009_t05.mp3"), flag: "Percentage" },
+        // W.06: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "20.517%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p009_t06.mp3"), flag: "Percentage" },
+        // W.06: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "26.534%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p009_t06.mp3"), flag: "Percentage" },
+    ],
+    13: [
+        // W.07: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.326%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Welcome_Unit_p011_t07.mp3"), flag: "Percentage" },
+    ],
+    14: [
+        // 1.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "68.953%"], url: think2AudioUrl("student-book", "p12 1 01.mp3"), flag: "Percentage" },
+    ],
+    17: [
+        // 1.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("student-book", "p15 1 02.mp3"), flag: "Percentage" },
+        // 1.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "34.597%"], url: think2AudioUrl("student-book", "p15 1 03.mp3"), flag: "Percentage" },
+        // 1.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "40.614%"], url: think2AudioUrl("student-book", "p15 1 03.mp3"), flag: "Percentage" },
+    ],
+    18: [
+        // 1.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "14.681%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_1_p16_t04.mp3"), flag: "Percentage" },
+    ],
+    20: [
+        // 1.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "8.664%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_1_p18_t05.mp3"), flag: "Percentage" },
+    ],
+    22: [
+        // 2.01: printed pill visually verified; OCR missed label
+        { offset: ["13.866%", "77.316%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p20_t01.mp3"), flag: "Percentage" },
+    ],
+    24: [
+        // 2.02: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "11.372%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p22_t02.mp3"), flag: "Percentage" },
+    ],
+    25: [
+        // 2.03: printed pill OCR + filename unit/track
+        { offset: ["13.703%", "33.875%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p23_t03.mp3"), flag: "Percentage" },
+        // 2.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "69.254%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p23_t03.mp3"), flag: "Percentage" },
+    ],
+    26: [
+        // 2.04: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "64.862%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p24_t04.mp3"), flag: "Percentage" },
+    ],
+    28: [
+        // 2.07: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "22.443%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p26_t07.mp3"), flag: "Percentage" },
+    ],
+    30: [
+        // 2.08: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "41.937%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p28_t08.mp3"), flag: "Percentage" },
+    ],
+    32: [
+        // 3.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "75.090%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_3_p30_t01.mp3"), flag: "Percentage" },
+    ],
+    35: [
+        // 3.04: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "19.434%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_3_p33_t04.mp3"), flag: "Percentage" },
+        // 3.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "23.887%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_3_p33_t05.mp3"), flag: "Percentage" },
+    ],
+    36: [
+        // 3.06: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "68.833%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_3_p34_t06.mp3"), flag: "Percentage" },
+    ],
+    38: [
+        // 3.07: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "8.664%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_3_p36_t07.mp3"), flag: "Percentage" },
+    ],
+    40: [
+        // 4.01: printed pill OCR + filename unit/track
+        { offset: ["53.507%", "61.613%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_4_p38_t01.mp3"), flag: "Percentage" },
+    ],
+    43: [
+        // 4.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "70.698%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_4_p41_t02.mp3"), flag: "Percentage" },
+        // 4.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "78.520%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_4_p41_t02.mp3"), flag: "Percentage" },
+    ],
+    44: [
+        // 4.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "25.511%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_4_p42_t03.mp3"), flag: "Percentage" },
+    ],
+    46: [
+        // 4.04: printed pill OCR + filename unit/track
+        { offset: ["57.667%", "78.941%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_4_p44_t04.mp3"), flag: "Percentage" },
+    ],
+    50: [
+        // 5.01: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "65.283%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p48_t01.mp3"), flag: "Percentage" },
+        // 5.02: printed pill OCR + filename unit/track
+        { offset: ["66.721%", "66.968%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p48_t02.mp3"), flag: "Percentage" },
+    ],
+    53: [
+        // 5.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p51_t05.mp3"), flag: "Percentage" },
+        // 5.05: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "13.899%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p51_t05.mp3"), flag: "Percentage" },
+        // 5.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "23.646%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p51_t06.mp3"), flag: "Percentage" },
+    ],
+    54: [
+        // 5.07: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "74.850%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p52_t07.mp3"), flag: "Percentage" },
+    ],
+    55: [
+        // 5.08: printed pill OCR + filename unit/track
+        { offset: ["60.114%", "69.374%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p53_t08.mp3"), flag: "Percentage" },
+    ],
+    56: [
+        // 5.09: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "8.664%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p54_t09.mp3"), flag: "Percentage" },
+    ],
+    58: [
+        // 6.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "67.268%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p56_t01.mp3"), flag: "Percentage" },
+    ],
+    60: [
+        // 6.02: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "54.452%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p58_t02.mp3"), flag: "Percentage" },
+    ],
+    61: [
+        // 6.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "6.679%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p59_t03.mp3"), flag: "Percentage" },
+        // 6.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "14.140%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p59_t03.mp3"), flag: "Percentage" },
+        // 6.03: printed pill OCR + filename unit/track
+        { offset: ["58.157%", "39.170%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p59_t03.mp3"), flag: "Percentage" },
+    ],
+    62: [
+        // 6.04: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "38.448%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p60_t04.mp3"), flag: "Percentage" },
+    ],
+    63: [
+        // 6.05: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "52.948%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p61_t05.mp3"), flag: "Percentage" },
+    ],
+    64: [
+        // 6.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "20.277%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p62_t06.mp3"), flag: "Percentage" },
+    ],
+    66: [
+        // 6.09: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "58.424%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p64_t09.mp3"), flag: "Percentage" },
+    ],
+    68: [
+        // 7.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "61.252%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_7_p66_t01.mp3"), flag: "Percentage" },
+    ],
+    71: [
+        // 7.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "18.472%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_7_p69_t02.mp3"), flag: "Percentage" },
+        // 7.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "21.360%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_7_p69_t02.mp3"), flag: "Percentage" },
+    ],
+    72: [
+        // 7.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "31.348%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_7_p70_t03.mp3"), flag: "Percentage" },
+    ],
+    74: [
+        // 7.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "8.664%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_7_p72_t06.mp3"), flag: "Percentage" },
+    ],
+    76: [
+        // 8.01: printed pill OCR + filename unit/track
+        { offset: ["64.763%", "67.930%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_8_p74_t01.mp3"), flag: "Percentage" },
+    ],
+    79: [
+        // 8.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "39.290%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_8_p77_t02.mp3"), flag: "Percentage" },
+        // 8.02: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "43.622%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_8_p77_t02.mp3"), flag: "Percentage" },
+    ],
+    80: [
+        // 8.05: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "30.686%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_8_p78_t05.mp3"), flag: "Percentage" },
+    ],
+    82: [
+        // 8.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "12.094%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_8_p80_t06.mp3"), flag: "Percentage" },
+    ],
+    86: [
+        // 9.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "61.853%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_9_p84_t01.mp3"), flag: "Percentage" },
+    ],
+    89: [
+        // 9.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "20.878%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_9_p87_t04.mp3"), flag: "Percentage" },
+        // 9.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "33.755%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_9_p87_t04.mp3"), flag: "Percentage" },
+    ],
+    90: [
+        // 9.05: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "17.329%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_9_p88_t05.mp3"), flag: "Percentage" },
+    ],
+    92: [
+        // 9.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "8.664%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_9_p90_t06.mp3"), flag: "Percentage" },
+    ],
+    94: [
+        // 10.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "94.946%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_10_p92_t01.mp3"), flag: "Percentage" },
+    ],
+    97: [
+        // 10.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "27.256%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_10_p95_t02.mp3"), flag: "Percentage" },
+        // 10.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "38.387%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_10_p95_t02.mp3"), flag: "Percentage" },
+    ],
+    98: [
+        // 10.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "89.049%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_10_p96_t03.mp3"), flag: "Percentage" },
+    ],
+    100: [
+        // 10.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "85.259%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_10_p98_t06.mp3"), flag: "Percentage" },
+    ],
+    102: [
+        // 10.07: printed pill OCR + filename unit/track
+        { offset: ["61.990%", "66.847%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_10_p100_t07.mp3"), flag: "Percentage" },
+    ],
+    104: [
+        // 11.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "74.850%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_11_p102_t01.mp3"), flag: "Percentage" },
+    ],
+    107: [
+        // 11.02: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "6.679%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_11_p105_t02.mp3"), flag: "Percentage" },
+        // 11.02: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "17.389%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_11_p105_t02.mp3"), flag: "Percentage" },
+    ],
+    108: [
+        // 11.03: printed pill OCR + filename unit/track
+        { offset: ["52.365%", "6.679%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_11_p106_t03.mp3"), flag: "Percentage" },
+    ],
+    110: [
+        // 11.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "8.724%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_11_p108_t06.mp3"), flag: "Percentage" },
+    ],
+    112: [
+        // 12.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "65.523%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_12_p110_t01.mp3"), flag: "Percentage" },
+    ],
+    115: [
+        // 12.02: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "13.899%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_12_p113_t02.mp3"), flag: "Percentage" },
+        // 12.02: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "19.795%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_12_p113_t02.mp3"), flag: "Percentage" },
+    ],
+    116: [
+        // 12.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "9.446%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_12_p114_t03.mp3"), flag: "Percentage" },
+    ],
+    118: [
+        // 12.06: printed pill OCR + filename unit/track
+        { offset: ["15.253%", "23.827%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_12_p116_t06.mp3"), flag: "Percentage" },
+    ],
+    120: [
+        // 12.07: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "68.291%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_12_p118_t07.mp3"), flag: "Percentage" },
+    ],
+    122: [
+        // 3.03: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "17.088%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_3_p32_t03.mp3"), flag: "Percentage" },
+        // 1.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "18.833%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_1_p19_t06.mp3"), flag: "Percentage" },
+        // 4.05: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "26.053%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_4_p44_t05.mp3"), flag: "Percentage" },
+        // 1.07: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "35.560%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_1_p19_t07.mp3"), flag: "Percentage" },
+        // 4.06: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "38.929%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_4_p44_t06.mp3"), flag: "Percentage" },
+        // 2.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "44.525%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p25_t05.mp3"), flag: "Percentage" },
+        // 5.03: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "48.195%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p50_t03.mp3"), flag: "Percentage" },
+        // 2.06: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "65.644%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_2_p25_t06.mp3"), flag: "Percentage" },
+        // 5.04: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "66.005%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_5_p50_t04.mp3"), flag: "Percentage" },
+        // 3.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "74.669%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_3_p32_t02.mp3"), flag: "Percentage" },
+        // 6.07: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "74.910%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p63_t07.mp3"), flag: "Percentage" },
+        // 6.08: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "91.276%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_6_p63_t08.mp3"), flag: "Percentage" },
+    ],
+    123: [
+        // 9.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "9.687%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_9_p86_t03.mp3"), flag: "Percentage" },
+        // 7.04: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "11.372%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_7_p71_t04.mp3"), flag: "Percentage" },
+        // 10.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "18.712%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_10_p97_t04.mp3"), flag: "Percentage" },
+        // 7.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "39.350%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_7_p71_t05.mp3"), flag: "Percentage" },
+        // 10.05: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "42.780%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_10_p97_t05.mp3"), flag: "Percentage" },
+        // 8.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "48.315%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_8_p77_t03.mp3"), flag: "Percentage" },
+        // 11.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "51.805%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_11_p107_t04.mp3"), flag: "Percentage" },
+        // 11.05: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "68.291%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_11_p107_t05.mp3"), flag: "Percentage" },
+        // 8.04: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "69.134%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_8_p77_t04.mp3"), flag: "Percentage" },
+        // 12.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "77.256%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_12_p115_t04.mp3"), flag: "Percentage" },
+        // 9.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "78.159%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_9_p86_t02.mp3"), flag: "Percentage" },
+        // 12.05: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "95.006%"], url: think2AudioUrl("student-book", "Thk2e_BE_L2_SB_Unit_12_p115_t05.mp3"), flag: "Percentage" },
+    ],
+}
+
+const audioList29 = {
+    4: [
+        // W.01: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "33.032%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Welcome_Unit_p005_t01.mp3"), flag: "Percentage" },
+    ],
+    5: [
+        // W.02: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "59.146%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Welcome_Unit_p006_t02.mp3"), flag: "Percentage" },
+    ],
+    6: [
+        // W.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "59.868%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Welcome_Unit_p007_t03.mp3"), flag: "Percentage" },
+        // W.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "68.171%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Welcome_Unit_p007_t04.mp3"), flag: "Percentage" },
+    ],
+    8: [
+        // W.05: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "6.679%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Welcome_Unit_p009_t05.mp3"), flag: "Percentage" },
+        // W.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "48.676%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Welcome_Unit_p009_t05.mp3"), flag: "Percentage" },
+    ],
+    15: [
+        // 1.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_1_p16_t03.mp3"), flag: "Percentage" },
+        // 1.01: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "27.497%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_1_p16_t01.mp3"), flag: "Percentage" },
+        // 1.01: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "37.004%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_1_p16_t01.mp3"), flag: "Percentage" },
+        // 1.01: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "61.432%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_1_p16_t01.mp3"), flag: "Percentage" },
+        // 1.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "67.629%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_1_p16_t04.mp3"), flag: "Percentage" },
+    ],
+    16: [
+        // 1.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "14.380%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_1_p17_t05.mp3"), flag: "Percentage" },
+    ],
+    23: [
+        // 2.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_2_p24_t03.mp3"), flag: "Percentage" },
+        // 2.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_2_p24_t04.mp3"), flag: "Percentage" },
+        // 2.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "73.827%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_2_p24_t03.mp3"), flag: "Percentage" },
+    ],
+    25: [
+        // 2.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_2_p26_t05.mp3"), flag: "Percentage" },
+        // 2.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "37.485%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_2_p26_t05.mp3"), flag: "Percentage" },
+    ],
+    26: [
+        // 2.06: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_2_p27_t06.mp3"), flag: "Percentage" },
+    ],
+    33: [
+        // 3.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_3_p34_t03.mp3"), flag: "Percentage" },
+        // 3.05: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "42.539%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_3_p34_t05.mp3"), flag: "Percentage" },
+        // 3.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "45.066%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_3_p34_t03.mp3"), flag: "Percentage" },
+        // 3.06: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "65.283%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_3_p34_t06.mp3"), flag: "Percentage" },
+        // 3.04: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "67.930%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_3_p34_t04.mp3"), flag: "Percentage" },
+    ],
+    34: [
+        // 3.07: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "14.380%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_3_p35_t07.mp3"), flag: "Percentage" },
+    ],
+    41: [
+        // 4.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_4_p42_t02.mp3"), flag: "Percentage" },
+        // 4.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "47.473%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_4_p42_t02.mp3"), flag: "Percentage" },
+    ],
+    43: [
+        // 4.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_4_p44_t03.mp3"), flag: "Percentage" },
+        // 4.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "37.485%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_4_p44_t03.mp3"), flag: "Percentage" },
+    ],
+    44: [
+        // 4.04: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_4_p45_t04.mp3"), flag: "Percentage" },
+    ],
+    51: [
+        // 5.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_5_p52_t02.mp3"), flag: "Percentage" },
+        // 5.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "9.567%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_5_p52_t03.mp3"), flag: "Percentage" },
+        // 5.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "58.063%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_5_p52_t02.mp3"), flag: "Percentage" },
+    ],
+    52: [
+        // 5.04: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "14.380%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_5_p53_t04.mp3"), flag: "Percentage" },
+    ],
+    59: [
+        // 6.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p60_t03.mp3"), flag: "Percentage" },
+        // 6.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "45.548%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p60_t03.mp3"), flag: "Percentage" },
+        // 6.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "73.466%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p60_t03.mp3"), flag: "Percentage" },
+    ],
+    61: [
+        // 6.04: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p62_t04.mp3"), flag: "Percentage" },
+        // 6.04: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "37.605%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p62_t04.mp3"), flag: "Percentage" },
+    ],
+    62: [
+        // 6.05: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p63_t05.mp3"), flag: "Percentage" },
+    ],
+    69: [
+        // 7.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_7_p70_t02.mp3"), flag: "Percentage" },
+        // 7.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "9.567%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_7_p70_t03.mp3"), flag: "Percentage" },
+        // 7.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "20.638%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_7_p70_t02.mp3"), flag: "Percentage" },
+        // 7.02: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "54.091%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_7_p70_t02.mp3"), flag: "Percentage" },
+    ],
+    77: [
+        // 8.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_8_p78_t03.mp3"), flag: "Percentage" },
+        // 8.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "38.809%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_8_p78_t03.mp3"), flag: "Percentage" },
+        // 8.04: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "69.495%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_8_p78_t04.mp3"), flag: "Percentage" },
+    ],
+    79: [
+        // 8.05: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_8_p80_t05.mp3"), flag: "Percentage" },
+        // 8.05: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "56.980%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_8_p80_t05.mp3"), flag: "Percentage" },
+    ],
+    80: [
+        // 8.06: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_8_p81_t06.mp3"), flag: "Percentage" },
+    ],
+    87: [
+        // 9.01: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_9_p88_t01.mp3"), flag: "Percentage" },
+        // 9.02: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "9.567%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_9_p88_t02.mp3"), flag: "Percentage" },
+        // 9.01: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "19.073%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_9_p88_t01.mp3"), flag: "Percentage" },
+    ],
+    88: [
+        // 9.05: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "14.380%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_9_p89_t05.mp3"), flag: "Percentage" },
+    ],
+    95: [
+        // 10.01: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p96_t01.mp3"), flag: "Percentage" },
+        // 10.01: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "26.775%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p96_t01.mp3"), flag: "Percentage" },
+    ],
+    97: [
+        // 10.05: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p98_t05.mp3"), flag: "Percentage" },
+        // 10.05: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "39.170%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p98_t05.mp3"), flag: "Percentage" },
+    ],
+    98: [
+        // 10.06: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p99_t06.mp3"), flag: "Percentage" },
+    ],
+    105: [
+        // 11.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_11_p106_t03.mp3"), flag: "Percentage" },
+        // 11.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_11_p106_t04.mp3"), flag: "Percentage" },
+        // 11.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "20.638%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_11_p106_t03.mp3"), flag: "Percentage" },
+        // 11.03: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "60.951%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_11_p106_t03.mp3"), flag: "Percentage" },
+    ],
+    113: [
+        // 12.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "9.446%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_12_p114_t02.mp3"), flag: "Percentage" },
+        // 12.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "27.377%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_12_p114_t03.mp3"), flag: "Percentage" },
+        // 12.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "66.366%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_12_p114_t02.mp3"), flag: "Percentage" },
+    ],
+    115: [
+        // 12.04: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_12_p116_t04.mp3"), flag: "Percentage" },
+        // 12.04: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "37.605%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_12_p116_t04.mp3"), flag: "Percentage" },
+    ],
+    116: [
+        // 12.05: printed pill visually verified; OCR missed label
+        { offset: ["13.866%", "12.455%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_12_p116_t05.mp3"), flag: "Percentage" },
+    ],
+    117: [
+        // 2.02: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "33.755%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_2_p118_t02.mp3"), flag: "Percentage" },
+        // 1.02: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "56.498%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_1_p118_t02.mp3"), flag: "Percentage" },
+        // 3.01: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "78.159%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_3_p118_t01.mp3"), flag: "Percentage" },
+        // 2.01: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "85.138%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_2_p118_t01.mp3"), flag: "Percentage" },
+    ],
+    118: [
+        // 3.02: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "24.729%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_3_p119_t02.mp3"), flag: "Percentage" },
+        // 5.01: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "46.029%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_5_p119_t01.mp3"), flag: "Percentage" },
+        // 5.01: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "53.610%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_5_p119_t01.mp3"), flag: "Percentage" },
+        // 4.01: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "58.785%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_4_p119_t01.mp3"), flag: "Percentage" },
+        // 6.01: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "62.635%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p119_t01.mp3"), flag: "Percentage" },
+        // 6.01: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "72.503%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p119_t01.mp3"), flag: "Percentage" },
+        // 6.02: printed pill OCR + filename unit/track
+        { offset: ["57.830%", "87.064%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_6_p119_t02.mp3"), flag: "Percentage" },
+    ],
+    119: [
+        // 8.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "6.679%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_8_p120_t01.mp3"), flag: "Percentage" },
+        // 7.01: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "11.372%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_7_p120_t01.mp3"), flag: "Percentage" },
+        // 8.02: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "21.239%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_8_p120_t02.mp3"), flag: "Percentage" },
+        // 7.01: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "28.099%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_7_p120_t01.mp3"), flag: "Percentage" },
+        // 9.03: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "57.461%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_9_p120_t03.mp3"), flag: "Percentage" },
+        // 7.01: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "64.320%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_7_p120_t01.mp3"), flag: "Percentage" },
+        // 9.04: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "87.665%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_9_p120_t04.mp3"), flag: "Percentage" },
+    ],
+    120: [
+        // 10.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "11.372%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p121_t02.mp3"), flag: "Percentage" },
+        // 11.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "17.509%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_11_p121_t01.mp3"), flag: "Percentage" },
+        // 11.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "46.992%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_11_p121_t01.mp3"), flag: "Percentage" },
+        // 11.02: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "50.000%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_11_p121_t02.mp3"), flag: "Percentage" },
+        // 10.02: printed pill OCR + filename unit/track
+        { offset: ["13.785%", "56.980%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p121_t02.mp3"), flag: "Percentage" },
+        // 10.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "59.988%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p121_t03.mp3"), flag: "Percentage" },
+        // 10.03: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "77.798%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p121_t03.mp3"), flag: "Percentage" },
+        // 12.01: printed pill OCR + filename unit/track
+        { offset: ["58.075%", "82.130%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_12_p121_t01.mp3"), flag: "Percentage" },
+        // 10.04: printed pill OCR + filename unit/track
+        { offset: ["13.866%", "82.371%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p121_t04.mp3"), flag: "Percentage" },
+    ],
+}
 export const allAudioList = {
     //广告
     '1': [],
@@ -14713,6 +15780,12 @@ export const allAudioList = {
     '23': audioList23,
     '24': audioList24,
     '25': audioList25,
+    // Think 1 学生书与练习册
+    '26': audioList26,
+    '27': audioList27,
+    // Think 2 学生书与练习册
+    '28': audioList28,
+    '29': audioList29,
 }
 
 // const audioList22 = {

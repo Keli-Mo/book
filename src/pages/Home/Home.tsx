@@ -3,6 +3,7 @@ import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
 import { useState } from "react";
 import AppIcon from "@/components/AppIcon/AppIcon";
 import {
+  BOOKS,
   BOOK_SERIES,
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
@@ -129,7 +130,7 @@ export default function Home() {
           <View className='series-section__heading'>
             <View>
               <Text className='series-section__title'>按系列找书</Text>
-              <Text className='series-section__summary'>5 个系列 · 23 册</Text>
+              <Text className='series-section__summary'>{`${BOOK_SERIES.length} 个系列 · ${BOOKS.length} 册`}</Text>
             </View>
             <View
               className='series-section__all device-touch-target'
