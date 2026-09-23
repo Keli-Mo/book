@@ -51,3 +51,21 @@ export function saveReadingProgress(bookId: string, practiceIndex: number): bool
     return false;
   }
 }
+
+/** 历史进度始终使用原音频训练索引；Think 阅读器入口使用对应的 PDF 图片索引。 */
+export function resolveReadingProgressUrl(progress: ReadingProgress): string | null {
+  const valid = validateReadingProgress(progress);
+  if (!valid) return null;
+
+  try {
+    const bundle = buildBookPracticeBundle(valid.bookId);
+    const practice = bundle?.practices[valid.practiceIndex];
+    if (!bundle || !practice) return null;
+    const bookId = encodeURIComponent(valid.bookId);
+    return bundle.book.seriesId === "think"
+      ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${practice.imageIndex}`
+      : `/pages/Practice/Practice?bookId=${bookId}&practice=${valid.practiceIndex}`;
+  } catch (_error) {
+    return null;
+  }
+}

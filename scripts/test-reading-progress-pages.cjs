@@ -2,6 +2,7 @@
 const assert = require("node:assert/strict");
 const { jsx } = require("react/jsx-runtime");
 const { createPage, byClass, elements, textOf, buildBookPracticeBundle } = require("./test-practice-book-route.cjs");
+
 const key = "haisha:reading-progress:v1";
 const storage = new Map();
 const pages = [];
@@ -15,8 +16,8 @@ const mount = (name, params = {}, options = {}) => {
       ...options.overrides,
     },
     taroOverrides: {
-      getStorageSync: (name) => storage.get(name),
-      setStorageSync: (name, value) => storage.set(name, value),
+      getStorageSync: (storageKey) => storage.get(storageKey),
+      setStorageSync: (storageKey, value) => storage.set(storageKey, value),
       getMenuButtonBoundingClientRect: () => ({ left: 278, right: 365, top: 26, bottom: 58, width: 87, height: 32 }),
       pageScrollTo: (args) => scrolls.push(args),
       ...options.taroOverrides,
@@ -64,6 +65,22 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   practice.show(); practice.render();
   assert.equal(storage.get(key).bookId, "22", "重新显示原教材页时应将它作为最近阅读位置");
   assert.equal(storage.get(key).practiceIndex, 4);
+  practice.hide();
+
+  for (const bookId of ["26", "27", "28", "29"]) {
+    const sourceBundle = buildBookPracticeBundle(bookId);
+    const practiceIndex = Math.min(7, sourceBundle.practices.length - 1);
+    const sourcePractice = sourceBundle.practices[practiceIndex];
+    storage.set(key, { version: 1, bookId, practiceIndex });
+    home.show(); tree = home.render();
+    assert.equal(textOf(byClass(tree, "continue-card__progress")),
+      `${sourcePractice.sectionTitle} · 教材第 ${sourcePractice.pageNumber} 页`,
+      "Think 旧进度应继续显示原音频题的真实页码");
+    await byClass(tree, "continue-card__button").props.onClick();
+    assert.equal(home.navigations.at(-1),
+      `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${sourcePractice.imageIndex}`,
+      "Think 旧进度继续阅读应跳到筛选页中对应的原 PDF 图片");
+  }
 
   const cancelled = mount("Practice", { bookId: "3", practice: "1" }, { taroOverrides: { showModal: async () => ({ confirm: false }) } });
   cancelled.show();

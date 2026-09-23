@@ -77,5 +77,49 @@ const page = (...args) => { const result = createPage(...args); pages.push(resul
       assert.equal(other.navigations.at(-1), "/pages/Practice/Practice?bookId=22&practice=4");
     }
   }
+
+  // Think 的历史记录保留印刷页号；学生书与练习册使用不同的 PDF 图片索引。
+  for (const [bookId, pageNumber, imageIndex] of [["26", 13, 13], ["27", 4, 1], ["28", 13, 13], ["29", 5, 2]]) {
+    const record = {
+      id: `think-${bookId}`, shareToken: "token", bookId, bookTitle: "Think", practiceIndex: bookId === "28" ? -1 : 0,
+      pageNumber, sectionTitle: "Unit", imageUrl: "page.jpg", durationMs: 1800,
+      createdAt: 1, recordingUrl: "record.mp3", isOwner: true,
+    };
+    const history = page("src/pages/CheckInDetail/CheckInDetail.tsx", { id: record.id }, { detail: record });
+    history.render(); await settle();
+    await byClass(history.render(), "check-in-actions__practice").props.onClick();
+    assert.equal(history.navigations.at(-1), `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${imageIndex}`,
+      `Think ${bookId} 历史录音应回到原教材页`);
+  }
+
+  for (const [bookId, pageNumber] of [["26", 3], ["27", 3], ["28", 4], ["29", 4]]) {
+    const record = {
+      id: `invalid-${bookId}`, shareToken: "token", bookId, bookTitle: "Think", practiceIndex: 0,
+      pageNumber, sectionTitle: "Unit", imageUrl: "page.jpg", durationMs: 1800,
+      createdAt: 1, recordingUrl: "record.mp3", isOwner: true,
+    };
+    const history = page("src/pages/CheckInDetail/CheckInDetail.tsx", { id: record.id }, { detail: record });
+    history.render(); await settle();
+    await byClass(history.render(), "check-in-actions__practice").props.onClick();
+    assert.equal(history.navigations.at(-1), "/pages/BookLibrary/BookLibrary",
+      `Think ${bookId} 已筛掉的页不能按旧训练索引误跳`);
+  }
+
+  const thinkPending = {
+    ...pending,
+    context: { ...pending.context, bookId: "28", pageNumber: 13, practiceIndex: 0 },
+  };
+  const thinkDetail = page("src/pages/CheckInDetail/CheckInDetail.tsx", { localId: params.localId, fromPractice: "1" }, {
+    overrides: {
+      "@/features/listeningPractice/pendingCheckInRuntime": {
+        getPendingCheckInStore: () => ({ ready: async () => {}, list: () => [thinkPending] }),
+        getActivePendingRecovery: () => undefined, logRecordingDiagnostic() {}, diagnoseLocalRecordingFailure() {},
+      },
+    },
+    pageStack: [{ route: "pages/ThinkBookReader/ThinkBookReader" }, { route: "pages/CheckInDetail/CheckInDetail" }],
+  });
+  thinkDetail.render(); await settle();
+  await byClass(thinkDetail.render(), "check-in-actions__practice").props.onClick();
+  assert.equal(thinkDetail.navigationMethods.at(-1), "navigateBack", "Think 当前训练页应复用原页面，避免重复创建录音器");
   console.log("打卡返回测试通过：原书原页、继续录音、停止回听、显式首页与独立分享入口。");
 })().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => pages.forEach((item) => item.dispose()));

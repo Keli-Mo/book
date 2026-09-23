@@ -36,6 +36,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
     loaded.exports,
     (request) => {
       if (Object.hasOwn(overrides, request)) return overrides[request];
+      if (request === "@tarojs/taro") return { __esModule: true, default: {} };
       if (request.startsWith("@/") || request.startsWith(".")) {
         const base = request.startsWith("@/")
           ? `src/${request.slice(2)}`
@@ -95,6 +96,27 @@ const load = (file, overrides = {}, cache = new Map()) => {
     resolvePracticeEntryUrl(null),
     "/pages/Practice/Practice?bookId=3&practice=0",
     "无进度时跟读入口应使用第一本可用教材",
+  );
+  const { buildBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
+  for (const bookId of ["26", "27", "28", "29"]) {
+    const sourceBundle = buildBookPracticeBundle(bookId);
+    const practiceIndex = Math.min(7, sourceBundle.practices.length - 1);
+    const sourceImageIndex = sourceBundle.practices[practiceIndex].imageIndex;
+    assert.equal(
+      resolvePracticeEntryUrl({ version: 1, bookId, practiceIndex }),
+      `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${sourceImageIndex}`,
+      `Think ${bookId} 的旧训练进度应指向同一张原 PDF 图片`,
+    );
+  }
+  assert.equal(
+    resolvePracticeEntryUrl({ version: 1, bookId: "22", practiceIndex: 4 }),
+    "/pages/Practice/Practice?bookId=22&practice=4",
+    "其他教材进度仍应走原跟读入口",
+  );
+  assert.equal(
+    resolvePracticeEntryUrl({ version: 1, bookId: "28", practiceIndex: 999 }),
+    "/pages/Practice/Practice?bookId=3&practice=0",
+    "无效 Think 旧进度应回退到可用教材，不应打开错误页面",
   );
 
   assert.equal(readAppEntryMode({ mode: "practice" }), "practice");

@@ -179,18 +179,24 @@ const readNaturalImageSize = (value: unknown): NaturalImageSize | null => {
   return { width, height };
 };
 
-function PracticeSession({
+export function PracticeSession({
   bundle,
   initialPracticeIndex,
   initialPractice,
   layout,
   layoutClassName,
+  keepModelAudioOnTurn = false,
+  persistReadingProgress = true,
+  onPracticeChange,
 }: {
   bundle: BookPracticeBundle;
   initialPracticeIndex: number;
   initialPractice: ListeningPractice;
   layout: DeviceLayoutState;
   layoutClassName: string;
+  keepModelAudioOnTurn?: boolean;
+  persistReadingProgress?: boolean;
+  onPracticeChange?: (index: number) => void;
 }) {
   const directoryGroups = useMemo(
     () => buildPracticeDirectoryGroups(bundle.practices),
@@ -202,6 +208,14 @@ function PracticeSession({
   });
   const [isDirectoryOpen, setIsDirectoryOpen] = useState(false);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const activeModelTrack = useMemo(() => {
+    if (!playingTrackId) return null;
+    for (const item of bundle.practices) {
+      const track = item.tracks.find((candidate) => candidate.id === playingTrackId);
+      if (track) return { url: track.url, pageNumber: item.pageNumber };
+    }
+    return null;
+  }, [bundle.practices, playingTrackId]);
   const [recordingMachine, setRecordingMachine] = useState<RecordingMachine>(
     () => createRecordingMachine(),
   );
@@ -1025,12 +1039,14 @@ function PracticeSession({
           current.state === "error");
       // ready/cleanup 都可能跨过一次用户操作；恢复前必须以最新状态为准，不能覆盖新录音。
       if (!canRestorePending) return;
+      // Think 续页加入后列表索引会变化，旧草稿仍以稳定的教材页 ID 匹配。
       const restored = [...store.list()]
         .filter((item) =>
           item.completedAtMs === undefined &&
           item.context.bookId === bundle.book.id &&
           item.context.practiceId === requestedContext.practice.id &&
-          item.context.practiceIndex === requestedContext.practiceIndex,
+          (bundle.book.seriesId === "think" ||
+            item.context.practiceIndex === requestedContext.practiceIndex),
         )
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0];
       if (!restored || !canContinueRestore()) return;
@@ -1067,6 +1083,7 @@ function PracticeSession({
     applyPendingCheckIn,
     applyRecordingMachine,
     bundle.book.id,
+    bundle.book.seriesId,
     practice.id,
     practiceIndex,
     pendingRestoreRefresh,
@@ -1088,7 +1105,9 @@ function PracticeSession({
     const wasHidden = pageHiddenRef.current;
     pageHiddenRef.current = false;
     const visiblePractice = practiceContextRef.current;
-    saveReadingProgress(bundle.book.id, visiblePractice.practiceIndex);
+    if (persistReadingProgress) {
+      saveReadingProgress(bundle.book.id, visiblePractice.practiceIndex);
+    }
     clearHiddenStopRetry();
     // 重试可能在后台完成，返回时用同一录音的最新快照恢复路径和持久状态。
     const latest = getPendingCheckInStore().list().find((item) => item.requestId === pendingCheckInRef.current?.requestId);
@@ -1172,7 +1191,8 @@ function PracticeSession({
 
     recordingAudioRef.current?.stop();
     // 示范音频由用户手动控制，录音中和暂停时也允许播放或切换。
-    controller.toggle(trackId, url);
+    if (keepModelAudioOnTurn && activeModelTrack?.url === url) controller.stop();
+    else controller.toggle(trackId, url);
   };
 
   const removeCurrentPending = async () => {
@@ -1270,8 +1290,10 @@ function PracticeSession({
       applyRecordingMachine(resetRecordingMachine(current));
       clearRecordingView();
     }
-    modelAudioControllerRef.current?.stop();
-    setPlayingTrackId(null);
+    if (!keepModelAudioOnTurn) {
+      modelAudioControllerRef.current?.stop();
+      setPlayingTrackId(null);
+    }
     // 放弃新录音并切换训练时，之前保留的旧录音继续留在“我的打卡”。
     replacementPendingIdsRef.current.clear();
     if (!canCommitSwitch()) {
@@ -1284,7 +1306,8 @@ function PracticeSession({
     practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
     setBookSwiperCurrent(nextIndex);
     setCurrentPractice({ practiceIndex: nextIndex, practice: nextPractice });
-    saveReadingProgress(bundle.book.id, nextIndex);
+    if (persistReadingProgress) saveReadingProgress(bundle.book.id, nextIndex);
+    onPracticeChange?.(nextIndex);
   };
 
   const restoreBookSwiper = (index: number) => {
@@ -1689,14 +1712,18 @@ function PracticeSession({
                             <View
                               key={hotspot.id}
                               className={`audio-hotspot device-touch-target ${
-                                playingTrackId === hotspot.id ? "audio-hotspot--playing" : ""
+                                playingTrackId === hotspot.id ||
+                                (keepModelAudioOnTurn && activeModelTrack?.url === hotspot.url)
+                                  ? "audio-hotspot--playing" : ""
                               }`}
                               style={{ left: hotspot.left, top: hotspot.top }}
                               onClick={() => playModelAudio(hotspot.id, hotspot.url)}
                             >
                               <View className='audio-hotspot__visual'>
                                 <Text className='audio-hotspot__icon'>
-                                  {playingTrackId === hotspot.id ? "◼" : "▶"}
+                                  {playingTrackId === hotspot.id ||
+                                  (keepModelAudioOnTurn && activeModelTrack?.url === hotspot.url)
+                                    ? "◼" : "▶"}
                                 </Text>
                                 <Text className='audio-hotspot__number'>{hotspotIndex + 1}</Text>
                               </View>
@@ -1719,6 +1746,15 @@ function PracticeSession({
                   {shownDuration > 0 ? formatDuration(shownDuration) : "最长 5:00"}
                 </Text>
               </View>
+              {keepModelAudioOnTurn && activeModelTrack &&
+                !practice.tracks.some((track) => track.url === activeModelTrack.url) && (
+                <Button
+                  className='record-actions__secondary device-touch-target'
+                  onClick={() => modelAudioControllerRef.current?.stop()}
+                >
+                  停止当前音频
+                </Button>
+              )}
 
               {recordingState === "checking" && (
                 <View className='recorder-status recorder-status--neutral'>

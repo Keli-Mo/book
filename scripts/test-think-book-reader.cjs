@@ -1,3 +1,4 @@
+/* eslint-disable import/no-commonjs */
 const assert = require("assert/strict");
 const fs = require("fs");
 const path = require("path");
@@ -43,7 +44,12 @@ assert.equal(
   "Think 音频题阅读模型应存在",
 );
 
-const { buildThinkBookReader, parseThinkReaderPage, resolveThinkReaderPage } = loadSource(readerPath);
+const {
+  buildThinkBookReader,
+  buildThinkPracticeBundle,
+  parseThinkReaderPage,
+  resolveThinkReaderPage,
+} = loadSource(readerPath);
 const { buildBookPracticeBundle } = loadSource(
   "src/features/listeningPractice/bookPractice.ts",
 );
@@ -106,6 +112,7 @@ for (const [bookId, pageCount, practiceCount] of [
     const relatedPractice = indexedPractice ?? practiceByImageIndex.get(imageIndex - 1);
     const section = [...catalogLists[bookId]].reverse().find((item) => item.page <= imageIndex);
     assert.equal(page.imageUrl, concatImages[bookId][imageIndex]);
+    assert.equal(page.pageNumber, Number(page.pageLabel.match(/\d+/)?.[0]), "阅读页应提供印刷页号");
     assert.equal(page.sectionTitle, section?.name || "课程导入");
     assert.equal(page.practiceIndex, relatedPractice?.index, "续页跟读应回到前页音频题");
     assert.deepEqual(page.tracks, indexedPractice?.practice.tracks || []);
@@ -164,6 +171,36 @@ assert.ok(think2Student.pages.some((page) => page.imageIndex === 120),
 assert.ok(think2Student.pages.some((page) => page.imageIndex === 121),
   "Think 2 学生书后附发音题 p121 必须保留");
 
+for (const [bookId, expectedCount] of [["26", 89], ["27", 38], ["28", 81], ["29", 36]]) {
+  const reader = buildThinkBookReader(bookId);
+  const originalBundle = buildBookPracticeBundle(bookId);
+  const bundle = buildThinkPracticeBundle(reader);
+  assert.equal(bundle.book.id, bookId);
+  assert.equal(bundle.coverUrl, reader.book.cover);
+  assert.equal(bundle.practices.length, expectedCount, `Think ${bookId} 应将每张保留页变成训练页`);
+  assert.deepEqual(bundle.practices.map((practice) => practice.imageIndex),
+    reader.pages.map((page) => page.imageIndex), "训练顺序应与筛选后的阅读页一致");
+  const originalByImageIndex = new Map(originalBundle.practices.map((practice) => [practice.imageIndex, practice]));
+  for (const [index, page] of reader.pages.entries()) {
+    const practice = bundle.practices[index];
+    assert.equal(practice.id, `${bookId}-page-${page.pageNumber}`, "训练页 ID 应稳定且唯一");
+    assert.equal(practice.bookId, bookId);
+    assert.equal(practice.imageUrl, page.imageUrl);
+    assert.equal(practice.pageNumber, page.pageNumber, "训练页应使用 PDF 印刷页号");
+    assert.equal(practice.sectionTitle, page.sectionTitle);
+    const original = originalByImageIndex.get(page.imageIndex);
+    if (original) {
+      assert.deepEqual(practice, original, "正式音频页应保留原有 ID 和音轨数据");
+    } else {
+      assert.deepEqual(practice.tracks, [], "跨页续页应不显示音频图标");
+    }
+  }
+  assert.equal(new Set(bundle.practices.map((practice) => practice.id)).size, expectedCount,
+    "每张训练页的 ID 应唯一");
+  assert.deepEqual(buildThinkPracticeBundle(reader).practices.map((practice) => practice.id),
+    bundle.practices.map((practice) => practice.id), "相同阅读模型再次适配应得到稳定 ID");
+}
+
 for (const [raw, count, expected] of [
   ["0", 132, 0],
   ["15", 132, 15],
@@ -197,17 +234,15 @@ assert.equal(workbook.pages[resolveThinkReaderPage("3", workbook)].imageIndex, 3
 assert.equal(resolveThinkReaderPage("132", student), null, "原 PDF 越界页号应拒绝");
 
 const readerComponent = fs.readFileSync(path.join(projectRoot, "src/pages/ThinkBookReader/ThinkBookReader.tsx"), "utf8");
-assert.match(readerComponent, /title='Think 教材阅读'/, "阅读页标题应同时适用于 Think 1 和 2");
-const turnToSource = readerComponent.split("const turnTo =")[1]?.split("const openPractice =")[0];
-assert.ok(turnToSource, "阅读页应有翻页处理");
-assert.doesNotMatch(turnToSource, /audioController\.current\?\.stop\(\)/,
-  "翻页时正在播放的音频应继续");
-assert.match(readerComponent, /useDidHide\(\(\) => \{\s*audioController\.current\?\.stop\(\)/,
-  "阅读页隐藏后仍应停止播放");
-assert.match(readerComponent, /const openPractice = \(\) => \{\s*audioController\.current\?\.stop\(\)/,
-  "进入跟读前仍应停止播放");
-assert.match(readerComponent, /停止当前音频/, "无本页音轨的续页应能停止跨页播放");
-assert.match(readerComponent, /activeTrack\?\.url === track\.url/, "复用同一音源的跨页图标应显示播放态");
+assert.match(readerComponent, /title='听力跟读训练'/, "Think 阅读页应使用现有跟读导航标题");
+assert.match(readerComponent, /import \{ PracticeSession \} from "\.\.\/Practice\/Practice"/,
+  "Think 阅读页应复用现有跟读页面组件");
+assert.match(readerComponent, /import "\.\.\/Practice\/Practice\.scss"/,
+  "Think 阅读页应沿用现有跟读样式");
+assert.match(readerComponent, /bundle=\{bundle\}/, "Think 阅读页应将保留页适配为跟读数据");
+assert.match(readerComponent, /keepModelAudioOnTurn/, "Think 翻页时示范音频应继续播放");
+assert.match(readerComponent, /persistReadingProgress=\{false\}/,
+  "Think 筛选页索引不能写入旧训练进度空间");
 assert.match(readerComponent, /&page=\$\{page\.imageIndex\}/, "分享链接应保留原 PDF 图片索引");
 
 console.log("Think 1/2 音频题阅读模型验证通过：244 页、208 个音频页及跨页/播放契约。");

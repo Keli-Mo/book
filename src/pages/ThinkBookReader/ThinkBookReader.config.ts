@@ -1,6 +1,7 @@
 export default definePageConfig({
   pageOrientation: "auto",
   navigationStyle: "custom",
-  navigationBarTitleText: "Think 教材阅读",
+  navigationBarTitleText: "听力跟读训练",
   backgroundColor: "#f4f7f5",
+  disableScroll: true,
 });
