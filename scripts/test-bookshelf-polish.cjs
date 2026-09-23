@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 const home = read("src/pages/Home/Home.tsx");
 const library = read("src/pages/BookLibrary/BookLibrary.tsx");
-const practice = read("src/pages/Practice/Practice.tsx");
+const practice = read("src/pages/Practice/PracticeSession.tsx");
 const homeCss = sass.compileString(read("src/pages/Home/Home.scss")).css;
 const libraryCss = sass.compileString(read("src/pages/BookLibrary/BookLibrary.scss")).css;
 

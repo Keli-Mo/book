@@ -261,7 +261,7 @@ assert.equal(getPlaybackPositionMs(Number.NaN, 5000), 0, "无效进度应归零"
 assert.equal(getPlaybackPositionMs(Number.POSITIVE_INFINITY, 5000), 0, "无限进度应归零");
 
 const practice = fs.readFileSync(
-  path.join(projectRoot, "src/pages/Practice/Practice.tsx"),
+  path.join(projectRoot, "src/pages/Practice/PracticeSession.tsx"),
   "utf8",
 );
 const checkInDetail = fs.readFileSync(

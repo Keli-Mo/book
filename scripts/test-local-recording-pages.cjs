@@ -6,7 +6,7 @@ const ts = require("typescript");
 
 const root = path.resolve(__dirname, "..");
 const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
-const practice = read("src/pages/Practice/Practice.tsx");
+const practice = read("src/pages/Practice/PracticeSession.tsx");
 const library = read("src/pages/MyCheckIns/MyCheckIns.tsx");
 const detail = read("src/pages/CheckInDetail/CheckInDetail.tsx");
 

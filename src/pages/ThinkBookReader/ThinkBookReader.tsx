@@ -11,7 +11,7 @@ import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout, type DeviceLayoutState } from "@/hooks/useDeviceLayout";
 import CheckInNavigation from "../CheckInDetail/CheckInNavigation";
-import { PracticeSession } from "../Practice/Practice";
+import { PracticeSession } from "../Practice/PracticeSession";
 import "../Practice/Practice.scss";
 
 export default function ThinkBookReader() {

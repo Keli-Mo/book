@@ -39,6 +39,7 @@ const pages = [
   {
     name: "训练",
     file: "src/pages/Practice/Practice.tsx",
+    contentFile: "src/pages/Practice/PracticeSession.tsx",
     config: "src/pages/Practice/Practice.config.ts",
     scss: "src/pages/Practice/Practice.scss",
     safe: [[".practice-page", 24], [".practice-directory-sheet", 12]],
@@ -70,8 +71,9 @@ const pages = [
   },
 ].map((page) => ({
   ...page,
-  source: read(page.file),
+  source: [page.file, page.contentFile].filter(Boolean).map(read).join("\n"),
   ast: ast(page.file, ts.ScriptKind.TSX),
+  contentAst: ast(page.contentFile || page.file, ts.ScriptKind.TSX),
   styles: styles(page.scss),
 }));
 
@@ -336,7 +338,8 @@ for (const page of pages) {
   });
   check(`${page.name}关键按钮使用共享触控尺寸`, () => {
     page.targets.forEach((className) => {
-      const elements = byClass(page.ast, className);
+      const elements = (page.contentFile ? [page.ast, page.contentAst] : [page.ast])
+        .flatMap((sourceFile) => byClass(sourceFile, className));
       assert.ok(elements.length > 0, `缺少 .${className}`);
       assert.ok(
         elements.every((element) => classNames(element).has("device-touch-target")),
@@ -517,26 +520,26 @@ check("训练 split 工作区为教材与控制双列", () => {
 });
 
 check("教材图在剩余视口内等比缩放并按实际节点测量热点", () => {
-  const image = byClass(practice.ast, "practice-book-page__image", "Image")[0];
+  const image = byClass(practice.contentAst, "practice-book-page__image", "Image")[0];
   assert.ok(image);
   assert.ok(practice.source.includes("aspectFit"), "槽位未定时教材图应等比放入，避免撑破一屏");
   assert.ok(practice.source.includes("scaleToFill"), "定框后应铺满图面，热点百分比才能对齐课文");
   assert.ok(attribute(image, "onLoad"), "教材图应在 onLoad 后测量");
-  assert.ok(propertyCalls(practice.ast, "select", ".practice-book-page"));
-  assert.ok(propertyCalls(practice.ast, "select", ".practice-workspace__book"));
-  assert.ok(propertyCalls(practice.ast, "boundingClientRect"));
+  assert.ok(propertyCalls(practice.contentAst, "select", ".practice-book-page"));
+  assert.ok(propertyCalls(practice.contentAst, "select", ".practice-workspace__book"));
+  assert.ok(propertyCalls(practice.contentAst, "boundingClientRect"));
   const clamp = importedName(
-    practice.ast,
+    practice.contentAst,
     "@/features/listeningPractice/hotspotLayout",
     "clampHotspotCenter",
   );
   const fit = importedName(
-    practice.ast,
+    practice.contentAst,
     "@/features/listeningPractice/hotspotLayout",
     "fitContainSize",
   );
-  assert.ok(calls(practice.ast, clamp));
-  assert.ok(calls(practice.ast, fit));
+  assert.ok(calls(practice.contentAst, clamp));
+  assert.ok(calls(practice.contentAst, fit));
   assert.ok(
     matchingRules(practice.styles, [".practice-book-page__image"]).some((rule) =>
       has(rule, "width", "100%") && has(rule, "height", "100%"),
@@ -556,7 +559,7 @@ check("教材图在剩余视口内等比缩放并按实际节点测量热点", (
 });
 
 check("热点命中壳与视觉点分离", () => {
-  const hotspot = byClass(practice.ast, "audio-hotspot")[0];
+  const hotspot = byClass(practice.contentAst, "audio-hotspot")[0];
   assert.ok(hotspot && descendant(hotspot, "audio-hotspot__visual"));
   assert.ok(
     matchingRules(practice.styles, [".audio-hotspot__visual"]).some(

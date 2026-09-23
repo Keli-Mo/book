@@ -235,8 +235,8 @@ assert.equal(resolveThinkReaderPage("132", student), null, "原 PDF 越界页号
 
 const readerComponent = fs.readFileSync(path.join(projectRoot, "src/pages/ThinkBookReader/ThinkBookReader.tsx"), "utf8");
 assert.match(readerComponent, /title='听力跟读训练'/, "Think 阅读页应使用现有跟读导航标题");
-assert.match(readerComponent, /import \{ PracticeSession \} from "\.\.\/Practice\/Practice"/,
-  "Think 阅读页应复用现有跟读页面组件");
+assert.match(readerComponent, /import \{ PracticeSession \} from "\.\.\/Practice\/PracticeSession"/,
+  "Think 阅读页应复用普通跟读会话组件，不能导入另一个 Taro 页面入口");
 assert.match(readerComponent, /import "\.\.\/Practice\/Practice\.scss"/,
   "Think 阅读页应沿用现有跟读样式");
 assert.match(readerComponent, /bundle=\{bundle\}/, "Think 阅读页应将保留页适配为跟读数据");

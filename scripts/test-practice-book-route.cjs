@@ -448,11 +448,12 @@ const createFakeTimers = () => {
 };
 
 async function testRoutes() {
-  const practiceSource = read("src/pages/Practice/Practice.tsx");
+  const practiceSessionSource = read("src/pages/Practice/PracticeSession.tsx");
+  const practiceSource = `${read("src/pages/Practice/Practice.tsx")}\n${practiceSessionSource}`;
   assert.doesNotMatch(practiceSource, /SAMPLE_BOOK_(?:ID|TITLE|COVER|PRACTICES)|book3Practice/, "Practice 必须移除固定 CASA 模型，改为实际 router 选择教材");
   assert.doesNotMatch(practiceSource, /DEFAULT_BOOK_ID/, "训练页不得自行猜默认教材");
   assert.match(
-    practiceSource,
+    practiceSessionSource,
     /requestPracticeSwitch\(nextIndex, \{ animate: false \}\)/,
     "目录点选必须瞬时切页，不能走翻页滑动",
   );

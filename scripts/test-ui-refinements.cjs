@@ -7,7 +7,8 @@ const projectRoot = path.resolve(__dirname, "..");
 const readSource = (relativePath) =>
   fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 
-const practice = readSource("src/pages/Practice/Practice.tsx");
+const practice = ["Practice.tsx", "PracticeSession.tsx"]
+  .map((file) => readSource(`src/pages/Practice/${file}`)).join("\n");
 const practiceStyles = readSource("src/pages/Practice/Practice.scss");
 const home = readSource("src/pages/Home/Home.tsx");
 const myCheckIns = readSource("src/pages/MyCheckIns/MyCheckIns.tsx");

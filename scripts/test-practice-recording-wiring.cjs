@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const practicePath = path.resolve(__dirname, "../src/pages/Practice/Practice.tsx");
+const practicePath = path.resolve(__dirname, "../src/pages/Practice/PracticeSession.tsx");
 const source = fs.readFileSync(practicePath, "utf8");
 
 for (const required of [
