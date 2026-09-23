@@ -58,31 +58,31 @@ const testCollection = () => {
 
 const testRealConstantCollection = () => {
   const constants = loadBookAssetConstants();
-  assert.equal(constants.bookCovers.length, 25, "远端校验必须覆盖 25 张教材书架封面");
+  assert.equal(constants.bookCovers.length, 27, "远端校验必须覆盖 27 张教材书架封面");
   assert.equal(constants.seriesCovers.length, 6, "远端校验必须覆盖 6 张首页系列封面");
   const assets = collectBookAssets(constants);
   const sources = assets.flatMap((asset) => asset.sources);
-  assert.equal(assets.length, 6_545, "修正 Think 1 非正式音频后，教材页、音频及封面应有 6,545 个唯一素材");
+  assert.equal(assets.length, 6_959, "新增 Think 2 后，教材页、音频及封面应有 6,959 个唯一素材");
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type !== "audio")).length,
-    4_329,
+    4_587,
   );
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type === "audio")).length,
-    2_216,
-    "修正 Think 1 非正式音频后，音频唯一 URL 应为 2,216",
+    2_372,
+    "新增 Think 2 的 156 个正式音频后，音频唯一 URL 应为 2,372",
   );
-  assert.equal(sources.filter((source) => source.type === "image").length, 4_314);
-  assert.equal(sources.filter((source) => source.type === "cover").length, 25);
+  assert.equal(sources.filter((source) => source.type === "image").length, 4_572);
+  assert.equal(sources.filter((source) => source.type === "cover").length, 27);
   assert.equal(sources.filter((source) => source.type === "series-cover").length, 6);
   assert.equal(
     sources.filter((source) => source.type === "audio").length,
-    2_310,
-    "含 Think 1 重复印刷标签的音频热点来源数应为 2,310",
+    2_510,
+    "含 Think 1/2 重复印刷标签的音频热点来源数应为 2,510",
   );
   assert.deepEqual(
     [...new Set(sources.map(({ bookId }) => bookId).filter(Boolean))],
-    Array.from({ length: 25 }, (_, index) => String(index + 3)),
+    Array.from({ length: 27 }, (_, index) => String(index + 3)),
   );
 };
 

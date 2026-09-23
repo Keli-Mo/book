@@ -40,7 +40,7 @@ const loadSource = (relativePath) => {
 assert.equal(
   fs.existsSync(path.join(projectRoot, readerPath)),
   true,
-  "Think 1 音频题阅读模型应存在",
+  "Think 音频题阅读模型应存在",
 );
 
 const { buildThinkBookReader, parseThinkReaderPage, resolveThinkReaderPage } = loadSource(readerPath);
@@ -56,10 +56,16 @@ const { catalogLists } = loadSource(
 
 assert.equal(buildThinkBookReader("3"), null, "旧教材不进入 Think 专用阅读器");
 assert.equal(buildThinkBookReader("missing"), null, "未知教材不进入阅读器");
+assert.ok(buildThinkBookReader("28"), "Think 2 学生书应进入 Think 阅读器");
+assert.ok(buildThinkBookReader("29"), "Think 2 练习册应进入 Think 阅读器");
 
 const studentContinuationPages = [
   13, 21, 27, 31, 39, 45, 49, 57, 63,
   67, 75, 81, 85, 93, 99, 103, 111, 117,
+];
+const think2StudentContinuationPages = [
+  13, 21, 27, 31, 39, 45, 49, 57, 63, 67,
+  75, 81, 85, 93, 99, 103, 111, 117,
 ];
 
 for (const [bookId, pageCount, practiceCount] of [
@@ -141,6 +147,23 @@ assert.ok(workbook.pages.find((page) => page.pageLabel === "第 117 页").tracks
 assert.ok(workbook.pages.find((page) => page.pageLabel === "第 116 页").tracks.every((track) =>
   track.url.endsWith("p116_t04.mp3")), "练习册第 116 页两处 12.04 均复用同一音频");
 
+const think2Student = buildThinkBookReader("28");
+const think2Workbook = buildThinkBookReader("29");
+assert.deepEqual(
+  think2Student.pages.filter((page) => page.tracks.length === 0).map((page) => page.imageIndex),
+  think2StudentContinuationPages,
+  "Think 2 学生书应保留逐页核验的 18 张跨页听读/理解续页",
+);
+assert.equal(think2Student.pages.length, 81, "Think 2 学生书应保留 63 张音频题页和 18 张续页");
+assert.equal(think2Workbook.pages.length, 36, "Think 2 练习册应只保留 36 张音频题页");
+assert.equal(think2Student.pages[0].pageLabel, "第 5 页", "Think 2 学生书应从首张正式音频题开始");
+assert.equal(think2Workbook.pages[0].pageLabel, "第 5 页", "Think 2 练习册应从首张正式音频题开始");
+assert.equal(think2Workbook.pages.find((page) => page.imageIndex === 114).pageLabel, "第 117 页");
+assert.ok(think2Student.pages.some((page) => page.imageIndex === 120),
+  "Think 2 学生书后附发音题 p120 必须保留");
+assert.ok(think2Student.pages.some((page) => page.imageIndex === 121),
+  "Think 2 学生书后附发音题 p121 必须保留");
+
 for (const [raw, count, expected] of [
   ["0", 132, 0],
   ["15", 132, 15],
@@ -174,6 +197,7 @@ assert.equal(workbook.pages[resolveThinkReaderPage("3", workbook)].imageIndex, 3
 assert.equal(resolveThinkReaderPage("132", student), null, "原 PDF 越界页号应拒绝");
 
 const readerComponent = fs.readFileSync(path.join(projectRoot, "src/pages/ThinkBookReader/ThinkBookReader.tsx"), "utf8");
+assert.match(readerComponent, /title='Think 教材阅读'/, "阅读页标题应同时适用于 Think 1 和 2");
 const turnToSource = readerComponent.split("const turnTo =")[1]?.split("const openPractice =")[0];
 assert.ok(turnToSource, "阅读页应有翻页处理");
 assert.doesNotMatch(turnToSource, /audioController\.current\?\.stop\(\)/,
@@ -186,4 +210,4 @@ assert.match(readerComponent, /停止当前音频/, "无本页音轨的续页应
 assert.match(readerComponent, /activeTrack\?\.url === track\.url/, "复用同一音源的跨页图标应显示播放态");
 assert.match(readerComponent, /&page=\$\{page\.imageIndex\}/, "分享链接应保留原 PDF 图片索引");
 
-console.log("Think 1 音频题阅读模型验证通过：127 页、109 个音频页及跨页/播放契约。");
+console.log("Think 1/2 音频题阅读模型验证通过：244 页、208 个音频页及跨页/播放契约。");

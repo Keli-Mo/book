@@ -166,6 +166,14 @@ const concatImages = {
     "27": Array.from({ length: 126 }, (_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l1/workbook/pages/think-1-wb_' + (index === 0 ? 0 : index + 3) + '.jpg'
     ),
+    // Think 2 学生书：PDF 零基索引 4 起与印刷页号相同。
+    "28": Array.from({ length: 132 }, (_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l2/student-book/pages/think-2-sb_' + index + '.jpg'
+    ),
+    // Think 2 练习册：封面为 0，PDF 零基索引 1 起对应印刷页 index + 3。
+    "29": Array.from({ length: 126 }, (_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l2/workbook/pages/think-2-wb_' + (index === 0 ? 0 : index + 3) + '.jpg'
+    ),
     
     ...images,
 }

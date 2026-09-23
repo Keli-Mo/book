@@ -306,6 +306,24 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover("think-l1/workbook/pages/think-1-wb_0.jpg"),
     available: true,
   },
+  {
+    id: "28",
+    seriesId: "think",
+    title: "新版美国思维 Think 2 · 学生书",
+    level: "Level 2",
+    kind: "学生书",
+    cover: cover("think-l2/student-book/pages/think-2-sb_0.jpg"),
+    available: true,
+  },
+  {
+    id: "29",
+    seriesId: "think",
+    title: "新版美国思维 Think 2 · 练习册",
+    level: "Level 2",
+    kind: "练习册",
+    cover: cover("think-l2/workbook/pages/think-2-wb_0.jpg"),
+    available: true,
+  },
 ];
 
 const bookById = new Map(BOOKS.map((book) => [book.id, book]));
@@ -366,7 +384,7 @@ export const BOOK_SERIES: BookSeries[] = [
     id: "think",
     title: "新版美国思维 Think",
     shortTitle: "Think",
-    rangeLabel: "Level 1 · 学生书 / 练习册",
+    rangeLabel: "Level 1–2 · 学生书 / 练习册",
     cover: requireBook("26").cover,
   }),
 ];
@@ -388,7 +406,7 @@ export const filterBooks = (
   });
 };
 
-/** 书架统一携带教材 ID；Think 两册先阅读全书，其他教材沿用跟读入口。 */
+/** 书架统一携带教材 ID；Think 教材进入筛选后的阅读页，其他教材沿用跟读入口。 */
 export const resolveBookAction = (book: BookCatalogItem): BookOpenAction =>
   book.seriesId === "think"
     ? {

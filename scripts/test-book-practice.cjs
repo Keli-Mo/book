@@ -9,10 +9,10 @@ const constantsRoot = path.join(
   projectRoot,
   "src/pages/BookDetail/Components/BookPreview/constants",
 );
-const BOOK_IDS = Array.from({ length: 25 }, (_, index) => String(index + 3));
+const BOOK_IDS = Array.from({ length: 27 }, (_, index) => String(index + 3));
 const EXPECTED_PRACTICE_COUNTS = [
   100, 96, 96, 96, 54, 12, 67, 14, 84, 64, 56, 39, 99, 99, 90, 90, 93, 24,
-  24, 24, 24, 24, 24, 71, 38,
+  24, 24, 24, 24, 24, 71, 38, 63, 36,
 ];
 const COVER_WHITELIST = {
   11: "OW_2E_L1_Studentbook.png",
@@ -189,23 +189,23 @@ assert.deepEqual(
 
 assert.equal(
   EXPECTED_PRACTICE_COUNTS.reduce((sum, count) => sum + count, 0),
-  1502,
-  "25 本教材的训练页总数应为 1,502",
+  1601,
+  "27 本教材的训练页总数应为 1,601",
 );
 assert.deepEqual(
   Object.keys(concatImages).filter((bookId) => Number(bookId) >= 3),
   BOOK_IDS,
-  "图片常量应覆盖 ID 3–27",
+  "图片常量应覆盖 ID 3–29",
 );
 assert.deepEqual(
   Object.keys(allAudioList).filter((bookId) => Number(bookId) >= 3),
   BOOK_IDS,
-  "音频常量应覆盖 ID 3–27",
+  "音频常量应覆盖 ID 3–29",
 );
 assert.deepEqual(
   Object.keys(catalogLists).filter((bookId) => Number(bookId) >= 3),
   BOOK_IDS,
-  "目录常量应覆盖 ID 3–27",
+  "目录常量应覆盖 ID 3–29",
 );
 
 const coordinateCounts = { pixel: 0, Cambridge: 0, Percentage: 0 };
@@ -287,19 +287,19 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
   practiceCount += bookPracticeCount;
 }
 
-assert.equal(practiceCount, 1502, "全教材训练页数应为 1,502");
-assert.equal(audioSegmentCount, 2310, "全教材音频热点数应为 2,310");
+assert.equal(practiceCount, 1601, "全教材训练页数应为 1,601");
+assert.equal(audioSegmentCount, 2510, "全教材音频热点数应为 2,510");
 assert.deepEqual(
   coordinateCounts,
-  { pixel: 590, Cambridge: 258, Percentage: 1462 },
-  "新增 Think 1 后，三类热点坐标数量应符合来源统计",
+  { pixel: 590, Cambridge: 258, Percentage: 1662 },
+  "新增 Think 2 后，三类热点坐标数量应符合来源统计",
 );
 
 const validationReport = validateBookData({ log: false });
-assert.equal(validationReport.books.length, 25, "校验器应逐书输出 25 本教材报告");
-assert.equal(validationReport.imageCount, 4314, "校验器应汇总 4,314 张图片");
-assert.equal(validationReport.audioSegmentCount, 2310, "校验器应汇总 2,310 个音频热点");
-assert.equal(validationReport.practicePageCount, 1502, "校验器应汇总 1,502 个训练页");
+assert.equal(validationReport.books.length, 27, "校验器应逐书输出 27 本教材报告");
+assert.equal(validationReport.imageCount, 4572, "校验器应汇总 4,572 张图片");
+assert.equal(validationReport.audioSegmentCount, 2510, "校验器应汇总 2,510 个音频热点");
+assert.equal(validationReport.practicePageCount, 1601, "校验器应汇总 1,601 个训练页");
 
 const {
   DEFAULT_BOOK_ID,
@@ -317,6 +317,8 @@ const expectedBundles = [
   ["25", 24],
   ["26", 71],
   ["27", 38],
+  ["28", 63],
+  ["29", 36],
 ];
 for (const [bookId, expectedPracticeCount] of expectedBundles) {
   const bundle = buildBookPracticeBundle(bookId);
@@ -341,6 +343,11 @@ for (const [bookId, audioKey, expectedImageIndex, expectedPageNumber] of [
   ["27", 4, 2, 5],
   ["27", 15, 13, 16],
   ["27", 116, 114, 117],
+  ["28", 122, 120, 120],
+  ["28", 123, 121, 121],
+  ["29", 4, 2, 5],
+  ["29", 115, 113, 116],
+  ["29", 116, 114, 117],
 ]) {
   const sourceTrackUrl = allAudioList[bookId][audioKey][0].url;
   const practice = buildBookPracticeBundle(bookId).practices.find((item) =>
@@ -588,8 +595,8 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
     }
   });
 }
-assert.equal(builtPracticeCount, 1502, "构建器应生成 1,502 个训练页");
-assert.equal(builtTrackCount, 2310, "生产构建结果必须包含 2,310 个音频热点");
+assert.equal(builtPracticeCount, 1601, "构建器应生成 1,601 个训练页");
+assert.equal(builtTrackCount, 2510, "生产构建结果必须包含 2,510 个音频热点");
 assert.equal(regressionFailures.length, 0, `${regressionFailures.length}/${regressionCount} 项回归失败：\n${regressionFailures.join("\n")}`);
 
-console.log(`教材训练数据契约测试通过：25 本教材、1,502 个训练页、2,310 个音频热点逐项匹配；${regressionCount} 项回归通过（含 ${invalidDataCases.length} 类坏数据与必填 bookId 类型契约）。`);
+console.log(`教材训练数据契约测试通过：27 本教材、1,601 个训练页、2,510 个音频热点逐项匹配；${regressionCount} 项回归通过（含 ${invalidDataCases.length} 类坏数据与必填 bookId 类型契约）。`);

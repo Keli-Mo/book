@@ -7,7 +7,7 @@ const constantsRoot = path.join(
   projectRoot,
   "src/pages/BookDetail/Components/BookPreview/constants",
 );
-const BOOK_IDS = Array.from({ length: 25 }, (_, index) => String(index + 3));
+const BOOK_IDS = Array.from({ length: 27 }, (_, index) => String(index + 3));
 const MAPPING_VERSION = "audio-key-minus-2/v1";
 
 // 常量文件没有运行时依赖，转译后直接读取，避免再维护一份音频清单。

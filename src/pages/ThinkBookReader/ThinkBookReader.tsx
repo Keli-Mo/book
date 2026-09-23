@@ -35,7 +35,7 @@ export default function ThinkBookReader() {
 
   return (
     <View className={`think-reader ${buildDeviceLayoutClassName(layout)}`}>
-      <CheckInNavigation title='Think 1 教材阅读' onBack={goBack} />
+      <CheckInNavigation title='Think 教材阅读' onBack={goBack} />
       {route.reader && route.initialPage !== null ? (
         <ReaderSession
           key={`${route.reader.book.id}:${route.initialPage}`}

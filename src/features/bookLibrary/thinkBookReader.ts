@@ -7,7 +7,7 @@ import {
 import { catalogLists } from "@/pages/BookDetail/Components/BookPreview/constants/catalogList";
 import { concatImages } from "@/pages/BookDetail/Components/BookPreview/constants/images";
 
-export type ThinkBookId = "26" | "27";
+export type ThinkBookId = "26" | "27" | "28" | "29";
 
 export type ThinkReaderChapter = {
   name: string;
@@ -32,16 +32,30 @@ export type ThinkBookReader = {
   chapters: ThinkReaderChapter[];
 };
 
-const isThinkBookId = (bookId: string): bookId is ThinkBookId =>
-  bookId === "26" || bookId === "27";
-
-/** 这些学生书页面承接前一页的听读正文或理解题，本页没有独立音轨标记。 */
-const STUDENT_CONTINUATION_PAGES = new Set([
+/** 无独立音轨标记、但承接前页听读或理解题的原 PDF 图片索引。 */
+const THINK_1_STUDENT_CONTINUATION_PAGES = new Set([
   13, 21, 27, 31, 39, 45, 49, 57, 63,
   67, 75, 81, 85, 93, 99, 103, 111, 117,
 ]);
+const THINK_2_STUDENT_CONTINUATION_PAGES = new Set([
+  13, 21, 27, 31, 39, 45, 49, 57, 63, 67,
+  75, 81, 85, 93, 99, 103, 111, 117,
+]);
 
-/** Think 1 阅读器仅展示音频题及其跨页内容。 */
+const THINK_BOOK_CONFIG: Record<ThinkBookId, {
+  pageOffset: number;
+  continuationPages: ReadonlySet<number>;
+}> = {
+  "26": { pageOffset: 0, continuationPages: THINK_1_STUDENT_CONTINUATION_PAGES },
+  "27": { pageOffset: 3, continuationPages: new Set() },
+  "28": { pageOffset: 0, continuationPages: THINK_2_STUDENT_CONTINUATION_PAGES },
+  "29": { pageOffset: 3, continuationPages: new Set() },
+};
+
+const isThinkBookId = (bookId: string): bookId is ThinkBookId =>
+  bookId === "26" || bookId === "27" || bookId === "28" || bookId === "29";
+
+/** Think 阅读器仅展示音频题及其跨页内容。 */
 export const buildThinkBookReader = (bookId: string): ThinkBookReader | null => {
   if (!isThinkBookId(bookId)) return null;
 
@@ -50,6 +64,7 @@ export const buildThinkBookReader = (bookId: string): ThinkBookReader | null => 
 
   const imageUrls = concatImages[bookId];
   const catalog = catalogLists[bookId];
+  const config = THINK_BOOK_CONFIG[bookId];
   const practiceByPage = new Map<number, {
     practice: ListeningPractice;
     index: number;
@@ -67,11 +82,11 @@ export const buildThinkBookReader = (bookId: string): ThinkBookReader | null => 
       sectionIndex += 1;
     }
     const indexedPractice = practiceByPage.get(imageIndex);
-    const isContinuation = bookId === "26" && STUDENT_CONTINUATION_PAGES.has(imageIndex);
+    const isContinuation = config.continuationPages.has(imageIndex);
     if (!indexedPractice && !isContinuation) return;
     const relatedPractice = indexedPractice ?? practiceByPage.get(imageIndex - 1);
-    if (!relatedPractice) throw new Error(`Think 1 跨页内容 ${imageIndex} 找不到前页音频题`);
-    const printedPage = bookId === "27" ? imageIndex + 3 : imageIndex;
+    if (!relatedPractice) throw new Error(`Think 跨页内容 ${imageIndex} 找不到前页音频题`);
+    const printedPage = imageIndex + config.pageOffset;
     pages.push({
       imageIndex,
       imageUrl,
