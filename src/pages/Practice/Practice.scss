@@ -19,8 +19,8 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  padding: 34rpx 26rpx 80rpx;
-  padding-bottom: 24PX;
+  padding: 8rpx 12rpx 0;
+  padding-bottom: 12PX;
   box-sizing: border-box;
   background: #f4f7f5;
   color: #24362f;
@@ -38,7 +38,7 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  padding: 8rpx 10rpx 28rpx;
+  padding: 0 4rpx 8rpx;
 
   &__course { color: #71827b; font-size: 24rpx; }
   &__section { margin-top: 10rpx; color: #193f34; font-size: 42rpx; font-weight: 800; }
@@ -200,8 +200,8 @@
 }
 
 .practice-recorder {
-  margin-top: 22rpx;
-  padding: 30rpx 28rpx;
+  margin-top: 8rpx;
+  padding: 16rpx 20rpx;
   border-radius: 22rpx;
   background: #ffffff;
 
@@ -218,7 +218,7 @@
   align-items: center;
   justify-content: center;
   min-height: 44PX;
-  margin: 24rpx 0 0;
+  margin: 12rpx 0 0;
   padding: 0 16rpx;
   border: 0;
   border-radius: 16rpx;
@@ -308,8 +308,8 @@ button[disabled] { opacity: 0.5; }
 
 .practice-navigation {
   display: flex;
-  gap: 20rpx;
-  margin-top: 28rpx;
+  gap: 16rpx;
+  margin-top: 12rpx;
 
   &__button {
     display: flex;
@@ -412,13 +412,13 @@ button[disabled] { opacity: 0.5; }
 
 @supports (padding-bottom: constant(safe-area-inset-bottom)) {
   .practice-page,
-  .practice-empty { padding-bottom: calc(24PX + constant(safe-area-inset-bottom)); }
+  .practice-empty { padding-bottom: calc(12PX + constant(safe-area-inset-bottom)); }
   .practice-directory-sheet { padding-bottom: calc(12PX + constant(safe-area-inset-bottom)); }
 }
 
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .practice-page,
-  .practice-empty { padding-bottom: calc(24PX + env(safe-area-inset-bottom)); }
+  .practice-empty { padding-bottom: calc(12PX + env(safe-area-inset-bottom)); }
   .practice-directory-sheet { padding-bottom: calc(12PX + env(safe-area-inset-bottom)); }
 }
 
@@ -445,8 +445,8 @@ button[disabled] { opacity: 0.5; }
 // 横屏手机仍使用底部目录，但让滚动区消费剩余高度，避免头部与 62vh 叠加溢出。
 .device-layout--phone.device-layout--landscape {
   &.practice-page {
-    padding-left: 26rpx;
-    padding-right: 26rpx;
+    padding-left: 12rpx;
+    padding-right: 12rpx;
   }
 
   .practice-directory-sheet {
@@ -469,8 +469,8 @@ button[disabled] { opacity: 0.5; }
 @supports (padding-left: constant(safe-area-inset-left)) {
   .device-layout--phone.device-layout--landscape {
     &.practice-page {
-      padding-left: calc(26rpx + constant(safe-area-inset-left));
-      padding-right: calc(26rpx + constant(safe-area-inset-right));
+      padding-left: calc(12rpx + constant(safe-area-inset-left));
+      padding-right: calc(12rpx + constant(safe-area-inset-right));
     }
 
     .practice-directory-sheet {
@@ -483,8 +483,8 @@ button[disabled] { opacity: 0.5; }
 @supports (padding-left: env(safe-area-inset-left)) {
   .device-layout--phone.device-layout--landscape {
     &.practice-page {
-      padding-left: calc(26rpx + env(safe-area-inset-left));
-      padding-right: calc(26rpx + env(safe-area-inset-right));
+      padding-left: calc(12rpx + env(safe-area-inset-left));
+      padding-right: calc(12rpx + env(safe-area-inset-right));
     }
 
     .practice-directory-sheet {
@@ -496,13 +496,13 @@ button[disabled] { opacity: 0.5; }
 
 .device-layout--pad {
   &.practice-page {
-    padding-top: 17PX;
-    padding-right: 13PX;
-    padding-left: 13PX;
+    padding-top: 8PX;
+    padding-right: 8PX;
+    padding-left: 8PX;
   }
 
   .practice-header {
-    padding: 4PX 5PX 14PX;
+    padding: 2PX 4PX 6PX;
 
     &__course { font-size: 12PX; }
     &__section { margin-top: 5PX; font-size: 21PX; }
@@ -528,8 +528,8 @@ button[disabled] { opacity: 0.5; }
   }
 
   .practice-recorder {
-    margin-top: 11PX;
-    padding: 15PX 14PX;
+    margin-top: 6PX;
+    padding: 10PX 12PX;
 
     &__title { font-size: 14PX; }
     &__time,
@@ -549,8 +549,8 @@ button[disabled] { opacity: 0.5; }
   .recorder-status { margin-top: 11PX; padding: 10PX 11PX; font-size: 12PX; }
   .upload-cancel-button { margin-top: 7PX; font-size: 12PX; }
   .practice-navigation {
-    gap: 10PX;
-    margin-top: 14PX;
+    gap: 8PX;
+    margin-top: 8PX;
 
     &__button { height: 44PX; font-size: 13PX; }
   }

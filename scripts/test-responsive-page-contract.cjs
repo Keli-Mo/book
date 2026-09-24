@@ -42,7 +42,7 @@ const pages = [
     contentFile: "src/pages/Practice/PracticeSession.tsx",
     config: "src/pages/Practice/Practice.config.ts",
     scss: "src/pages/Practice/Practice.scss",
-    safe: [[".practice-page", 24], [".practice-directory-sheet", 12]],
+    safe: [[".practice-page", 12], [".practice-directory-sheet", 12]],
     targets: [
       "practice-empty__button",
       "practice-header__directory",
@@ -416,7 +416,7 @@ check("横屏手机限制内容宽度并保留左右安全区", () => {
 
   for (const [name, selector, base] of [
     ["书库", ".device-layout--phone.device-layout--landscape.book-library", "18PX"],
-    ["训练", ".device-layout--phone.device-layout--landscape.practice-page", "26rpx"],
+    ["训练", ".device-layout--phone.device-layout--landscape.practice-page", "12rpx"],
     ["打卡详情", ".device-layout--phone.device-layout--landscape.check-in-detail", "30rpx"],
     ["我的打卡", ".device-layout--phone.device-layout--landscape.my-check-ins", "28rpx"],
   ]) {
