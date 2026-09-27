@@ -29,9 +29,11 @@ for (const route of routes) {
       mask.props.onClick();
       tree = render(page);
       assert.equal(pageStyle(tree), "");
-      assert.equal(byClass(tree, "practice-directory-mask"), undefined);
+      assert.match(byClass(tree, "practice-directory-mask").props.className, /practice-directory-mask--hidden/);
 
       byClass(tree, "practice-header__directory").props.onClick();
+      tree = render(page);
+      byClass(tree, "practice-directory-group__header").props.onClick();
       tree = render(page);
       const next = elements(tree).find((node) =>
         String(node.props?.className || "").split(" ").includes("practice-directory-item") &&

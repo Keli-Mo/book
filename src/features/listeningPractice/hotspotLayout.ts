@@ -49,6 +49,34 @@ export const clampHotspotCenter = (
   };
 };
 
+/** 手机竖屏课文区固定比例，不随单张图片改高度。 */
+export const PHONE_BOOK_ASPECT = 3 / 2;
+
+export const fixedPhoneBookSlot = (width: number): HotspotImageSize | null => {
+  if (!Number.isFinite(width) || width <= 0) return null;
+  return { width, height: Math.round(width * PHONE_BOOK_ASPECT) };
+};
+
+export type ContainedImageFrame = HotspotImageSize & {
+  left: number;
+  top: number;
+};
+
+/** 在固定框内完整放下图片并居中，框本身不随图片比例变化。 */
+export const containImageInSlot = (
+  slot: HotspotImageSize,
+  natural: HotspotImageSize,
+): ContainedImageFrame | null => {
+  const fitted = fitImageToBounds(slot, natural);
+  if (!fitted) return null;
+  return {
+    left: Math.round((slot.width - fitted.width) / 2),
+    top: Math.round((slot.height - fitted.height) / 2),
+    width: fitted.width,
+    height: fitted.height,
+  };
+};
+
 /** 只按列宽保持教材比例；录音区变高时由页面滚动承接，不再挤小教材。 */
 export const fitImageToWidth = (
   width: number,

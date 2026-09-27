@@ -125,6 +125,14 @@
   max-width: 100%;
 }
 
+// 手机竖屏图片用 widthFix 按自身比例撑高，框不固定。
+.practice-page:not(.practice-page--fitted) {
+  .practice-book-page__image,
+  .practice-book-page__neighbor {
+    height: auto;
+  }
+}
+
 .practice-book-swiper {
   width: 100%;
   height: 100%;
@@ -136,6 +144,8 @@
 }
 
 .practice-workspace__controls {
+  position: relative;
+  z-index: 2;
   flex: none;
   min-width: 0;
 }
@@ -383,6 +393,10 @@ button[disabled] { opacity: 0.5; }
   display: flex;
   align-items: flex-end;
   background: rgba(18, 37, 31, 0.48);
+
+  &--hidden {
+    display: none;
+  }
 }
 
 .practice-directory-sheet {

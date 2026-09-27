@@ -554,6 +554,14 @@ check("普通训练和 Think 的手机竖屏保留自然滚动", () => {
   }
   assert.ok(exactRules(practice.styles, ".practice-book-viewport").every((rule) =>
     !has(rule, "max-height", "100%")), "教材图面不得由书图区剩余高度裁缩");
+  assert.ok(
+    ruleWith(
+      practice.styles,
+      [".practice-page:not(.practice-page--fitted)", ".practice-book-page__image"],
+      { height: "auto" },
+    ),
+    "手机竖屏课文图必须按 widthFix 自己撑高",
+  );
 });
 
 check("手机竖屏教材按宽度定尺寸，各布局按实际图面对齐热点", () => {

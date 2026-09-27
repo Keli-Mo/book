@@ -65,29 +65,22 @@ function assertExpandedGroup(tree, groups, expectedGroup) {
 }
 
 for (const route of routes) {
-  test(`${route.name}：打开目录只展开当前章，并定位唯一的当前页锚点`, () => {
+  test(`${route.name}：打开目录展开当前章，但不滚动到选中页`, () => {
     const context = fixture(route);
     const { page, groups, currentGroup, currentIndex } = context;
     try {
-      assert.equal(byClass(render(page), "practice-directory-mask"), undefined);
+      assert.match(byClass(render(page), "practice-directory-mask").props.className, /practice-directory-mask--hidden/);
       const tree = context.open();
       assertExpandedGroup(tree, groups, currentGroup);
       const current = itemNode(tree, currentIndex);
       assert.ok(current);
       assert.equal(hasClass(current, "practice-directory-item--active"), true);
-      const pageIds = items(tree).map((item) => item.props.id);
-      assert.equal(new Set(pageIds).size, pageIds.length, "展开页的定位 ID 必须唯一");
-      assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, current.props.id,
-        "打开目录直接定位当前页，不能只定位章标题");
-      const expectedItem = currentGroup.items.find((item) => item.practiceIndex === currentIndex);
-      assert.match(textOf(current), new RegExp(`第 ${expectedItem.pageNumber} 页`));
-      assert.match(textOf(current), new RegExp(`${expectedItem.trackCount} 段音频`));
-      assert.ok(currentGroup.items.some((item) => item.trackCount === 0));
-      assert.match(textOf(groupNode(tree, currentGroup.id)), /自主跟读/);
+      assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "");
+      assert.match(textOf(groupNode(tree, currentGroup.id)), /当前章节/);
     } finally { cleanup(page); }
   });
 
-  test(`${route.name}：展开收起与定位当前页只操作目录，重开回到当前章`, async () => {
+  test(`${route.name}：展开收起与定位当前页只操作目录，重开停在顶部`, async () => {
     const context = fixture(route);
     const { page, groups, currentGroup, otherGroup, currentIndex } = context;
     try {
@@ -133,11 +126,11 @@ for (const route of routes) {
       tree = context.flush();
       assertExpandedGroup(tree, groups, otherGroup);
       byClass(tree, "practice-directory-close").props.onClick();
-      assert.equal(byClass(context.flush(), "practice-directory-mask"), undefined);
+      assert.match(byClass(context.flush(), "practice-directory-mask").props.className, /practice-directory-mask--hidden/);
       tree = context.open();
-      assertExpandedGroup(tree, groups, currentGroup);
-      assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, currentAnchor,
-        "关闭再打开不能停在用户上次浏览的其它章节");
+      assertExpandedGroup(tree, groups, otherGroup);
+      assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "",
+        "关闭再打开保留刚才浏览的章节，但不滚到当前选中页");
       assert.equal(currentImage(page), originalImage);
       assert.deepEqual(page.recorderActions, recorderActions);
       assert.deepEqual(playingAudio.events, audioEvents);
@@ -178,7 +171,7 @@ for (const route of routes) {
       tree = context.flush();
       assert.equal(page.modalCalls.length, 2);
       assert.equal(currentImage(page), target.imageUrl);
-      assert.equal(byClass(tree, "practice-directory-mask"), undefined, "确认切页成功后目录关闭");
+      assert.match(byClass(tree, "practice-directory-mask").props.className, /practice-directory-mask--hidden/, "确认切页成功后目录隐藏");
       assert.equal(page.recorderActions.filter(({ action }) => action === "stop").length,
         recorderActions.filter(({ action }) => action === "stop").length + 1, "只向录音协调器发出一次原有 stop");
       await page.recorderHandlers.Stop({ tempFilePath: "/tmp/directory-discard.mp3", duration: 1800, fileSize: 4096 });
@@ -188,47 +181,48 @@ for (const route of routes) {
       assert.ok(byClass(page.render(), "record-button"), "旧录音结束后新页仍可正常开始录音");
       tree = context.open();
       assertExpandedGroup(tree, groups, otherGroup);
-      assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, `practice-directory-page-${targetIndex}`,
-        "切页后重新打开目录，按新当前页定位");
+      assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "",
+        "选中新页后重新打开，展开新章节，但不滚到该页");
     } finally { cleanup(page); }
   });
 }
 
-test("快速切章或收起后，迟到的旧 nextTick 不能覆盖当前目录定位", () => {
+test("关闭再打开还原关闭前的目录滚动位置", () => {
   const context = fixture(routes[0]);
-  const { page, groups, otherGroup } = context;
-  const latestGroup = groups[groups.indexOf(otherGroup) + 1];
-  assert.ok(latestGroup);
+  const { page } = context;
   try {
     let tree = context.open();
-    byClass(groupNode(tree, otherGroup.id), "practice-directory-group__header").props.onClick();
-    tree = render(page);
-    const oldLocates = context.nextTicks.splice(0);
-    assert.ok(oldLocates.length > 0, "先保留 A 章尚未返回的定位请求");
-
-    byClass(groupNode(tree, latestGroup.id), "practice-directory-group__header").props.onClick();
+    byClass(tree, "practice-directory-scroll").props.onScroll({ detail: { scrollTop: 480 } });
+    byClass(tree, "practice-directory-close").props.onClick();
     tree = context.flush();
-    assertExpandedGroup(tree, groups, latestGroup);
-    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, latestGroup.id);
-    const latestState = page.stateValues();
-    oldLocates.forEach((callback) => callback());
-    assert.deepEqual(page.stateValues(), latestState, "A 章旧定位不能在 B 章已展开后继续写入状态");
-    tree = render(page);
-    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, latestGroup.id);
+    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollTop, undefined);
+    tree = context.open();
+    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollTop, 480,
+      "再次打开应回到关闭前看到的页，而不是目录顶部");
+  } finally { cleanup(page); }
+});
 
-    byClass(groupNode(tree, otherGroup.id), "practice-directory-group__header").props.onClick();
-    tree = render(page);
-    const cancelledLocates = context.nextTicks.splice(0);
-    assert.ok(cancelledLocates.length > 0);
-    byClass(groupNode(tree, otherGroup.id), "practice-directory-group__header").props.onClick();
-    tree = render(page);
-    assertExpandedGroup(tree, groups, undefined);
+test("展开章节不滚动，只有定位当前页才滚到当前页", () => {
+  const context = fixture(routes[0]);
+  const { page, groups, currentGroup, otherGroup, currentIndex } = context;
+  try {
+    let tree = context.open();
     assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "");
-    const collapsedState = page.stateValues();
-    cancelledLocates.forEach((callback) => callback());
-    assert.deepEqual(page.stateValues(), collapsedState, "收起后旧定位不能恢复已失效锚点");
-    assert.equal(byClass(render(page), "practice-directory-scroll").props.scrollIntoView, "");
+    byClass(groupNode(tree, otherGroup.id), "practice-directory-group__header").props.onClick();
+    tree = context.flush();
+    assertExpandedGroup(tree, groups, otherGroup);
+    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "",
+      "手动展开其它章节不能滚动目录");
     assert.equal(context.nextTicks.length, 0);
+
+    byClass(tree, "practice-directory-locate").props.onClick();
+    tree = context.flush();
+    assertExpandedGroup(tree, groups, currentGroup);
+    assert.equal(
+      byClass(tree, "practice-directory-scroll").props.scrollIntoView,
+      `practice-directory-page-${currentIndex}`,
+      "只有定位当前页才滚动到当前页",
+    );
   } finally { cleanup(page); }
 });
 
@@ -243,19 +237,19 @@ test("关闭重开后才返回的旧目录定位回调，不影响新目录实�
     const unmountedLocates = context.nextTicks.splice(0);
     assert.ok(unmountedLocates.length > 0);
     byClass(tree, "practice-directory-close").props.onClick();
-    assert.equal(byClass(render(page), "practice-directory-mask"), undefined, "旧 DirectoryContents 已卸载");
+    assert.match(byClass(render(page), "practice-directory-mask").props.className, /practice-directory-mask--hidden/, "关闭后目录仍挂着，只是隐藏");
 
     tree = context.open();
     byClass(groupNode(tree, otherGroup.id), "practice-directory-group__header").props.onClick();
     tree = context.flush();
     assertExpandedGroup(tree, groups, otherGroup);
-    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, otherGroup.id);
+    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "");
     const reopenedState = page.stateValues();
     unmountedLocates.forEach((callback) => callback());
     assert.deepEqual(page.stateValues(), reopenedState, "已卸载目录的请求不能改写当前已挂载状态");
     tree = render(page);
     assertExpandedGroup(tree, groups, otherGroup);
-    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, otherGroup.id);
+    assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "");
     assert.equal(currentImage(page), originalImage);
     assert.equal(context.nextTicks.length, 0);
   } finally { cleanup(page); }

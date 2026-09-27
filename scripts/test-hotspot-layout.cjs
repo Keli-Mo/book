@@ -77,7 +77,7 @@ const loadTypeScriptModule = (modulePath) => {
   return moduleContainer.exports;
 };
 
-const { clampHotspotCenter, fitImageToWidth, fitImageToBounds } = loadTypeScriptModule(sourcePath);
+const { clampHotspotCenter, containImageInSlot, fitImageToWidth, fitImageToBounds, fixedPhoneBookSlot } = loadTypeScriptModule(sourcePath);
 assert.equal(
   typeof clampHotspotCenter,
   "function",
@@ -261,6 +261,18 @@ assert.deepEqual(
   normalize(fitImageToWidth(320, { width: 1600, height: 2000 })),
   { width: 320, height: 400 },
   "高图使用可用宽度，超出视口高度时保留尺寸供页面滚动",
+);
+assert.deepEqual(normalize(fixedPhoneBookSlot(360)), { width: 360, height: 540 }, "手机课文框高度固定为宽度的 3/2");
+assert.equal(fixedPhoneBookSlot(0), null);
+assert.deepEqual(
+  normalize(containImageInSlot({ width: 360, height: 540 }, { width: 600, height: 900 })),
+  { left: 0, top: 0, width: 360, height: 540 },
+  "与固定框同比例的图片铺满，不再改框",
+);
+assert.deepEqual(
+  normalize(containImageInSlot({ width: 360, height: 540 }, { width: 900, height: 600 })),
+  { left: 0, top: 150, width: 360, height: 240 },
+  "更扁的图片在固定框内居中，框高度不变",
 );
 assert.deepEqual(
   normalize(fitImageToWidth(320, { width: 1600, height: 800 })),

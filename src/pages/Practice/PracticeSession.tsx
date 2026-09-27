@@ -14,6 +14,7 @@ import {
   type BookPracticeBundle,
   type ListeningPractice,
 } from "@/features/listeningPractice/bookPractice";
+import { readBookImageSize } from "@/features/listeningPractice/bookImageSizes";
 import { clampHotspotCenter, fitImageToBounds, fitImageToWidth } from "@/features/listeningPractice/hotspotLayout";
 import {
   isPracticeSwiperTouchChange,
@@ -110,17 +111,29 @@ function PracticeControls({ fitted, children }: { fitted: boolean; children: Rea
   ) : <View className='practice-workspace__controls'>{children}</View>;
 }
 
-function PracticeBookPage({ scrollable, active, imageSize, onScroll, children }: {
+function PracticeBookPage({ scrollable, active, imageSize, frame, onScroll, children }: {
   scrollable: boolean;
   active: boolean;
   imageSize: NaturalImageSize | null;
+  frame?: { left: number; top: number; width: number; height: number } | null;
   onScroll?: ScrollViewProps["onScroll"];
   children: ReactNode;
 }) {
   const page = (
     <View
       className='practice-book-page'
-      style={scrollable && imageSize ? { width: `${imageSize.width}px`, height: `${imageSize.height}px` } : undefined}
+      style={
+        scrollable && imageSize
+          ? { width: `${imageSize.width}px`, height: `${imageSize.height}px` }
+          : frame
+            ? {
+                width: `${frame.width}px`,
+                height: `${frame.height}px`,
+                marginLeft: `${frame.left}px`,
+                marginTop: `${frame.top}px`,
+              }
+            : undefined
+      }
     >
       {children}
     </View>
@@ -328,13 +341,27 @@ export function PracticeSession({
   const naturalImageSize = loadedImage?.imageUrl === practice.imageUrl
     ? loadedImage.size
     : naturalImageSizeCache.get(practice.imageUrl);
+  const knownImageSize = readBookImageSize(bundle.book.id, practice.imageIndex);
+  const resolvedImageSize = naturalImageSize ?? knownImageSize;
+  const phoneColumnWidth = bookBounds.width > 0
+    ? bookBounds.width
+    : !isFittedLayout && layout.windowWidth > 0
+      ? layout.windowWidth * (1 - 24 / 750)
+      : 0;
   const fittedBookSize = useMemo(
-    () => naturalImageSize
+    () => resolvedImageSize
       ? isPadPortraitLayout
-        ? fitImageToBounds(bookBounds, naturalImageSize)
-        : fitImageToWidth(bookBounds.width, naturalImageSize)
+        ? fitImageToBounds(bookBounds, resolvedImageSize)
+        : fitImageToWidth(isFittedLayout ? bookBounds.width : phoneColumnWidth, resolvedImageSize)
       : null,
-    [bookBounds.width, bookBounds.height, isPadPortraitLayout, naturalImageSize],
+    [
+      bookBounds.width,
+      bookBounds.height,
+      isFittedLayout,
+      isPadPortraitLayout,
+      phoneColumnWidth,
+      resolvedImageSize,
+    ],
   );
   // 热点使用实际施加在图面上的尺寸，不再反复读取由录音区挤压后的高度。
   const imageSize = fittedBookSize ?? { width: 0, height: 0 };
@@ -1346,7 +1373,7 @@ export function PracticeSession({
         const confirmation = await Taro.showModal({
           title: "切换训练？",
           content: "切换后将放弃当前录音，是否继续？",
-          confirmText: "放弃并切换",
+          confirmText: "放弃录音",
           confirmColor: "#d85b3f",
         });
         if (!confirmation.confirm || !canContinuePracticeSwitch(switchRequest)) {
@@ -1676,7 +1703,13 @@ export function PracticeSession({
                               : "practice-book-page__neighbor"
                           }
                           src={item.imageUrl}
-                          mode={isLandscapeLayout ? "widthFix" : index === practiceIndex && fittedBookSize ? "scaleToFill" : "aspectFit"}
+                          mode={
+                            isLandscapeLayout || !isFittedLayout
+                              ? "widthFix"
+                              : index === practiceIndex && fittedBookSize
+                                ? "scaleToFill"
+                                : "aspectFit"
+                          }
                           webp
                           onLoad={(event) => {
                             const size = readNaturalImageSize(event.detail);
