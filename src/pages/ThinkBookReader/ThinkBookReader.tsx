@@ -1,6 +1,6 @@
 import { Button, Text, View } from "@tarojs/components";
 import Taro, { useRouter, useShareAppMessage } from "@tarojs/taro";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   buildThinkBookReader,
   buildThinkPracticeBundle,
@@ -27,16 +27,25 @@ export default function ThinkBookReader() {
     return { reader, initialPage };
   }, [bookId, rawPage]);
 
+  const leaveGuardRef = useRef<() => Promise<boolean>>(async () => true);
   const goBack = () => {
     const pages = Taro.getCurrentPages?.() ?? [];
     return pages.length > 1
       ? Taro.navigateBack({ delta: 1 })
       : Taro.reLaunch({ url: "/pages/Home/Home" });
   };
+  const leaveTo = async (go: () => void) => {
+    if (await leaveGuardRef.current()) go();
+  };
 
   return (
     <View className={`practice-screen ${layoutClassName}${layout.isPad || layout.orientation === "landscape" ? " practice-screen--fitted" : ""}`}>
-      <CheckInNavigation title='听力跟读训练' onBack={goBack} compact />
+      <CheckInNavigation
+        title='听力跟读训练'
+        compact
+        onBack={() => { void leaveTo(goBack); }}
+        onHome={() => { void leaveTo(() => { void Taro.reLaunch({ url: "/pages/Home/Home" }); }); }}
+      />
       {route.reader && route.initialPage !== null ? (
         <ThinkPracticeSession
           key={`${route.reader.book.id}:${route.initialPage}`}
@@ -44,6 +53,7 @@ export default function ThinkBookReader() {
           initialPage={route.initialPage}
           layout={layout}
           layoutClassName={layoutClassName}
+          onBindLeaveGuard={(guard) => { leaveGuardRef.current = guard; }}
         />
       ) : (
         <View className={`practice-empty device-layout__content ${layoutClassName}`}>
@@ -65,11 +75,13 @@ function ThinkPracticeSession({
   initialPage,
   layout,
   layoutClassName,
+  onBindLeaveGuard,
 }: {
   reader: ThinkBookReaderData;
   initialPage: number;
   layout: DeviceLayoutState;
   layoutClassName: string;
+  onBindLeaveGuard: (guard: () => Promise<boolean>) => void;
 }) {
   const bundle = useMemo(() => buildThinkPracticeBundle(reader), [reader]);
   const [pageIndex, setPageIndex] = useState(initialPage);
@@ -90,6 +102,7 @@ function ThinkPracticeSession({
       layoutClassName={layoutClassName}
       keepModelAudioOnTurn
       onPracticeChange={setPageIndex}
+      onBindLeaveGuard={onBindLeaveGuard}
     />
   );
 }

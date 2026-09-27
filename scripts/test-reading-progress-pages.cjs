@@ -118,7 +118,7 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   await byClass(cancelled.render(), "record-button").props.onClick();
   cancelled.recorderHandlers.Start(); cancelled.render();
   await directory(cancelled).props.onSelect(5);
-  assert.equal(storage.get(key).imageIndex, buildBookPracticeBundle("3").practices[1].imageIndex, "取消放弃录音时不能把阅读进度提前写成目标页");
+  assert.equal(storage.get(key).imageIndex, buildFullBookPracticeBundle("3").practices[5].imageIndex, "跨页录音翻页后应保存新页进度");
   assert.equal(storage.get(key).bookId, "3");
 
   storage.set(key, { version: 2, bookId: "22", practiceIndex: 4 });

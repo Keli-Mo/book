@@ -1,6 +1,6 @@
 import { Button, Text, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { buildBookPracticeBundle, buildFullBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
@@ -47,16 +47,25 @@ export default function Practice() {
     }
   }, [bookId, rawPracticeIndex, rawPageIndex]);
 
+  const leaveGuardRef = useRef<() => Promise<boolean>>(async () => true);
   const goBack = () => {
     const pages = Taro.getCurrentPages?.() ?? [];
     return pages.length > 1
       ? Taro.navigateBack({ delta: 1 })
       : Taro.reLaunch({ url: "/pages/Home/Home" });
   };
+  const leaveTo = async (go: () => void) => {
+    if (await leaveGuardRef.current()) go();
+  };
 
   return (
     <View className={`practice-screen ${layoutClassName}${layout.isPad || layout.orientation === "landscape" ? " practice-screen--fitted" : ""}`}>
-      <CheckInNavigation title='听力跟读训练' onBack={goBack} compact />
+      <CheckInNavigation
+        title='听力跟读训练'
+        compact
+        onBack={() => { void leaveTo(goBack); }}
+        onHome={() => { void leaveTo(() => { void Taro.reLaunch({ url: "/pages/Home/Home" }); }); }}
+      />
       {route.bundle ? (
         // 验证通过才挂载会话；换书或外部训练路由时先清理旧会话，保持 Hook 顺序稳定。
         <PracticeSession
@@ -66,6 +75,7 @@ export default function Practice() {
           initialPractice={route.practice}
           layout={layout}
           layoutClassName={layoutClassName}
+          onBindLeaveGuard={(guard) => { leaveGuardRef.current = guard; }}
         />
       ) : (
         <View className={`practice-empty device-layout__content ${layoutClassName}`}>

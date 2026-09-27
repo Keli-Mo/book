@@ -121,8 +121,10 @@ for (const route of routes) {
       scrolls.length = 0;
       await begin(page);
       await byClass(page.render(), "practice-navigation__button--primary").props.onClick();
-      assert.equal(textOf(byClass(renderSettled(page), "practice-header__progress")), nextProgress);
-      assert.deepEqual(scrolls, [], "取消放弃录音后不得改变当前阅读位置");
+      assert.notEqual(textOf(byClass(renderSettled(page), "practice-header__progress")), nextProgress, "录音中翻到下一训练不需要确认");
+      assert.deepEqual(scrolls, [{ scrollTop: 0, duration: 0 }], "跨页后新教材从顶部开始");
+      assert.equal(page.modalCalls.length, 0, "下一个训练不弹出放弃录音");
+      assert.ok(byClass(page.render(), "record-button--pause"), "翻页后继续录音");
     } finally {
       page.unload();
       page.dispose();

@@ -7,12 +7,14 @@ import "./CheckInNavigation.scss";
 
 type CheckInNavigationProps = {
   onBack: () => void;
+  onHome?: () => void;
   title?: string;
   compact?: boolean;
 };
 
 export default function CheckInNavigation({
   onBack,
+  onHome,
   title = "跟读打卡",
   compact = false,
 }: CheckInNavigationProps) {
@@ -53,7 +55,10 @@ export default function CheckInNavigation({
         <Button
           className='check-in-detail__home check-in-navigation__home device-touch-target'
           aria-label='返回首页'
-          onClick={() => Taro.reLaunch({ url: "/pages/Home/Home" })}
+          onClick={() => {
+            if (onHome) onHome();
+            else void Taro.reLaunch({ url: "/pages/Home/Home" });
+          }}
         >
           <AppIcon value='home' size={compact ? 18 : 22} color='#173f34' />
         </Button>

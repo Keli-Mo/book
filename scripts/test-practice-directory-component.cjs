@@ -157,28 +157,11 @@ for (const route of routes) {
       await targetItem.props.onClick();
       await settle();
       tree = context.flush();
-      assert.equal(page.modalCalls.length, 1);
-      assert.equal(page.modalCalls[0].title, "切换训练？");
-      assert.equal(currentImage(page), originalImage);
-      assert.ok(byClass(tree, "practice-directory-mask"), "取消放弃录音后目录保持打开");
-      assertExpandedGroup(tree, groups, otherGroup);
-      assert.deepEqual(page.recorderActions, recorderActions, "取消不能停止当前录音");
-      assert.ok(byClass(tree, "record-button--pause"));
-
-      context.setConfirmSelection(true);
-      await itemNode(tree, targetIndex).props.onClick();
-      await settle();
-      tree = context.flush();
-      assert.equal(page.modalCalls.length, 2);
+      assert.equal(page.modalCalls.length, 0, "目录翻页不提示放弃录音");
       assert.equal(currentImage(page), target.imageUrl);
-      assert.match(byClass(tree, "practice-directory-mask").props.className, /practice-directory-mask--hidden/, "确认切页成功后目录隐藏");
-      assert.equal(page.recorderActions.filter(({ action }) => action === "stop").length,
-        recorderActions.filter(({ action }) => action === "stop").length + 1, "只向录音协调器发出一次原有 stop");
-      await page.recorderHandlers.Stop({ tempFilePath: "/tmp/directory-discard.mp3", duration: 1800, fileSize: 4096 });
-      await settle();
-      context.flush();
-      assert.equal(page.savedRecordings.length, 0, "确认放弃的旧页录音不能存到新页");
-      assert.ok(byClass(page.render(), "record-button"), "旧录音结束后新页仍可正常开始录音");
+      assert.match(byClass(tree, "practice-directory-mask").props.className, /practice-directory-mask--hidden/, "翻页后目录隐藏");
+      assert.deepEqual(page.recorderActions, recorderActions, "跨页录音不能停止当前录音");
+      assert.ok(byClass(tree, "record-button--pause"));
       tree = context.open();
       assertExpandedGroup(tree, groups, otherGroup);
       assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "",

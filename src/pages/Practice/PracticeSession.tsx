@@ -155,6 +155,7 @@ export function PracticeSession({
   keepModelAudioOnTurn = false,
   persistReadingProgress = true,
   onPracticeChange,
+  onBindLeaveGuard,
 }: {
   bundle: BookPracticeBundle;
   initialPracticeIndex: number;
@@ -164,6 +165,7 @@ export function PracticeSession({
   keepModelAudioOnTurn?: boolean;
   persistReadingProgress?: boolean;
   onPracticeChange?: (index: number) => void;
+  onBindLeaveGuard?: (guard: () => Promise<boolean>) => void;
 }) {
   const isLandscapeLayout = layout.orientation === "landscape";
   const isPadPortraitLayout = layout.isPad && !isLandscapeLayout;
@@ -1207,13 +1209,38 @@ export function PracticeSession({
     return true;
   };
 
+  const confirmLeaveRef = useRef<() => Promise<boolean>>(async () => true);
+  confirmLeaveRef.current = async () => {
+    const state = recordingMachineRef.current.state;
+    if (getPracticeSwitchPolicy(state) !== "confirm-discard") return true;
+    const confirmation = await Taro.showModal({
+      title: "切换训练？",
+      content: "切换后将放弃当前录音，是否继续？",
+      confirmText: "放弃录音",
+      confirmColor: "#d85b3f",
+    });
+    if (!confirmation.confirm) return false;
+    if (state === "recording" || state === "paused") {
+      runRecorderAction("stop");
+    }
+    await removeCurrentPending();
+    return true;
+  };
+
+  useEffect(() => {
+    onBindLeaveGuard?.(() => confirmLeaveRef.current());
+    return () => {
+      onBindLeaveGuard?.(async () => true);
+    };
+  }, [onBindLeaveGuard]);
+
   const performPracticeSwitch = async (nextIndex: number, switchRequest: {
     owner: RecorderOwner | null;
     practiceId: string;
     practiceIndex: number;
     attemptId: number;
     saveGeneration: number;
-  }) => {
+  }, options?: { preserveRecording?: boolean }) => {
     const beforeRemoval = recordingMachineRef.current;
     if (
       !canContinuePracticeSwitch(switchRequest) ||
@@ -1225,6 +1252,17 @@ export function PracticeSession({
       beforeRemoval.state === "uploading"
     ) {
       Taro.showToast({ title: "录音正在处理，请稍候", icon: "none" });
+      return;
+    }
+    if (options?.preserveRecording) {
+      const nextPractice = bundle.practices[nextIndex];
+      practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
+      setBookScrollHintDismissed(true);
+      setBookSwiperCurrent(nextIndex);
+      setCurrentPractice({ practiceIndex: nextIndex, practice: nextPractice });
+      void Taro.pageScrollTo({ scrollTop: 0, duration: 0 });
+      if (persistReadingProgress) saveFullReadingProgress(bundle.book.id, nextPractice.imageIndex);
+      onPracticeChange?.(nextIndex);
       return;
     }
     if (!(await removeCurrentPending())) return;
@@ -1347,10 +1385,9 @@ export function PracticeSession({
       Taro.showToast({ title: "录音正在处理，请稍候", icon: "none" });
       return;
     }
-    const policy = getPracticeSwitchPolicy(currentMachine.state);
     if (
       currentMachine.state === "uploading" ||
-      policy === "block-uploading"
+      getPracticeSwitchPolicy(currentMachine.state) === "block-uploading"
     ) {
       revertSwiper();
       Taro.showToast({ title: "打卡上传中，请稍候", icon: "none" });
@@ -1369,25 +1406,12 @@ export function PracticeSession({
     practiceSwitchInFlightRef.current = true;
     setBookSwipeLocked(true);
     try {
-      if (policy === "confirm-discard") {
-        const confirmation = await Taro.showModal({
-          title: "切换训练？",
-          content: "切换后将放弃当前录音，是否继续？",
-          confirmText: "放弃录音",
-          confirmColor: "#d85b3f",
-        });
-        if (!confirmation.confirm || !canContinuePracticeSwitch(switchRequest)) {
-          revertSwiper();
-          return;
-        }
-      }
-
       setIsDirectoryOpen(false);
       if (!fromSwiper) {
         setBookSwiperDuration(animate ? PAGE_TURN_DURATION_MS : 0);
         setBookSwiperCurrent(nextIndex);
       }
-      await performPracticeSwitch(nextIndex, switchRequest);
+      await performPracticeSwitch(nextIndex, switchRequest, { preserveRecording: true });
       if (practiceContextRef.current.practiceIndex !== nextIndex) {
         revertSwiper();
         return;
