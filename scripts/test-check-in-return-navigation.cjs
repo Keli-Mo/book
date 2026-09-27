@@ -1,6 +1,7 @@
 /* eslint-disable import/no-commonjs */
 const assert = require("node:assert/strict");
-const { createPage, byClass, textOf, elements, buildBookPracticeBundle } = require("./test-practice-book-route.cjs");
+const { createPage, byClass, textOf, elements, load } = require("./test-practice-book-route.cjs");
+const { buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 
 const settle = async () => { for (let index = 0; index < 10; index += 1) await Promise.resolve(); };
 const pages = [];
@@ -54,7 +55,7 @@ const page = (...args) => { const result = createPage(...args); pages.push(resul
   assert.equal(playbackAudio.events.filter((event) => event === "destroy").length, 1, "卸载和销毁后不得重复销毁回听实例");
   assert.equal(detail.audios.length, audioCountAfterHide, "卸载和销毁后不得创建新的回听实例");
   practice.show(); practice.render(); await settle(); tree = practice.render();
-  const bundle = buildBookPracticeBundle("22");
+  const bundle = buildFullBookPracticeBundle("22");
   assert.equal(byClass(tree, "practice-book-page__image").props.src, bundle.practices[4].imageUrl, "返回必须保留翻页后的教材图片");
   assert.equal(textOf(byClass(tree, "practice-header__course")), bundle.book.title);
   assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), `跟读训练 5 / ${bundle.practices.length}`);
@@ -74,7 +75,7 @@ const page = (...args) => { const result = createPage(...args); pages.push(resul
     if (route.fromPractice !== "1" || stack.length === 0) {
       await byClass(otherTree, "check-in-actions__practice").props.onClick();
       assert.equal(other.navigationMethods.at(-1), "navigateTo");
-      assert.equal(other.navigations.at(-1), "/pages/Practice/Practice?bookId=22&practice=4");
+      assert.equal(other.navigations.at(-1), "/pages/Practice/Practice?bookId=22&page=4");
     }
   }
 
@@ -101,8 +102,11 @@ const page = (...args) => { const result = createPage(...args); pages.push(resul
     const history = page("src/pages/CheckInDetail/CheckInDetail.tsx", { id: record.id }, { detail: record });
     history.render(); await settle();
     await byClass(history.render(), "check-in-actions__practice").props.onClick();
-    assert.equal(history.navigations.at(-1), "/pages/BookLibrary/BookLibrary",
-      `Think ${bookId} 已筛掉的页不能按旧训练索引误跳`);
+    const target = buildFullBookPracticeBundle(bookId).practices.find((item) => item.pageNumber === pageNumber);
+    assert.equal(history.navigations.at(-1), target
+      ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${target.imageIndex}`
+      : "/pages/BookLibrary/BookLibrary",
+      `Think ${bookId} 新放开的真实页可以返回，源文件缺失的页不能按旧训练索引误跳`);
   }
 
   const thinkPending = {

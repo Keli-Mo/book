@@ -376,3 +376,318 @@
 .is-pressed {
   opacity: 0.68;
 }
+
+// 完整 iPad 竖屏窗口采用更舒展的阅读尺寸；窄分屏保留紧凑布局。
+@media (min-width: 600PX) {
+  .library-home.device-layout--pad.device-layout--portrait {
+    padding-bottom: 88PX;
+
+    .library-home__brand {
+      font-size: 24PX;
+      line-height: 32PX;
+
+      .at-icon { margin-right: 10PX; }
+    }
+    .library-home__content { max-width: 960PX; padding: 20PX 28PX 28PX; }
+
+    .continue-card {
+      min-height: 216PX;
+      padding: 22PX;
+      border-radius: 24PX;
+      box-shadow: 0 6PX 20PX rgba(41, 101, 82, 0.06);
+
+      &__cover { width: 120PX; height: 172PX; flex-basis: 120PX; border-radius: 6PX; }
+      &__body { padding: 0 0 0 24PX; }
+      &--empty .continue-card__body { padding-left: 0; }
+      &__title { font-size: 22PX; line-height: 30PX; }
+      &__progress { margin-top: 10PX; font-size: 15PX; line-height: 22PX; }
+      &__button { height: 52PX; flex: none; border-radius: 14PX; font-size: 17PX; }
+    }
+
+    .series-section {
+      margin-top: 28PX;
+
+      &__heading { min-height: 60PX; padding: 0 0 12PX; }
+      &__title { font-size: 24PX; line-height: 32PX; }
+      &__summary { margin-top: 6PX; font-size: 14PX; line-height: 20PX; }
+      &__all { height: 48PX; font-size: 16PX; }
+    }
+    .series-list { border-top-width: 1PX; }
+    .series-row {
+      min-height: 88PX;
+      padding: 10PX 0;
+
+      &::after { left: 74PX; height: 1PX; }
+      &__cover { width: 56PX; height: 64PX; flex-basis: 56PX; border-radius: 5PX; }
+      &__text { margin-left: 18PX; }
+      &__title { font-size: 18PX; line-height: 26PX; }
+      &__range { margin-top: 6PX; font-size: 13PX; line-height: 20PX; }
+    }
+
+    .home-tabs {
+      min-height: 76PX;
+      height: 76PX;
+      padding: 8PX 28PX 10PX;
+
+      &__item { font-size: 14PX; line-height: 20PX; }
+    }
+  }
+
+  @supports (padding-bottom: constant(safe-area-inset-bottom)) {
+    .library-home.device-layout--pad.device-layout--portrait {
+      padding-bottom: calc(88PX + constant(safe-area-inset-bottom));
+
+      .home-tabs {
+        height: calc(76PX + constant(safe-area-inset-bottom));
+        padding-bottom: calc(10PX + constant(safe-area-inset-bottom));
+      }
+    }
+  }
+
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .library-home.device-layout--pad.device-layout--portrait {
+      padding-bottom: calc(88PX + env(safe-area-inset-bottom));
+
+      .home-tabs {
+        height: calc(76PX + env(safe-area-inset-bottom));
+        padding-bottom: calc(10PX + env(safe-area-inset-bottom));
+      }
+    }
+  }
+}
+
+@media (min-width: 960PX) {
+  .library-home.device-layout--pad.device-layout--portrait {
+    .library-home__brand { font-size: 28PX; line-height: 36PX; }
+    .library-home__content { padding-top: 24PX; padding-bottom: 32PX; }
+
+    .continue-card {
+      min-height: 256PX;
+      padding: 24PX;
+
+      &__cover { width: 144PX; height: 208PX; flex-basis: 144PX; }
+      &__title { font-size: 26PX; line-height: 36PX; }
+      &__progress { margin-top: 12PX; font-size: 16PX; line-height: 24PX; }
+      &__button { height: 56PX; font-size: 18PX; }
+    }
+
+    .series-section {
+      margin-top: 32PX;
+
+      &__heading { min-height: 72PX; }
+      &__title { font-size: 26PX; line-height: 36PX; }
+      &__summary { font-size: 15PX; line-height: 22PX; }
+      &__all { font-size: 17PX; }
+    }
+    .series-row {
+      min-height: 104PX;
+      padding-top: 12PX;
+      padding-bottom: 12PX;
+
+      &::after { left: 88PX; }
+      &__cover { width: 68PX; height: 78PX; flex-basis: 68PX; }
+      &__text { margin-left: 20PX; }
+      &__title { font-size: 21PX; line-height: 30PX; }
+      &__range { margin-top: 8PX; font-size: 15PX; line-height: 22PX; }
+    }
+  }
+}
+
+// iPad 横屏保持首页单栏，增加内容宽度和视觉尺寸，短窗口仍可自然滚动。
+@media (min-width: 900PX) and (min-height: 600PX) {
+  .library-home.device-layout--pad.device-layout--landscape {
+    padding-bottom: 88PX;
+
+    .library-home__brand {
+      font-size: 24PX;
+      line-height: 32PX;
+
+      .at-icon { margin-right: 10PX; }
+    }
+    .library-home__content { max-width: 1160PX; padding: 16PX 28PX 24PX; }
+
+    .continue-card {
+      min-height: 192PX;
+      padding: 21PX;
+      border-radius: 24PX;
+      box-shadow: 0 6PX 20PX rgba(41, 101, 82, 0.06);
+
+      &__cover { width: 104PX; height: 150PX; flex-basis: 104PX; border-radius: 6PX; }
+      &__body { padding: 0 0 0 24PX; }
+      &--empty .continue-card__body { padding-left: 0; }
+      &__title { font-size: 22PX; line-height: 30PX; }
+      &__progress { margin-top: 8PX; font-size: 14PX; line-height: 20PX; }
+      &__button { height: 48PX; flex: none; border-radius: 14PX; font-size: 16PX; }
+    }
+
+    .series-section {
+      margin-top: 20PX;
+
+      &__heading { min-height: 56PX; padding: 0 0 10PX; }
+      &__title { font-size: 24PX; line-height: 32PX; }
+      &__summary { margin-top: 4PX; font-size: 14PX; line-height: 20PX; }
+      &__all { height: 48PX; font-size: 15PX; }
+    }
+    .series-list { border-top-width: 1PX; }
+    .series-row {
+      min-height: 72PX;
+      padding: 6PX 0;
+
+      &::after { left: 70PX; height: 1PX; }
+      &__cover { width: 52PX; height: 60PX; flex-basis: 52PX; border-radius: 5PX; }
+      &__text { margin-left: 18PX; }
+      &__title { font-size: 18PX; line-height: 26PX; }
+      &__range { margin-top: 4PX; font-size: 13PX; line-height: 18PX; }
+    }
+
+    .home-tabs {
+      min-height: 76PX;
+      height: 76PX;
+      padding: 8PX 28PX 10PX;
+
+      &__item { font-size: 14PX; line-height: 20PX; }
+    }
+  }
+
+  @supports (padding-bottom: constant(safe-area-inset-bottom)) {
+    .library-home.device-layout--pad.device-layout--landscape {
+      padding-bottom: calc(88PX + constant(safe-area-inset-bottom));
+
+      .home-tabs {
+        height: calc(76PX + constant(safe-area-inset-bottom));
+        padding-bottom: calc(10PX + constant(safe-area-inset-bottom));
+      }
+    }
+  }
+
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .library-home.device-layout--pad.device-layout--landscape {
+      padding-bottom: calc(88PX + env(safe-area-inset-bottom));
+
+      .home-tabs {
+        height: calc(76PX + env(safe-area-inset-bottom));
+        padding-bottom: calc(10PX + env(safe-area-inset-bottom));
+      }
+    }
+  }
+}
+
+@media (min-width: 1280PX) and (min-height: 800PX) {
+  .library-home.device-layout--pad.device-layout--landscape {
+    .library-home__brand { font-size: 28PX; line-height: 36PX; }
+
+    .continue-card {
+      min-height: 216PX;
+      padding: 22PX;
+
+      &__cover { width: 120PX; height: 172PX; flex-basis: 120PX; }
+      &__title { font-size: 24PX; line-height: 32PX; }
+      &__progress { margin-top: 10PX; font-size: 15PX; line-height: 22PX; }
+      &__button { height: 52PX; font-size: 17PX; }
+    }
+
+    .series-section { margin-top: 24PX; }
+    .series-row {
+      min-height: 84PX;
+      padding-top: 10PX;
+      padding-bottom: 10PX;
+
+      &::after { left: 74PX; }
+      &__cover { width: 56PX; height: 64PX; flex-basis: 56PX; }
+      &__title { font-size: 20PX; line-height: 28PX; }
+      &__range { font-size: 14PX; line-height: 20PX; }
+    }
+  }
+}
+
+// 手机横屏固定视觉尺寸，正文继续单栏滚动，避免 rpx 随长边放大。
+.library-home.device-layout--phone.device-layout--landscape {
+  padding-bottom: 68PX;
+
+  .library-home__brand {
+    font-size: 20PX;
+    line-height: 28PX;
+
+    .at-icon { margin-right: 8PX; }
+  }
+  .library-home__search { width: 44PX; height: 44PX; }
+  .library-home__content { padding-top: 8PX; padding-bottom: 12PX; }
+
+  .continue-card {
+    min-height: 144PX;
+    padding: 12PX;
+    border-radius: 18PX;
+    box-shadow: 0 5PX 14PX rgba(41, 101, 82, 0.06);
+
+    &__cover { width: 84PX; height: 120PX; flex-basis: 84PX; border-radius: 4PX; }
+    &__body { padding: 0 0 0 14PX; }
+    &--empty .continue-card__body { padding-left: 0; }
+    &__title { font-size: 16PX; line-height: 22PX; }
+    &__progress { margin-top: 6PX; font-size: 12PX; line-height: 18PX; }
+    &__button { height: 44PX; flex: none; border-radius: 12PX; font-size: 14PX; }
+  }
+
+  .series-section {
+    margin-top: 16PX;
+
+    &__heading { min-height: 44PX; padding: 0 2PX 8PX; }
+    &__title { font-size: 18PX; line-height: 24PX; }
+    &__summary { margin-top: 4PX; font-size: 11PX; line-height: 16PX; }
+    &__all {
+      height: 44PX;
+      font-size: 12PX;
+
+      .at-icon { margin-left: 2PX; }
+    }
+  }
+  .series-list { border-top-width: 1PX; }
+  .series-row {
+    min-height: 64PX;
+    padding: 4PX 0;
+
+    &::after { left: 55PX; height: 1PX; }
+    &__cover { width: 43PX; height: 49PX; flex-basis: 43PX; border-radius: 4PX; }
+    &__text { margin-left: 12PX; }
+    &__title { font-size: 14PX; line-height: 20PX; }
+    &__range { margin-top: 3PX; font-size: 11PX; line-height: 16PX; }
+  }
+
+  .home-tabs {
+    height: 56PX;
+    padding: 4PX 24PX 6PX;
+    border-top-width: 1PX;
+
+    &__item {
+      font-size: 11PX;
+      line-height: 14PX;
+
+      > text:not(.at-icon) { margin-top: 2PX; }
+    }
+  }
+}
+
+@supports (padding-bottom: constant(safe-area-inset-bottom)) {
+  .library-home.device-layout--phone.device-layout--landscape {
+    padding-bottom: calc(68PX + constant(safe-area-inset-bottom));
+
+    .home-tabs {
+      height: calc(56PX + constant(safe-area-inset-bottom));
+      padding-bottom: calc(6PX + constant(safe-area-inset-bottom));
+      padding-left: calc(24PX + constant(safe-area-inset-left));
+      padding-right: calc(24PX + constant(safe-area-inset-right));
+    }
+  }
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .library-home.device-layout--phone.device-layout--landscape {
+    padding-bottom: calc(68PX + env(safe-area-inset-bottom));
+
+    .home-tabs {
+      height: calc(56PX + env(safe-area-inset-bottom));
+      padding-bottom: calc(6PX + env(safe-area-inset-bottom));
+      padding-left: calc(24PX + env(safe-area-inset-left));
+      padding-right: calc(24PX + env(safe-area-inset-right));
+    }
+  }
+}

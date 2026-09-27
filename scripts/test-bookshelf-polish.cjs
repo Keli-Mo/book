@@ -74,8 +74,8 @@ assert.match(home, /选择教材/, "空历史首页必须明确引导选择教�
 assert.match(home, /useDidShow/, "首页重显时必须重新读取本机进度");
 assert.match(home, /progressPractice\.sectionTitle/, "有历史时必须展示真实章节");
 assert.match(home, /progressPractice\.pageNumber/, "有历史时必须展示真实教材页");
-assert.match(practice, /saveReadingProgress\(bundle\.book\.id, nextIndex\)/, "切页实际生效后必须保存合法训练位置");
-assert.ok(practice.indexOf("setCurrentPractice({ practiceIndex: nextIndex") < practice.indexOf("saveReadingProgress(bundle.book.id, nextIndex)"), "进度保存必须位于训练状态提交之后");
+assert.match(practice, /saveFullReadingProgress\(bundle\.book\.id, nextPractice\.imageIndex\)/, "切页实际生效后必须保存稳定教材图片位置");
+assert.ok(practice.indexOf("setCurrentPractice({ practiceIndex: nextIndex") < practice.indexOf("saveFullReadingProgress(bundle.book.id, nextPractice.imageIndex)"), "进度保存必须位于训练状态提交之后");
 assert.match(library, /useState<BookSeriesId \| "all">/, "系列筛选应留在保留的页面实例中");
 assert.match(library, /const \[query, setQuery\] = useState\(""\)/, "搜索词应留在保留的页面实例中");
 assert.match(library, /chevron-right/, "书库必须保留导航箭头");

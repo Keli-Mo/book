@@ -199,3 +199,134 @@
   .check-in-actions__share,
   .check-in-actions__practice { flex: 1 1 100%; }
 }
+
+// iPad 统一使用固定视觉尺寸，完成图标不再随整窗宽度放大。
+@media (min-width: 600PX) {
+  .check-in-detail-page__content.device-layout--pad.device-layout__content {
+    max-width: 960PX;
+
+    &.check-in-detail {
+      padding-top: 24PX;
+      padding-right: 28PX;
+      padding-left: 28PX;
+    }
+
+    .check-in-detail {
+      &__success { padding: 12PX 0 24PX; }
+      &__check {
+        width: 72PX;
+        height: 72PX;
+        flex: none;
+        font-size: 42PX;
+        line-height: 1;
+        box-shadow: 0 6PX 16PX rgba(47, 137, 108, 0.2);
+      }
+      &__title { margin-top: 12PX; font-size: 28PX; line-height: 38PX; }
+      &__time { margin-top: 8PX; font-size: 14PX; line-height: 22PX; }
+    }
+
+    .check-in-course-card {
+      border-radius: 20PX;
+      box-shadow: 0 6PX 20PX rgba(38, 75, 62, 0.08);
+
+      &__image { width: 120PX; height: 156PX; flex-basis: 120PX; align-self: center; }
+      &__content { min-width: 0; flex: 1; padding: 20PX 24PX; }
+      &__book,
+      &__section,
+      &__meta { overflow-wrap: anywhere; }
+      &__book { font-size: 16PX; line-height: 24PX; }
+      &__section { margin-top: 8PX; font-size: 22PX; line-height: 30PX; }
+      &__meta { margin-top: 10PX; font-size: 14PX; line-height: 22PX; }
+    }
+
+    .shared-recording {
+      margin-top: 20PX;
+      padding: 24PX;
+      border-radius: 20PX;
+
+      > view { width: 100%; min-width: 0; }
+      &__label { font-size: 16PX; line-height: 24PX; }
+      &__duration { margin-top: 8PX; font-size: 36PX; line-height: 46PX; }
+      &__play,
+      &__retry {
+        width: 100%;
+        min-height: 56PX;
+        box-sizing: border-box;
+        margin: 20PX 0 0;
+        padding: 0 16PX;
+        border: 0;
+        border-radius: 14PX;
+        background: #e8f5ef;
+        color: #26775f;
+        font-size: 18PX;
+        font-weight: 700;
+        line-height: 56PX;
+
+        &::after { border: 0; }
+      }
+      &__play-icon { margin-right: 10PX; }
+      &__privacy { display: block; margin-top: 16PX; font-size: 14PX; line-height: 22PX; overflow-wrap: anywhere; }
+    }
+
+    .check-in-actions {
+      gap: 16PX;
+      margin-top: 20PX;
+
+      &__share,
+      &__practice { min-width: 0; min-height: 56PX; padding: 0 16PX; border-radius: 14PX; font-size: 18PX; line-height: 56PX; }
+    }
+
+    &.check-in-state { padding-top: 40PX; padding-right: 32PX; padding-left: 32PX; }
+    .check-in-state__title { font-size: 24PX; line-height: 34PX; }
+    .check-in-state__message { margin-top: 14PX; font-size: 16PX; line-height: 26PX; overflow-wrap: anywhere; }
+  }
+}
+
+@media (min-width: 960PX) {
+  .check-in-detail-page__content.device-layout--pad.device-layout--portrait {
+    .check-in-detail {
+      &__success { padding-top: 24PX; padding-bottom: 32PX; }
+      &__check { width: 88PX; height: 88PX; font-size: 52PX; }
+      &__title { margin-top: 14PX; font-size: 30PX; line-height: 40PX; }
+      &__time { font-size: 15PX; line-height: 24PX; }
+    }
+
+    .check-in-course-card {
+      &__image { width: 144PX; height: 184PX; flex-basis: 144PX; }
+      &__content { padding: 24PX 28PX; }
+      &__book { font-size: 17PX; line-height: 26PX; }
+      &__section { font-size: 24PX; line-height: 34PX; }
+      &__meta { font-size: 15PX; line-height: 24PX; }
+    }
+    .shared-recording__duration { font-size: 40PX; line-height: 52PX; }
+  }
+}
+
+@media (min-width: 900PX) and (min-height: 600PX) {
+  .check-in-detail-page__content.device-layout--pad.device-layout--landscape {
+    max-width: 1040PX;
+
+    &.check-in-detail { padding-top: 16PX; }
+    .check-in-detail {
+      &__success { padding: 4PX 0 20PX; }
+      &__check { width: 64PX; height: 64PX; font-size: 38PX; }
+      &__title { margin-top: 10PX; font-size: 26PX; line-height: 34PX; }
+      &__time { margin-top: 6PX; }
+    }
+
+    .shared-recording {
+      margin-top: 16PX;
+      padding: 20PX 24PX;
+
+      &__duration { font-size: 34PX; line-height: 44PX; }
+      &__play,
+      &__retry { min-height: 52PX; margin-top: 16PX; font-size: 17PX; line-height: 52PX; }
+    }
+    .check-in-actions {
+      margin-top: 16PX;
+
+      &__share,
+      &__practice { min-height: 52PX; font-size: 17PX; line-height: 52PX; }
+    }
+  }
+}

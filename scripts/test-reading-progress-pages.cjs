@@ -1,7 +1,8 @@
 /* eslint-disable import/no-commonjs */
 const assert = require("node:assert/strict");
 const { jsx } = require("react/jsx-runtime");
-const { createPage, byClass, elements, textOf, buildBookPracticeBundle } = require("./test-practice-book-route.cjs");
+const { createPage, byClass, elements, textOf, buildBookPracticeBundle, load } = require("./test-practice-book-route.cjs");
+const { buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 
 const key = "haisha:reading-progress:v1";
 const storage = new Map();
@@ -45,29 +46,31 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
 
   const practice = mount("Practice", { bookId: "22", practice: "0" });
   practice.show(); await settle();
-  assert.deepEqual(storage.get(key), { version: 1, bookId: "22", practiceIndex: 0 });
+  assert.deepEqual(storage.get(key), { version: 2, bookId: "22", imageIndex: buildBookPracticeBundle("22").practices[0].imageIndex },
+    "打开旧音频链接后，应以同一原图片位置保存新版进度");
   await directory(practice).props.onSelect(4);
   practice.render();
-  assert.equal(storage.get(key).practiceIndex, 4, "目录切页应保存真实生效的训练下标，不是原始入口 URL");
+  assert.equal(storage.get(key).imageIndex, 4, "目录切页应保存真实生效的原图片位置，不是原始入口 URL");
   home.show(); tree = home.render();
-  const bundle = buildBookPracticeBundle("22");
+  const bundle = buildFullBookPracticeBundle("22");
   assert.equal(byClass(tree, "library-home__heading"), undefined);
   assert.equal(textOf(byClass(tree, "continue-card__title")), bundle.book.title);
   assert.equal(byClass(tree, "continue-card__cover").props.src, bundle.book.cover);
   assert.equal(textOf(byClass(tree, "continue-card__progress")), `${bundle.practices[4].sectionTitle} · 教材第 ${bundle.practices[4].pageNumber} 页`);
   assert.equal(textOf(byClass(tree, "continue-card__button")), "继续跟读");
   await byClass(tree, "continue-card__button").props.onClick();
-  assert.equal(home.navigations.at(-1), "/pages/Practice/Practice?bookId=22&practice=4");
+  assert.equal(home.navigations.at(-1), "/pages/Practice/Practice?bookId=22&page=4");
 
   practice.hide(); storage.set(key, { version: 1, bookId: "3", practiceIndex: 2 });
   practice.render(); await settle();
   assert.equal(storage.get(key).bookId, "3", "隐藏教材页的重新渲染不得覆盖当前阅读位置");
   practice.show(); practice.render();
   assert.equal(storage.get(key).bookId, "22", "重新显示原教材页时应将它作为最近阅读位置");
-  assert.equal(storage.get(key).practiceIndex, 4);
+  assert.equal(storage.get(key).imageIndex, 4);
   practice.hide();
 
-  for (const bookId of ["26", "27", "28", "29"]) {
+  for (let id = 3; id <= 29; id += 1) {
+    const bookId = String(id);
     const sourceBundle = buildBookPracticeBundle(bookId);
     const practiceIndex = Math.min(7, sourceBundle.practices.length - 1);
     const sourcePractice = sourceBundle.practices[practiceIndex];
@@ -75,28 +78,57 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
     home.show(); tree = home.render();
     assert.equal(textOf(byClass(tree, "continue-card__progress")),
       `${sourcePractice.sectionTitle} · 教材第 ${sourcePractice.pageNumber} 页`,
-      "Think 旧进度应继续显示原音频题的真实页码");
+      "旧进度应继续显示原音频题的真实页码");
     await byClass(tree, "continue-card__button").props.onClick();
     assert.equal(home.navigations.at(-1),
-      `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${sourcePractice.imageIndex}`,
-      "Think 旧进度继续阅读应跳到筛选页中对应的原 PDF 图片");
+      sourceBundle.book.seriesId === "think"
+        ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${sourcePractice.imageIndex}`
+        : `/pages/Practice/Practice?bookId=${bookId}&practice=${practiceIndex}`,
+      "旧进度继续阅读不能把音频索引重新解释为全页索引");
+    assert.deepEqual(storage.get(key), { version: 1, bookId, practiceIndex }, "首页显示旧进度不能改写存储");
   }
+
+  for (const bookId of ["11", "22", "26", "27", "28", "29"]) {
+    const full = buildFullBookPracticeBundle(bookId);
+    const silentPage = full.practices.find((item) => item.tracks.length === 0);
+    assert.ok(silentPage, "测试教材必须包含新增无音频页");
+    for (const page of [silentPage, full.practices.at(-1)]) {
+      storage.set(key, { version: 2, bookId, imageIndex: page.imageIndex });
+      home.show(); tree = home.render();
+      assert.equal(textOf(byClass(tree, "continue-card__title")), full.book.title);
+      assert.equal(textOf(byClass(tree, "continue-card__progress")), `${page.sectionTitle} · ${page.pageLabel || `教材第 ${page.pageNumber} 页`}`);
+      await byClass(tree, "continue-card__button").props.onClick();
+      assert.equal(home.navigations.at(-1), full.book.seriesId === "think"
+        ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${page.imageIndex}`
+        : `/pages/Practice/Practice?bookId=${bookId}&page=${page.imageIndex}`);
+    }
+  }
+
+  const think = mount("ThinkBookReader", { bookId: "28", page: "0" });
+  think.show(); await settle();
+  assert.deepEqual(storage.get(key), { version: 2, bookId: "28", imageIndex: 0 }, "Think 新增页也必须保存稳定阅读位置");
+  const thinkLast = buildFullBookPracticeBundle("28").practices.at(-1);
+  await directory(think).props.onSelect(thinkLast.imageIndex);
+  think.render();
+  assert.deepEqual(storage.get(key), { version: 2, bookId: "28", imageIndex: thinkLast.imageIndex });
+  think.hide();
 
   const cancelled = mount("Practice", { bookId: "3", practice: "1" }, { taroOverrides: { showModal: async () => ({ confirm: false }) } });
   cancelled.show();
   await byClass(cancelled.render(), "record-button").props.onClick();
   cancelled.recorderHandlers.Start(); cancelled.render();
   await directory(cancelled).props.onSelect(5);
-  assert.equal(storage.get(key).practiceIndex, 1, "取消放弃录音时不能把阅读进度提前写成目标页");
+  assert.equal(storage.get(key).imageIndex, buildBookPracticeBundle("3").practices[1].imageIndex, "取消放弃录音时不能把阅读进度提前写成目标页");
   assert.equal(storage.get(key).bookId, "3");
 
   storage.set(key, { version: 2, bookId: "22", practiceIndex: 4 });
   home.show(); tree = home.render();
-  assert.equal(textOf(byClass(tree, "continue-card__button")), "选择教材", "损坏/旧版本进度应移除虚假历史显示");
+  assert.equal(textOf(byClass(tree, "continue-card__button")), "选择教材", "缺少稳定图片位置的 v2 进度应移除虚假历史显示");
   const unavailable = mount("Home", {}, { taroOverrides: { getStorageSync: () => { throw new Error("storage unavailable"); } } });
   assert.equal(textOf(byClass(unavailable.render(), "continue-card__button")), "选择教材");
   const failure = mount("Practice", { bookId: "22", practice: "2" }, { taroOverrides: { setStorageSync: () => { throw new Error("storage full"); } } });
   failure.show(); await directory(failure).props.onSelect(3);
+  failure.render(); await settle();
   assert.equal(byClass(failure.render(), "practice-book-page__image").props.src, bundle.practices[3].imageUrl, "进度保存失败不能阻断教材切页");
 
   const library = mount("BookLibrary", { series: "casa" });
@@ -112,6 +144,7 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   assert.ok(beforeRows.length > 1);
   await byClass(tree, "book-row").props.onClick();
   assert.equal(library.navigationMethods.at(-1), "navigateTo", "书库进入教材必须保留页面栈");
+  assert.match(library.navigations.at(-1), /&page=0$/, "书库新入口应从完整教材首页开始");
   library.hide(); library.show(); tree = library.render();
   assert.equal(byClass(tree, "book-search__input").props.value, "2");
   assert.equal(textOf(elements(tree).find(node => /series-filter .*is-selected/.test(node.props?.className || ""))), "全部");

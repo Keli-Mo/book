@@ -1,7 +1,12 @@
-export default defineAppConfig({
+type AppConfigWithLegacyPlaceholder = Parameters<typeof defineAppConfig>[0] & {
+  componentPlaceholder: { comp: "view" };
+};
+
+const appConfig = {
+  // 保留 iPad 横竖屏支持；手机方向由 window.pageOrientation 控制。
   resizable: true,
   lazyCodeLoading: "requiredComponents",
-  // Taro 的虚拟 comp 在按需注入时路径会变成 wx://not-found，闸门页白屏。
+  // 历史启动页白屏兼容配置；Taro 4.0.12 的 AppConfig 未收录，保留现有输出。
   componentPlaceholder: {
     comp: "view",
   },
@@ -16,6 +21,7 @@ export default defineAppConfig({
     "pages/Intro/Intro",
   ],
   window: {
+    pageOrientation: "portrait",
     backgroundTextStyle: "light",
     navigationBarBackgroundColor: "#fff",
     navigationBarTitleText: "海沙牛娃英语跟读",
@@ -27,4 +33,6 @@ export default defineAppConfig({
     },
   },
   entryPagePath: "pages/Launch/Launch",
-});
+} satisfies AppConfigWithLegacyPlaceholder;
+
+export default defineAppConfig(appConfig);

@@ -415,5 +415,5 @@ export const resolveBookAction = (book: BookCatalogItem): BookOpenAction =>
       }
     : {
         type: "practice",
-        url: `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`,
+        url: `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&page=0`,
       };

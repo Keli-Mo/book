@@ -1,48 +1,65 @@
 import Taro from "@tarojs/taro";
-import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
+import {
+  buildBookPracticeBundle,
+  buildFullBookPracticeBundle,
+  type ListeningPractice,
+} from "@/features/listeningPractice/bookPractice";
 
-export type ReadingProgress = {
+export type LegacyReadingProgress = {
   version: 1;
   bookId: string;
   practiceIndex: number;
 };
 
+export type FullReadingProgress = {
+  version: 2;
+  bookId: string;
+  imageIndex: number;
+};
+
+export type ReadingProgress = LegacyReadingProgress | FullReadingProgress;
+
+// 沿用存储键，按 payload.version 区分；读取旧进度不改写历史位置。
 export const READING_PROGRESS_KEY = "haisha:reading-progress:v1";
 
-const validateReadingProgress = (value: unknown): ReadingProgress | null => {
+const resolveProgress = (value: unknown) => {
   if (!value || typeof value !== "object") return null;
-  const candidate = value as Partial<ReadingProgress>;
+  const candidate = value as Record<string, unknown>;
   if (
-    candidate.version !== 1 ||
-    typeof candidate.bookId !== "string" ||
-    !Number.isSafeInteger(candidate.practiceIndex) ||
-    (candidate.practiceIndex as number) < 0
+    (candidate.version !== 1 && candidate.version !== 2) ||
+    typeof candidate.bookId !== "string"
   ) return null;
 
   try {
-    const bundle = buildBookPracticeBundle(candidate.bookId);
-    if (!bundle || (candidate.practiceIndex as number) >= bundle.practices.length) return null;
+    const index = candidate.version === 1 ? candidate.practiceIndex : candidate.imageIndex;
+    if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0) return null;
+    const bundle = candidate.version === 1
+      ? buildBookPracticeBundle(candidate.bookId)
+      : buildFullBookPracticeBundle(candidate.bookId);
+    if (!bundle) return null;
+    const practice = candidate.version === 1
+      ? bundle.practices[index]
+      : bundle.practices.find((item) => item.imageIndex === index);
+    if (!practice) return null;
+    const progress: ReadingProgress = candidate.version === 1
+      ? { version: 1, bookId: candidate.bookId, practiceIndex: index }
+      : { version: 2, bookId: candidate.bookId, imageIndex: index };
+    return { progress, practice, isThink: bundle.book.seriesId === "think" };
   } catch (_error) {
     return null;
   }
-
-  return {
-    version: 1,
-    bookId: candidate.bookId,
-    practiceIndex: candidate.practiceIndex as number,
-  };
 };
 
 export function readReadingProgress(): ReadingProgress | null {
   try {
-    return validateReadingProgress(Taro.getStorageSync(READING_PROGRESS_KEY));
+    return resolveProgress(Taro.getStorageSync(READING_PROGRESS_KEY))?.progress ?? null;
   } catch (_error) {
     return null;
   }
 }
 
-export function saveReadingProgress(bookId: string, practiceIndex: number): boolean {
-  const progress = validateReadingProgress({ version: 1, bookId, practiceIndex });
+const saveProgress = (value: ReadingProgress): boolean => {
+  const progress = resolveProgress(value)?.progress;
   if (!progress) return false;
   try {
     Taro.setStorageSync(READING_PROGRESS_KEY, progress);
@@ -50,22 +67,30 @@ export function saveReadingProgress(bookId: string, practiceIndex: number): bool
   } catch (_error) {
     return false;
   }
+};
+
+/** 保留旧调用语义：practiceIndex 始终指向原音频训练列表。 */
+export function saveReadingProgress(bookId: string, practiceIndex: number): boolean {
+  return saveProgress({ version: 1, bookId, practiceIndex });
 }
 
-/** 历史进度始终使用原音频训练索引；Think 阅读器入口使用对应的 PDF 图片索引。 */
-export function resolveReadingProgressUrl(progress: ReadingProgress): string | null {
-  const valid = validateReadingProgress(progress);
-  if (!valid) return null;
+export function saveFullReadingProgress(bookId: string, imageIndex: number): boolean {
+  return saveProgress({ version: 2, bookId, imageIndex });
+}
 
-  try {
-    const bundle = buildBookPracticeBundle(valid.bookId);
-    const practice = bundle?.practices[valid.practiceIndex];
-    if (!bundle || !practice) return null;
-    const bookId = encodeURIComponent(valid.bookId);
-    return bundle.book.seriesId === "think"
-      ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${practice.imageIndex}`
-      : `/pages/Practice/Practice?bookId=${bookId}&practice=${valid.practiceIndex}`;
-  } catch (_error) {
-    return null;
+export function resolveReadingProgressPractice(progress: ReadingProgress): ListeningPractice | null {
+  return resolveProgress(progress)?.practice ?? null;
+}
+
+/** 旧进度保留音频索引含义；全页进度及 Think 路由使用原图片索引。 */
+export function resolveReadingProgressUrl(progress: ReadingProgress): string | null {
+  const resolved = resolveProgress(progress);
+  if (!resolved) return null;
+  const bookId = encodeURIComponent(resolved.progress.bookId);
+  if (resolved.isThink) {
+    return `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${resolved.practice.imageIndex}`;
   }
+  return resolved.progress.version === 1
+    ? `/pages/Practice/Practice?bookId=${bookId}&practice=${resolved.progress.practiceIndex}`
+    : `/pages/Practice/Practice?bookId=${bookId}&page=${resolved.practice.imageIndex}`;
 }

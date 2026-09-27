@@ -107,12 +107,12 @@ assert.deepEqual(
 );
 assert.deepEqual(
   JSON.parse(JSON.stringify(resolveBookAction(BOOKS[0]))),
-  { type: "practice", url: "/pages/Practice/Practice?bookId=3&practice=0" },
+  { type: "practice", url: "/pages/Practice/Practice?bookId=3&page=0" },
   "CASA 第 1 册应显式带上教材 ID 进入跟读页",
 );
 assert.deepEqual(
   JSON.parse(JSON.stringify(resolveBookAction(BOOKS[22]))),
-  { type: "practice", url: "/pages/Practice/Practice?bookId=25&practice=0" },
+  { type: "practice", url: "/pages/Practice/Practice?bookId=25&page=0" },
   "ID 25 应使用其自身教材 ID 进入跟读页",
 );
 assert.deepEqual(
@@ -137,9 +137,9 @@ assert.deepEqual(
   Array.from(
     BOOKS.slice(0, 23),
     (book) =>
-      `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`,
+      `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&page=0`,
   ),
-  "既有教材应保留带自身编码 ID 的跟读路由",
+  "普通教材应从原图片第 0 张进入完整训练页",
 );
 
 console.log("教材目录测试通过：27 本教材、6 个系列、开放状态、路由和搜索筛选均正确。");

@@ -77,19 +77,35 @@ const loadTypeScriptModule = (modulePath) => {
   return moduleContainer.exports;
 };
 
-const { clampHotspotCenter, fitContainSize } = loadTypeScriptModule(sourcePath);
+const { clampHotspotCenter, fitImageToWidth, fitImageToBounds } = loadTypeScriptModule(sourcePath);
 assert.equal(
   typeof clampHotspotCenter,
   "function",
   "教材热点布局模型应导出 clampHotspotCenter",
 );
 assert.equal(
-  typeof fitContainSize,
+  typeof fitImageToWidth,
   "function",
-  "教材热点布局模型应导出 fitContainSize",
+  "教材尺寸应仅取决于可用宽度和原图比例",
 );
+assert.equal(typeof fitImageToBounds, "function", "横屏和 iPad 应支持限定阅读区内显示整页");
 
 const normalize = (value) => JSON.parse(JSON.stringify(value));
+for (const [bounds, natural, expected] of [
+  [{width: 500, height: 240}, {width: 600, height: 900}, {width: 160, height: 240}],
+  [{width: 400, height: 600}, {width: 1600, height: 900}, {width: 400, height: 225}],
+  [{width: 700, height: 800}, {width: 600, height: 900}, {width: 600 * (800 / 900), height: 800}],
+]) {
+  const fitted = normalize(fitImageToBounds(bounds, natural));
+  assert.ok(Math.abs(fitted.width - expected.width) <= 0.01 && Math.abs(fitted.height - expected.height) <= 0.01);
+  assert.ok(fitted.width <= bounds.width && fitted.height <= bounds.height, "整图不得超出阅读区");
+  assert.ok(Math.abs(fitted.width / fitted.height - natural.width / natural.height) < 0.001, "不拉伸教材");
+}
+for (const value of [0, -1, NaN, Infinity]) {
+  assert.equal(fitImageToBounds({width: 400, height: value}, {width: 600, height: 900}), null);
+  assert.equal(fitImageToBounds({width: value, height: 300}, {width: 600, height: 900}), null);
+  assert.equal(fitImageToBounds({width: 400, height: 300}, {width: 600, height: value}), null);
+}
 const assertHotspot = (scenario, point, imageSize, expected, hitRadiusPx, leftShiftPx) => {
   const actual = normalize(clampHotspotCenter(point, imageSize, hitRadiusPx, leftShiftPx));
   assert.deepEqual(actual, expected, `${scenario}：热点中心收敛结果不符合契约`);
@@ -242,17 +258,26 @@ assert.deepEqual(originalPoint, pointSnapshot, "输入不可变：不得修改�
 assert.deepEqual(originalImageSize, imageSizeSnapshot, "输入不可变：不得修改图片尺寸对象");
 
 assert.deepEqual(
-  normalize(fitContainSize({ width: 320, height: 200 }, { width: 1600, height: 2000 })),
-  { width: 160, height: 200 },
-  "高图应先受槽位高度限制",
+  normalize(fitImageToWidth(320, { width: 1600, height: 2000 })),
+  { width: 320, height: 400 },
+  "高图使用可用宽度，超出视口高度时保留尺寸供页面滚动",
 );
 assert.deepEqual(
-  normalize(fitContainSize({ width: 320, height: 200 }, { width: 1600, height: 800 })),
+  normalize(fitImageToWidth(320, { width: 1600, height: 800 })),
   { width: 320, height: 160 },
   "宽图应先受槽位宽度限制",
 );
-assert.equal(fitContainSize({ width: 0, height: 200 }, { width: 100, height: 100 }), null);
-assert.equal(fitContainSize({ width: 100, height: 100 }, { width: 50, height: 0 }), null);
+assert.deepEqual(
+  normalize(fitImageToWidth(640, { width: 1600, height: 2000 })),
+  { width: 640, height: 800 },
+  "横竖屏宽度改变后仍保持原图比例",
+);
+for (const width of [0, -1, NaN, Infinity]) {
+  assert.equal(fitImageToWidth(width, { width: 100, height: 100 }), null);
+}
+for (const natural of [{ width: 0, height: 100 }, { width: 50, height: 0 }, { width: 100, height: NaN }]) {
+  assert.equal(fitImageToWidth(320, natural), null);
+}
 
 console.log(
   "教材热点布局测试通过：默认与自定义半径、四边收敛、非法输入、视口等比缩放及不可变契约均正确。",

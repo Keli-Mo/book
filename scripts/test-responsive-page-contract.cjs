@@ -139,27 +139,34 @@ const defaultConfig = (sourceFile, factory) => {
     (node) => ts.isExportAssignment(node) && !node.isExportEquals,
   );
   assert.ok(exported, "配置必须 default export");
-  let expression = exported.expression;
-  if (ts.isIdentifier(expression)) {
-    const identifier = expression.text;
-    expression = walk(
-      sourceFile,
-      (node) =>
-        ts.isVariableDeclaration(node) &&
-        ts.isIdentifier(node.name) &&
-        node.name.text === identifier &&
-        node.initializer,
-    )[0]?.initializer;
-  }
+  const resolve = (value) => {
+    const seen = new Set();
+    while (value && !seen.has(value)) {
+      seen.add(value);
+      if (ts.isSatisfiesExpression(value) || ts.isParenthesizedExpression(value)) {
+        value = value.expression;
+      } else if (ts.isIdentifier(value)) {
+        const identifier = value.text;
+        value = walk(sourceFile, (node) =>
+          ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) &&
+          node.name.text === identifier && node.initializer)[0]?.initializer;
+      } else {
+        return value;
+      }
+    }
+    return value;
+  };
+  const expression = resolve(exported.expression);
   assert.ok(
     expression &&
       ts.isCallExpression(expression) &&
       ts.isIdentifier(expression.expression) &&
-      expression.expression.text === factory &&
-      ts.isObjectLiteralExpression(expression.arguments[0]),
+      expression.expression.text === factory,
     `默认配置必须调用 ${factory}`,
   );
-  return expression.arguments[0];
+  const config = resolve(expression.arguments[0]);
+  assert.ok(config && ts.isObjectLiteralExpression(config), "配置参数必须解析为对象");
+  return config;
 };
 const configValue = (object, key) =>
   object.properties.find(
@@ -309,19 +316,26 @@ check("应用允许 Pad 调整窗口", () => {
   assert.ok(resizable?.kind === ts.SyntaxKind.TrueKeyword, "app.config.ts 应设置 resizable: true");
 });
 
+check("所有已注册页面在手机上保持竖屏", () => {
+  const windowConfig = configValue(appConfig, "window");
+  const globalOrientation = configValue(windowConfig, "pageOrientation")?.text;
+  assert.equal(globalOrientation, "portrait", "手机方向统一由 app.window 配置为 portrait");
+  const registeredPages = configValue(appConfig, "pages");
+  assert.ok(ts.isArrayLiteralExpression(registeredPages), "应能读取全部注册页面");
+  for (const route of registeredPages.elements) {
+    const file = `src/${route.text}.config.ts`;
+    const config = defaultConfig(ast(file), "definePageConfig");
+    assert.equal(configValue(config, "pageOrientation")?.text || globalOrientation, "portrait",
+      `${file} 不能用 auto/landscape 覆盖手机竖屏设置`);
+  }
+});
+
 check("应用在全局配置启用组件按需注入", () => {
   assert.equal(configValue(appConfig, "lazyCodeLoading")?.text, "requiredComponents",
     "必须配置在 app.config.ts 顶层，project.config.json 的 setting 不会生成此应用配置");
 });
 
 for (const page of pages) {
-  check(`${page.name}允许自动旋转`, () => {
-    const config = defaultConfig(ast(page.config), "definePageConfig");
-    assert.ok(
-      configValue(config, "pageOrientation")?.text === "auto",
-      `${page.config} 应设置 pageOrientation: 'auto'`,
-    );
-  });
   check(`${page.name}接入共享设备布局`, () => {
     const hook = importedName(page.ast, "@/hooks/useDeviceLayout", "useDeviceLayout");
     const builder = importedName(
@@ -519,13 +533,35 @@ check("训练 split 工作区为教材与控制双列", () => {
   );
 });
 
-check("教材图在剩余视口内等比缩放并按实际节点测量热点", () => {
+check("普通训练和 Think 的手机竖屏保留自然滚动", () => {
+  for (const file of [
+    "src/pages/Practice/Practice.config.ts",
+    "src/pages/ThinkBookReader/ThinkBookReader.config.ts",
+  ]) {
+    const config = defaultConfig(ast(file), "definePageConfig");
+    assert.notEqual(configValue(config, "disableScroll")?.kind, ts.SyntaxKind.TrueKeyword,
+      `${file} 不得禁止页面滚动`);
+    assert.equal(configValue(config, "enablePageMeta")?.kind, ts.SyntaxKind.TrueKeyword,
+      `${file} 必须启用目录的页面滚动锁`);
+  }
+  const screen = exactRules(practice.styles, ".practice-screen");
+  assert.ok(screen.some((rule) => has(rule, "min-height", "100vh")), "短内容应铺满屏幕背景");
+  assert.ok(screen.every((rule) => !has(rule, "height", "100vh")), "外层不得把教材和录音区限制为一屏高");
+  for (const selector of [".practice-screen", ".practice-page", ".practice-workspace__book"]) {
+    assert.ok(exactRules(practice.styles, selector).every((rule) =>
+      !has(rule, "overflow", "hidden") && !has(rule, "overflow-y", "hidden")),
+    `${selector} 不得裁掉超出屏幕的教材或控件`);
+  }
+  assert.ok(exactRules(practice.styles, ".practice-book-viewport").every((rule) =>
+    !has(rule, "max-height", "100%")), "教材图面不得由书图区剩余高度裁缩");
+});
+
+check("手机竖屏教材按宽度定尺寸，各布局按实际图面对齐热点", () => {
   const image = byClass(practice.contentAst, "practice-book-page__image", "Image")[0];
   assert.ok(image);
-  assert.ok(practice.source.includes("aspectFit"), "槽位未定时教材图应等比放入，避免撑破一屏");
+  assert.ok(practice.source.includes("aspectFit"), "固有尺寸未定时教材图应保持比例");
   assert.ok(practice.source.includes("scaleToFill"), "定框后应铺满图面，热点百分比才能对齐课文");
   assert.ok(attribute(image, "onLoad"), "教材图应在 onLoad 后测量");
-  assert.ok(propertyCalls(practice.contentAst, "select", ".practice-book-page"));
   assert.ok(propertyCalls(practice.contentAst, "select", ".practice-workspace__book"));
   assert.ok(propertyCalls(practice.contentAst, "boundingClientRect"));
   const clamp = importedName(
@@ -536,7 +572,7 @@ check("教材图在剩余视口内等比缩放并按实际节点测量热点", (
   const fit = importedName(
     practice.contentAst,
     "@/features/listeningPractice/hotspotLayout",
-    "fitContainSize",
+    "fitImageToWidth",
   );
   assert.ok(calls(practice.contentAst, clamp));
   assert.ok(calls(practice.contentAst, fit));
@@ -546,9 +582,10 @@ check("教材图在剩余视口内等比缩放并按实际节点测量热点", (
     ),
   );
   assert.ok(
-    matchingRules(practice.styles, [".practice-workspace__book"]).some(
-      (rule) => has(rule, "flex", "1") || has(rule, "flex-grow", "1"),
+    exactRules(practice.styles, ".practice-workspace__book").every(
+      (rule) => !has(rule, "flex", "1") && !has(rule, "flex-grow", "1"),
     ),
+    "书图区高度不得跟随录音区占用的剩余空间伸缩",
   );
   assert.ok(
     ruleWith(practice.styles, [".practice-book-page__hotspots"], {
@@ -556,6 +593,27 @@ check("教材图在剩余视口内等比缩放并按实际节点测量热点", (
       inset: "0",
     }),
   );
+});
+
+check("横屏和 iPad 仅在局部 fitted 阅读区限制高度", () => {
+  assert.ok(ruleWith(practice.styles, [".practice-screen--fitted"], { height: "100vh", "min-height": "0" }));
+  const fitted = ".practice-page.practice-page--fitted";
+  assert.ok(ruleWith(practice.styles, [fitted, ".practice-page__content"], { flex: "1", "min-height": "0" }));
+  assert.ok(ruleWith(practice.styles, [fitted, ".practice-workspace__book"], { flex: "1", "min-height": "0" }));
+  assert.ok(ruleWith(practice.styles, [fitted, ".practice-workspace__controls"], { height: "224PX" }));
+  assert.ok(matchingRules(practice.styles, [".practice-page--landscape", ".practice-workspace"]).some(rule =>
+    has(rule, "display", "grid") && values(rule, "grid-template-columns").some(value => compact(value) === "minmax(0,1fr)180PX")));
+  const controls = byClass(practice.contentAst, "practice-workspace__controls", "ScrollView")[0];
+  assert.ok(controls && attribute(controls, "scrollY"), "固定操作区须允许超长状态内部滚动");
+  assert.ok(byClass(practice.contentAst, "practice-workspace__controls", "View")[0], "手机竖屏仍须保留原 View");
+  const bookScroll = byClass(practice.contentAst, "practice-book-scroll", "ScrollView")[0];
+  assert.ok(bookScroll && attribute(bookScroll, "scrollY"), "横屏教材按宽放大后须在书内纵向滚动");
+  assert.ok(ruleWith(practice.styles, [fitted, ".practice-book-scroll"], { height: "100%" }));
+  assert.ok(ruleWith(practice.styles, [fitted, ".practice-book-page"], { height: "auto" }));
+  assert.ok(ruleWith(practice.styles, [fitted, ".practice-book-scroll-hint"], { "pointer-events": "none" }));
+  assert.ok(ruleWith(practice.styles, [".practice-page--landscape.device-layout--pad", ".practice-workspace"], {
+    "grid-template-columns": "minmax(0, 1fr) 180PX",
+  }));
 });
 
 check("热点命中壳与视觉点分离", () => {

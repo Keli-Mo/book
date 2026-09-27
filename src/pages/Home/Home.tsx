@@ -8,9 +8,8 @@ import {
   type BookSeriesId,
 } from "@/features/bookLibrary/bookCatalog";
 import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavigation";
-import { readReadingProgress, resolveReadingProgressUrl, type ReadingProgress } from "@/features/bookLibrary/readingProgress";
+import { readReadingProgress, resolveReadingProgressPractice, resolveReadingProgressUrl, type ReadingProgress } from "@/features/bookLibrary/readingProgress";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
-import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import { sharedImage, sharedTitle } from "@/constant";
@@ -33,11 +32,11 @@ export default function Home() {
     layout.statusBarHeight,
     Taro.getMenuButtonBoundingClientRect(),
   );
-  const progressBundle = readingProgress
-    ? buildBookPracticeBundle(readingProgress.bookId)
+  const progressPractice = readingProgress
+    ? resolveReadingProgressPractice(readingProgress)
     : null;
-  const progressPractice = progressBundle && readingProgress
-    ? progressBundle.practices[readingProgress.practiceIndex]
+  const progressBook = progressPractice
+    ? BOOKS.find((book) => book.id === readingProgress?.bookId)
     : null;
   const progressUrl = readingProgress ? resolveReadingProgressUrl(readingProgress) : null;
 
@@ -58,7 +57,7 @@ export default function Home() {
   };
 
   const startPractice = () => {
-    if (!progressBundle || !progressPractice || !progressUrl) {
+    if (!progressBook || !progressPractice || !progressUrl) {
       openLibrary("all");
       return;
     }
@@ -97,22 +96,22 @@ export default function Home() {
       </View>
 
       <View className='library-home__content device-layout__content'>
-        <View className={`continue-card ${progressBundle ? "" : "continue-card--empty"}`}>
-          {progressBundle && progressPractice ? (
+        <View className={`continue-card ${progressBook ? "" : "continue-card--empty"}`}>
+          {progressBook && progressPractice ? (
             <Image
               className='continue-card__cover'
-              src={progressBundle.book.cover}
+              src={progressBook.cover}
               mode='aspectFit'
               lazyLoad
             />
           ) : null}
           <View className='continue-card__body'>
             <Text className='continue-card__title'>
-              {progressBundle?.book.title || "开始跟读练习"}
+              {progressBook?.title || "开始跟读练习"}
             </Text>
             <Text className='continue-card__progress'>
               {progressPractice
-                ? `${progressPractice.sectionTitle} · 教材第 ${progressPractice.pageNumber} 页`
+                ? `${progressPractice.sectionTitle} · ${progressPractice.pageLabel || `教材第 ${progressPractice.pageNumber} 页`}`
                 : "还没有跟读记录，先去书库选择教材"}
             </Text>
             <View
@@ -120,7 +119,7 @@ export default function Home() {
               hoverClass='is-pressed'
               onClick={startPractice}
             >
-              <Text>{progressBundle ? "继续跟读" : "选择教材"}</Text>
+              <Text>{progressBook ? "继续跟读" : "选择教材"}</Text>
             </View>
           </View>
         </View>

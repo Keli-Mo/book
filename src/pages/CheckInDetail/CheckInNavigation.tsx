@@ -8,11 +8,13 @@ import "./CheckInNavigation.scss";
 type CheckInNavigationProps = {
   onBack: () => void;
   title?: string;
+  compact?: boolean;
 };
 
 export default function CheckInNavigation({
   onBack,
   title = "跟读打卡",
+  compact = false,
 }: CheckInNavigationProps) {
   const layout = useDeviceLayout();
   let menuButton;
@@ -30,7 +32,7 @@ export default function CheckInNavigation({
 
   return (
     <View
-      className='check-in-navigation'
+      className={`check-in-navigation${compact ? " check-in-navigation--compact" : ""}`}
       style={{ paddingTop: `${metrics.statusBarHeight}px` }}
     >
       <View
@@ -45,7 +47,7 @@ export default function CheckInNavigation({
           aria-label='返回上一页'
           onClick={onBack}
         >
-          <AppIcon value='chevron-left' size={24} color='#173f34' />
+          <AppIcon value='chevron-left' size={compact ? 20 : 24} color='#173f34' />
         </Button>
         <Text className='check-in-navigation__title'>{title}</Text>
         <Button
@@ -53,7 +55,7 @@ export default function CheckInNavigation({
           aria-label='返回首页'
           onClick={() => Taro.reLaunch({ url: "/pages/Home/Home" })}
         >
-          <AppIcon value='home' size={22} color='#173f34' />
+          <AppIcon value='home' size={compact ? 18 : 22} color='#173f34' />
         </Button>
       </View>
     </View>

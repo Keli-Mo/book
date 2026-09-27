@@ -1,14 +1,12 @@
 .practice-screen {
   display: flex;
   flex-direction: column;
-  height: 100vh;
   min-height: 100vh;
-  overflow: hidden;
   background: #f4f7f5;
 
   > .practice-page,
   > .practice-empty {
-    flex: 1;
+    flex: none;
     min-height: 0;
     width: 100%;
   }
@@ -18,8 +16,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
-  padding: 8rpx 12rpx 0;
+  padding: 4rpx 12rpx 0;
   padding-bottom: 12PX;
   box-sizing: border-box;
   background: #f4f7f5;
@@ -30,7 +27,6 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  flex: 1;
   flex-direction: column;
 }
 
@@ -38,27 +34,37 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  padding: 0 4rpx 8rpx;
+  padding: 0 4rpx 4rpx;
 
-  &__course { color: #71827b; font-size: 24rpx; }
-  &__section { margin-top: 10rpx; color: #193f34; font-size: 42rpx; font-weight: 800; }
+  &__course { color: #71827b; font-size: 22rpx; }
+  &__section { margin-top: 6rpx; color: #193f34; font-size: 36rpx; font-weight: 800; }
   &__progress-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 12rpx;
+    margin-top: 4rpx;
   }
   &__progress { color: #2f876b; font-size: 25rpx; font-weight: 600; }
   &__directory {
+    position: relative;
+    z-index: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 8rpx 18rpx;
-    border-radius: 999rpx;
-    background: #e2f1eb;
+    padding: 0 12rpx;
     color: #276c58;
-    font-size: 24rpx;
+    font-size: 22rpx;
     font-weight: 700;
+
+    // 视觉胶囊缩小，外层仍保留 44px 点击范围。
+    &::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 8PX 0;
+      border-radius: 999rpx;
+      background: #e2f1eb;
+    }
   }
 }
 
@@ -68,7 +74,6 @@
   width: 100%;
   height: 100%;
   max-width: 100%;
-  max-height: 100%;
   border-radius: 24rpx;
   background: #f4f7f5;
   box-shadow: 0 16rpx 40rpx rgba(37, 69, 58, 0.12);
@@ -101,26 +106,23 @@
 
 .practice-workspace {
   display: flex;
-  min-height: 0;
-  flex: 1;
+  min-width: 0;
   flex-direction: column;
 }
 
 .practice-workspace__book {
   display: flex;
+  width: 100%;
   min-width: 0;
-  min-height: 0;
-  flex: 1;
-  align-items: center;
+  flex: none;
+  align-items: flex-start;
   justify-content: center;
-  overflow: hidden;
 }
 
 .practice-book-viewport {
   position: relative;
   overflow: hidden;
   max-width: 100%;
-  max-height: 100%;
 }
 
 .practice-book-swiper {
@@ -138,18 +140,12 @@
   min-width: 0;
 }
 
-// 宽 Pad 的教材与录音控制同时可见；手机横屏仍走单栏。
+// 宽 Pad 保留左右两栏；两栏按自然高度展开，不让录音内容参与教材缩放。
 .device-layout--split .practice-workspace {
   display: grid;
   grid-template-columns: minmax(480PX, 1fr) minmax(320PX, 420PX);
   gap: 24PX;
-  align-items: stretch;
-  min-height: 0;
-}
-
-.device-layout--split .practice-workspace__book,
-.device-layout--split .practice-workspace__controls {
-  min-height: 0;
+  align-items: start;
 }
 
 .audio-hotspot {
@@ -167,9 +163,9 @@
   &__visual {
     position: relative;
     display: flex;
-    width: 58rpx;
-    height: 58rpx;
-    flex: 0 0 58rpx;
+    width: 52rpx;
+    height: 52rpx;
+    flex: 0 0 52rpx;
     align-items: center;
     justify-content: center;
     border: 4rpx solid #ffffff;
@@ -201,14 +197,34 @@
 
 .practice-recorder {
   margin-top: 8rpx;
-  padding: 16rpx 20rpx;
+  padding: 12rpx 16rpx;
   border-radius: 22rpx;
   background: #ffffff;
 
-  &__heading { display: flex; align-items: center; justify-content: space-between; }
-  &__title { color: #24362f; font-size: 26rpx; font-weight: 700; }
-  &__time { color: #2f876b; font-size: 22rpx; font-variant-numeric: tabular-nums; }
-  &__tip { display: block; margin-top: 14rpx; color: #78867f; font-size: 22rpx; line-height: 1.6; }
+  &__heading { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
+  &__heading-actions { display: flex; flex: none; align-items: center; gap: 12rpx; }
+  &__title { color: #24362f; font-size: 26rpx; font-weight: 700; white-space: nowrap; }
+  &__time { color: #2f876b; font-size: 22rpx; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  &__tip { display: block; margin-top: 8rpx; color: #78867f; font-size: 22rpx; line-height: 1.5; }
+  &__retry {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 44PX;
+    min-height: 44PX;
+    margin: 0;
+    padding: 0 10rpx;
+    border: 0;
+    border-radius: 12rpx;
+    background: transparent;
+    color: #496158;
+    font-size: 22rpx;
+    line-height: 1.3;
+    white-space: nowrap;
+
+    &::after { border: 0; }
+  }
 }
 
 .record-button,
@@ -218,7 +234,7 @@
   align-items: center;
   justify-content: center;
   min-height: 44PX;
-  margin: 12rpx 0 0;
+  margin: 8rpx 0 0;
   padding: 0 16rpx;
   border: 0;
   border-radius: 16rpx;
@@ -245,13 +261,14 @@
   }
 }
 
-.recording-controls { display: flex; gap: 16rpx; }
-.recording-controls .record-button { flex: 1; }
+.recording-controls { display: flex; gap: 12rpx; }
+.recording-controls.device-actions { flex-wrap: nowrap; }
+.recording-controls .record-button { flex: 1 1 0; width: 0; }
 
 .recording-indicator {
   display: flex;
   align-items: center;
-  margin-top: 22rpx;
+  margin-top: 12rpx;
   color: #c9542a;
   font-size: 24rpx;
 
@@ -272,8 +289,8 @@
 }
 
 .recorder-status {
-  margin-top: 22rpx;
-  padding: 20rpx 22rpx;
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
   border-radius: 16rpx;
   font-size: 22rpx;
   line-height: 1.55;
@@ -282,7 +299,12 @@
   &--warning { background: #fff4ee; color: #a95438; }
 }
 
-.record-actions { display: flex; gap: 16rpx; }
+.record-actions { display: flex; gap: 12rpx; }
+.record-actions.device-actions { flex-wrap: nowrap; }
+.record-actions > .record-actions__secondary,
+.record-actions > .check-in-button { flex: 1 1 0; width: 0; }
+// 零 flex-basis 会把边框另计入外宽；两按钮保留相同边框占位。
+.record-actions > .check-in-button { border: 2rpx solid transparent; }
 .record-actions__secondary {
   flex: 1;
   border: 2rpx solid #cbd8d3;
@@ -308,8 +330,10 @@ button[disabled] { opacity: 0.5; }
 
 .practice-navigation {
   display: flex;
-  gap: 16rpx;
-  margin-top: 12rpx;
+  gap: 12rpx;
+  margin-top: 8rpx;
+
+  &.device-actions { flex-wrap: nowrap; }
 
   &__button {
     display: flex;
@@ -379,12 +403,13 @@ button[disabled] { opacity: 0.5; }
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  padding: 30rpx 30rpx 22rpx;
+  padding: 14rpx 26rpx 0;
   background: #ffffff;
 }
 
 .practice-directory-title { font-size: 32rpx; font-weight: 800; }
-.practice-directory-close {
+.practice-directory-close,
+.practice-directory-locate {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -392,17 +417,49 @@ button[disabled] { opacity: 0.5; }
   font-size: 25rpx;
   font-weight: 700;
 }
-.practice-directory-scroll { height: auto; min-height: 0; flex: 1; }
-.practice-directory-group { padding: 26rpx 26rpx 0; }
-.practice-directory-group__title { font-size: 27rpx; font-weight: 800; }
-.practice-directory-items {
+.practice-directory-toolbar {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 16rpx;
-  margin-top: 18rpx;
+  flex-shrink: 0;
+  padding: 0 26rpx;
+  background: #ffffff;
+}
+.practice-directory-current {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  color: #78867f;
+  font-size: 23rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.practice-directory-locate { flex-shrink: 0; }
+.practice-directory-scroll { height: auto; min-height: 0; flex: 1; }
+.practice-directory-group { padding: 0 26rpx; }
+.practice-directory-group__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #dfe8e3;
+  box-sizing: border-box;
+}
+.practice-directory-group__header--current { color: #2f876b; }
+.practice-directory-group__heading { min-width: 0; flex: 1; }
+.practice-directory-group__title { font-size: 27rpx; font-weight: 800; }
+.practice-directory-group__current { display: block; margin-top: 4rpx; font-size: 21rpx; }
+.practice-directory-group__toggle { flex-shrink: 0; color: #78867f; font-size: 22rpx; }
+.practice-directory-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+  padding: 18rpx 0;
 }
 .practice-directory-item {
-  width: calc(50% - 8rpx);
+  width: 100%;
+  min-width: 0;
   padding: 20rpx;
   box-sizing: border-box;
   border: 2rpx solid #d6e0dc;
@@ -496,26 +553,26 @@ button[disabled] { opacity: 0.5; }
 
 .device-layout--pad {
   &.practice-page {
-    padding-top: 8PX;
+    padding-top: 4PX;
     padding-right: 8PX;
     padding-left: 8PX;
   }
 
   .practice-header {
-    padding: 2PX 4PX 6PX;
+    padding: 2PX 4PX 4PX;
 
-    &__course { font-size: 12PX; }
-    &__section { margin-top: 5PX; font-size: 21PX; }
-    &__progress-row { margin-top: 6PX; }
+    &__course { font-size: 11PX; }
+    &__section { margin-top: 3PX; font-size: 18PX; }
+    &__progress-row { margin-top: 2PX; }
     &__progress { font-size: 13PX; }
-    &__directory { padding: 4PX 9PX; font-size: 12PX; }
+    &__directory { padding: 0 8PX; font-size: 11PX; }
   }
 
   .audio-hotspot__visual {
     box-sizing: border-box;
-    width: 29PX;
-    height: 29PX;
-    flex-basis: 29PX;
+    width: 26PX;
+    height: 26PX;
+    flex-basis: 26PX;
     border-width: 2PX;
   }
   .audio-hotspot__icon { margin-left: 1PX; font-size: 10PX; }
@@ -529,24 +586,36 @@ button[disabled] { opacity: 0.5; }
 
   .practice-recorder {
     margin-top: 6PX;
-    padding: 10PX 12PX;
+    padding: 8PX 10PX;
 
     &__title { font-size: 14PX; }
     &__time,
     &__tip { font-size: 12PX; }
+    &__heading-actions { gap: 8PX; }
+    &__retry { padding: 0 6PX; font-size: 12PX; }
   }
 
   .record-button,
   .check-in-button,
   .record-actions__secondary {
     min-height: 44PX;
-    margin-top: 12PX;
+    margin-top: 6PX;
     font-size: 13PX;
     line-height: 44PX;
   }
 
-  .recording-indicator { margin-top: 11PX; font-size: 12PX; }
-  .recorder-status { margin-top: 11PX; padding: 10PX 11PX; font-size: 12PX; }
+  .recording-indicator { margin-top: 6PX; font-size: 12PX; }
+  // 平板红点使用固定尺寸，避免 rpx 随屏宽放大或被文字挤成椭圆。
+  .record-button__dot,
+  .recording-indicator__pulse {
+    flex: 0 0 8PX;
+    width: 8PX;
+    height: 8PX;
+    margin-right: 8PX;
+  }
+  .recording-indicator__pulse { box-shadow: 0 0 0 3PX rgba(232, 93, 61, 0.12); }
+  .recording-indicator--paused .recording-indicator__pulse { box-shadow: none; }
+  .recorder-status { margin-top: 6PX; padding: 8PX; font-size: 12PX; }
   .upload-cancel-button { margin-top: 7PX; font-size: 12PX; }
   .practice-navigation {
     gap: 8PX;
@@ -555,14 +624,19 @@ button[disabled] { opacity: 0.5; }
     &__button { height: 44PX; font-size: 13PX; }
   }
 
-  .practice-directory-header { padding: 15PX 15PX 11PX; }
+  .practice-directory-header { padding: 7PX 13PX 0; }
   .practice-directory-title { font-size: 16PX; }
-  .practice-directory-close { font-size: 13PX; }
-  .practice-directory-group { padding: 13PX 13PX 0; }
+  .practice-directory-close,
+  .practice-directory-locate { font-size: 13PX; }
+  .practice-directory-toolbar { gap: 8PX; padding: 0 13PX; }
+  .practice-directory-current { font-size: 12PX; }
+  .practice-directory-group { padding: 0 13PX; }
+  .practice-directory-group__header { gap: 8PX; padding: 7PX 0; }
   .practice-directory-group__title { font-size: 14PX; }
-  .practice-directory-items { gap: 8PX; margin-top: 9PX; }
+  .practice-directory-group__current { margin-top: 2PX; font-size: 11PX; }
+  .practice-directory-group__toggle { font-size: 11PX; }
+  .practice-directory-items { gap: 8PX; padding: 9PX 0; }
   .practice-directory-item {
-    width: calc(50% - 4PX);
     padding: 10PX;
 
     &__page { font-size: 13PX; }
@@ -580,11 +654,15 @@ button[disabled] { opacity: 0.5; }
 
   .recording-controls,
   .record-actions,
-  .practice-navigation { flex-direction: column; }
+  .practice-navigation { gap: 8PX; }
 
   .recording-controls .record-button,
   .record-actions__secondary,
-  .practice-navigation__button { width: 100%; flex: 1 1 auto; }
+  .check-in-button,
+  .practice-navigation__button { padding-right: 8PX; padding-left: 8PX; font-size: 12PX; }
+
+  .practice-recorder__heading-actions { gap: 6PX; }
+  .practice-recorder__retry { padding: 0 4PX; font-size: 12PX; }
 }
 .practice-directory-item--active { border-color: #2f896c; background: #e4f3ed; }
 .practice-directory-item__page { display: block; font-size: 26rpx; font-weight: 700; }
@@ -593,4 +671,263 @@ button[disabled] { opacity: 0.5; }
   margin-top: 8rpx;
   color: #78867f;
   font-size: 22rpx;
+}
+
+// 平板与手机横屏保留固定阅读区域；手机竖屏继续使用上面的自然高度布局。
+.practice-screen--fitted {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+
+  > .check-in-navigation { flex: none; }
+  > .practice-page--fitted { flex: 1; min-height: 0; }
+}
+
+.practice-page.practice-page--fitted {
+  min-height: 0;
+  overflow: hidden;
+  padding: 4PX 8PX 8PX;
+
+  .practice-page__content {
+    flex: 1;
+    min-height: 0;
+    max-width: none;
+  }
+
+  .practice-header {
+    padding: 2PX 4PX 4PX;
+
+    &__course,
+    &__section {
+      overflow: hidden;
+      min-width: 0;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    &__course { font-size: 12PX; line-height: 17PX; }
+    &__section { margin-top: 3PX; font-size: 20PX; line-height: 26PX; }
+    &__progress-row { min-height: 44PX; gap: 8PX; margin-top: 2PX; }
+    &__progress { font-size: 13PX; white-space: nowrap; }
+    &__directory { flex: none; padding: 0 8PX; font-size: 12PX; }
+  }
+
+  .practice-book-expand {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 44PX;
+    min-height: 44PX;
+    margin-left: auto;
+    padding: 0 8PX;
+    color: #276c58;
+    font-size: 12PX;
+    white-space: nowrap;
+  }
+
+  .practice-workspace {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    gap: 8PX;
+  }
+
+  .practice-workspace__book {
+    position: relative;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .practice-book-viewport {
+    flex: none;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+  }
+
+  // 横屏按宽显示整张图片，在固定书区内部阅读；图片和热点一起滚动。
+  .practice-book-scroll { width: 100%; height: 100%; }
+  .practice-book-page { height: auto; border-radius: 8PX; box-shadow: none; }
+  .practice-book-page__image,
+  .practice-book-page__neighbor { height: auto; }
+  .practice-book-scroll-hint {
+    position: absolute;
+    z-index: 3;
+    bottom: 6PX;
+    left: 50%;
+    max-width: calc(100% - 16PX);
+    padding: 3PX 8PX;
+    border-radius: 16PX;
+    background: rgba(244, 247, 245, 0.92);
+    color: #496158;
+    font-size: 10PX;
+    line-height: 16PX;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  .practice-workspace__controls {
+    width: 100%;
+    height: 224PX;
+    min-height: 0;
+    flex: 0 0 224PX;
+  }
+
+  .practice-recorder {
+    margin-top: 0;
+    padding: 8PX 10PX;
+    border-radius: 12PX;
+
+    &__heading { min-height: 44PX; gap: 8PX; }
+    &__title { font-size: 14PX; }
+    &__time { font-size: 12PX; }
+    &__tip { margin-top: 6PX; font-size: 12PX; }
+    &__heading-actions { gap: 8PX; }
+    &__retry { padding: 0 6PX; font-size: 12PX; }
+  }
+
+  .record-button,
+  .check-in-button,
+  .record-actions__secondary {
+    min-height: 44PX;
+    margin-top: 6PX;
+    padding: 0 8PX;
+    border-radius: 8PX;
+    font-size: 13PX;
+    line-height: 44PX;
+    white-space: nowrap;
+  }
+
+  .recording-controls,
+  .record-actions { gap: 8PX; }
+  .recording-indicator { margin-top: 6PX; font-size: 12PX; }
+  .recorder-status { margin-top: 6PX; padding: 8PX; font-size: 12PX; overflow-wrap: anywhere; }
+  .upload-cancel-button { margin-top: 7PX; font-size: 12PX; }
+
+  .practice-navigation {
+    gap: 8PX;
+    margin-top: 8PX;
+
+    &__button {
+      height: 44PX;
+      padding: 0 8PX;
+      border-radius: 8PX;
+      font-size: 13PX;
+      white-space: nowrap;
+    }
+  }
+}
+
+// iPad 竖屏图面按阅读区宽高等比定框，完整展示整页，不增加书内滚动。
+.practice-page.practice-page--fitted.device-layout--pad:not(.practice-page--landscape) {
+  .practice-header {
+    padding-bottom: 2PX;
+    &__course { font-size: 11PX; line-height: 15PX; }
+    &__section { margin-top: 2PX; font-size: 18PX; line-height: 22PX; }
+    &__progress-row { margin-top: 0; }
+  }
+  .practice-workspace { gap: 6PX; }
+  .practice-workspace__book { align-items: center; }
+  // 为录音完成态保留固定空间，减少空白且不让录音状态切换挤动书页。
+  .practice-workspace__controls { height: 184PX; flex: 0 0 184PX; }
+  .practice-recorder {
+    padding: 6PX 8PX;
+    &__heading { min-height: 24PX; }
+  }
+  .practice-book-page,
+  .practice-book-page__image,
+  .practice-book-page__neighbor { height: 100%; }
+}
+
+.practice-page.practice-page--fitted.practice-page--landscape {
+  padding-left: 8PX;
+  padding-right: 8PX;
+
+  .practice-header {
+    display: flex;
+    min-height: 44PX;
+    flex-direction: row;
+    align-items: center;
+    gap: 10PX;
+
+    &__course { max-width: 40%; flex: 0 1 auto; font-size: 11PX; }
+    &__section { flex: 1; margin-top: 0; font-size: 14PX; line-height: 20PX; }
+    &__progress-row { flex: none; margin-top: 0; }
+    &__progress { font-size: 12PX; }
+  }
+
+  .practice-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180PX;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 8PX;
+    align-items: stretch;
+  }
+
+  .practice-workspace__book { height: 100%; }
+  .practice-workspace__controls { height: 100%; flex: none; }
+
+  .practice-recorder {
+    padding: 6PX 8PX;
+
+    &__heading { min-height: 18PX; gap: 4PX; line-height: 18PX; }
+    &__title { font-size: 13PX; }
+    &__heading-actions { gap: 4PX; }
+    &__tip { margin-top: 4PX; line-height: 16PX; }
+    &__retry {
+      width: 100%;
+      min-height: 44PX;
+      margin-top: 4PX;
+      border: 1PX solid #cbd8d3;
+      border-radius: 8PX;
+      box-sizing: border-box;
+    }
+  }
+
+  .recording-controls,
+  .record-actions { flex-direction: column; gap: 4PX; margin-top: 4PX; }
+  .recording-controls .record-button,
+  .record-actions > .record-actions__secondary,
+  .record-actions > .check-in-button { width: 100%; flex: none; margin-top: 0; }
+
+  .record-button,
+  .check-in-button,
+  .record-actions__secondary,
+  .practice-recorder__retry { height: 44PX; min-height: 44PX; box-sizing: border-box; line-height: normal; }
+
+  .practice-navigation { gap: 6PX; margin-top: 6PX; }
+  .practice-navigation__button { min-width: 0; padding: 0 4PX; font-size: 12PX; }
+
+  // 横屏宽度不应放大热点的视觉图标，点击范围仍为 44px。
+  .audio-hotspot__visual { box-sizing: border-box; width: 26PX; height: 26PX; flex-basis: 26PX; border-width: 2PX; }
+  .audio-hotspot__icon { margin-left: 1PX; font-size: 10PX; }
+  .audio-hotspot__number { right: -4PX; bottom: -4PX; width: 13PX; height: 13PX; font-size: 9PX; }
+
+  &.device-layout--pad .practice-workspace { grid-template-columns: minmax(0, 1fr) 180PX; }
+}
+
+@media (max-width: 700PX) {
+  .practice-page.practice-page--fitted.practice-page--landscape {
+    .practice-workspace { grid-template-columns: minmax(0, 1fr) 160PX; }
+  }
+}
+
+@supports (padding-bottom: constant(safe-area-inset-bottom)) {
+  .practice-page.practice-page--fitted.device-layout {
+    padding-bottom: calc(8PX + constant(safe-area-inset-bottom));
+    padding-left: calc(8PX + constant(safe-area-inset-left));
+    padding-right: calc(8PX + constant(safe-area-inset-right));
+  }
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .practice-page.practice-page--fitted.device-layout {
+    padding-bottom: calc(8PX + env(safe-area-inset-bottom));
+    padding-left: calc(8PX + env(safe-area-inset-left));
+    padding-right: calc(8PX + env(safe-area-inset-right));
+  }
 }

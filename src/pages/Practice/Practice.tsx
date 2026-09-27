@@ -2,7 +2,7 @@ import { Button, Text, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
 import { useMemo } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
-import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
+import { buildBookPracticeBundle, buildFullBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import CheckInNavigation from "../CheckInDetail/CheckInNavigation";
@@ -16,19 +16,26 @@ export default function Practice() {
   const router = useRouter();
   const bookId = router.params?.bookId;
   const rawPracticeIndex = router.params?.practice;
+  const rawPageIndex = router.params?.page;
   const route = useMemo(() => {
     try {
       if (typeof bookId !== "string" || !bookId) {
         throw new Error("训练链接缺少教材，请重新选择教材");
       }
       // 只接受明确的十进制整数；缺失、负数或越界都不能悄悄落到首尾页。
-      if (typeof rawPracticeIndex !== "string" || !/^(?:0|[1-9]\d*)$/.test(rawPracticeIndex)) {
+      const rawIndex = rawPageIndex ?? rawPracticeIndex;
+      if (typeof rawIndex !== "string" || !/^(?:0|[1-9]\d*)$/.test(rawIndex)) {
         throw new Error("训练编号无效，请重新选择教材");
       }
-      const practiceIndex = Number(rawPracticeIndex);
-      const bundle = buildBookPracticeBundle(bookId);
+      const index = Number(rawIndex);
+      const bundle = buildFullBookPracticeBundle(bookId);
       if (!bundle) throw new Error("找不到这本教材，请重新选择教材");
-      if (!Number.isSafeInteger(practiceIndex) || practiceIndex >= bundle.practices.length) {
+      // 新链接 page 是源图片索引；旧 practice 必须先按原音频页列表解析。
+      const imageIndex = rawPageIndex !== undefined
+        ? index
+        : buildBookPracticeBundle(bookId)?.practices[index]?.imageIndex;
+      const practiceIndex = bundle.practices.findIndex((practice) => practice.imageIndex === imageIndex);
+      if (!Number.isSafeInteger(index) || practiceIndex < 0) {
         throw new Error("训练编号超出本书范围，请重新选择教材");
       }
       return { bundle, practiceIndex, practice: bundle.practices[practiceIndex] };
@@ -38,7 +45,7 @@ export default function Practice() {
         errorMessage: error instanceof Error ? error.message : "教材暂时无法读取，请重新选择教材",
       };
     }
-  }, [bookId, rawPracticeIndex]);
+  }, [bookId, rawPracticeIndex, rawPageIndex]);
 
   const goBack = () => {
     const pages = Taro.getCurrentPages?.() ?? [];
@@ -48,8 +55,8 @@ export default function Practice() {
   };
 
   return (
-    <View className={`practice-screen ${layoutClassName}`}>
-      <CheckInNavigation title='听力跟读训练' onBack={goBack} />
+    <View className={`practice-screen ${layoutClassName}${layout.isPad || layout.orientation === "landscape" ? " practice-screen--fitted" : ""}`}>
+      <CheckInNavigation title='听力跟读训练' onBack={goBack} compact />
       {route.bundle ? (
         // 验证通过才挂载会话；换书或外部训练路由时先清理旧会话，保持 Hook 顺序稳定。
         <PracticeSession

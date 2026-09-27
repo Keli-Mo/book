@@ -1,11 +1,11 @@
-import { Button, Image, Swiper, SwiperItem, Text, View } from "@tarojs/components";
+import { Button, Image, PageMeta, ScrollView, Swiper, SwiperItem, Text, View, type ScrollViewProps } from "@tarojs/components";
 import Taro, {
   useDidHide,
   useDidShow,
   useUnload,
 } from "@tarojs/taro";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { saveReadingProgress } from "@/features/bookLibrary/readingProgress";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { saveFullReadingProgress } from "@/features/bookLibrary/readingProgress";
 import {
   createTrackAudioController,
   stopPracticePlayback,
@@ -14,7 +14,7 @@ import {
   type BookPracticeBundle,
   type ListeningPractice,
 } from "@/features/listeningPractice/bookPractice";
-import { clampHotspotCenter, fitContainSize } from "@/features/listeningPractice/hotspotLayout";
+import { clampHotspotCenter, fitImageToBounds, fitImageToWidth } from "@/features/listeningPractice/hotspotLayout";
 import {
   isPracticeSwiperTouchChange,
   PAGE_TURN_DURATION_MS,
@@ -102,6 +102,37 @@ const readNaturalImageSize = (value: unknown): NaturalImageSize | null => {
   return { width, height };
 };
 
+function PracticeControls({ fitted, children }: { fitted: boolean; children: ReactNode }) {
+  return fitted ? (
+    <ScrollView className='practice-workspace__controls' scrollY>
+      {children}
+    </ScrollView>
+  ) : <View className='practice-workspace__controls'>{children}</View>;
+}
+
+function PracticeBookPage({ scrollable, active, imageSize, onScroll, children }: {
+  scrollable: boolean;
+  active: boolean;
+  imageSize: NaturalImageSize | null;
+  onScroll?: ScrollViewProps["onScroll"];
+  children: ReactNode;
+}) {
+  const page = (
+    <View
+      className='practice-book-page'
+      style={scrollable && imageSize ? { width: `${imageSize.width}px`, height: `${imageSize.height}px` } : undefined}
+    >
+      {children}
+    </View>
+  );
+  return scrollable ? (
+    // 成功切页才重建原生滚动节点；录音状态更新和取消切页保留阅读位置。
+    <ScrollView key={active ? "active" : "neighbor"} className='practice-book-scroll' scrollY onScroll={onScroll}>
+      {page}
+    </ScrollView>
+  ) : page;
+}
+
 export function PracticeSession({
   bundle,
   initialPracticeIndex,
@@ -121,6 +152,9 @@ export function PracticeSession({
   persistReadingProgress?: boolean;
   onPracticeChange?: (index: number) => void;
 }) {
+  const isLandscapeLayout = layout.orientation === "landscape";
+  const isPadPortraitLayout = layout.isPad && !isLandscapeLayout;
+  const isFittedLayout = layout.isPad || isLandscapeLayout;
   const directoryGroups = useMemo(
     () => buildPracticeDirectoryGroups(bundle.practices),
     [bundle]
@@ -153,9 +187,12 @@ export function PracticeSession({
   const [pendingCheckIn, setPendingCheckIn] = useState<PendingCheckIn | null>(null);
   const [isSavingRecording, setIsSavingRecording] = useState(false);
   const [pendingRestoreRefresh, setPendingRestoreRefresh] = useState(0);
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-  const [bookSlotSize, setBookSlotSize] = useState({ width: 0, height: 0 });
-  const [naturalImageSize, setNaturalImageSize] = useState({ width: 0, height: 0 });
+  const [bookBounds, setBookBounds] = useState({ width: 0, height: 0 });
+  const [bookScrollHintDismissed, setBookScrollHintDismissed] = useState(false);
+  const [loadedImage, setLoadedImage] = useState<{
+    imageUrl: string;
+    size: NaturalImageSize;
+  } | null>(null);
   const [bookSwiperCurrent, setBookSwiperCurrent] = useState(practiceIndex);
   const [bookSwiperDuration, setBookSwiperDuration] = useState(PAGE_TURN_DURATION_MS);
   const [bookSwipeLocked, setBookSwipeLocked] = useState(false);
@@ -181,6 +218,7 @@ export function PracticeSession({
   const recordingPlaybackSnapshotRef = useRef<Pick<PendingCheckIn, "requestId" | "localPath" | "contentSha1"> | null>(null);
   const completionInFlightRef = useRef(false);
   const bookSwiperCurrentRef = useRef(practiceIndex);
+  const bookMeasurementSeqRef = useRef(0);
   bookSwiperCurrentRef.current = bookSwiperCurrent;
   const recorderUnsubscribeRef = useRef<(() => void) | null>(null);
   const recorderTerminalSinkRef = useRef<RecorderTerminalSink | null>(null);
@@ -230,34 +268,20 @@ export function PracticeSession({
 
   const measureBookImage = useMemo(
     () => () => {
-      if (typeof Taro.createSelectorQuery !== "function") return;
-      const query = Taro.createSelectorQuery();
-      query.select(".practice-workspace__book").boundingClientRect();
-      query.select(".practice-book-page").boundingClientRect();
-      query.exec((results) => {
-        const slot = Array.isArray(results) ? results[0] : null;
-        const image = Array.isArray(results) ? results[1] : results;
-        if (
-          slot &&
-          !Array.isArray(slot) &&
-          Number.isFinite(slot.width) &&
-          Number.isFinite(slot.height) &&
-          slot.width > 0 &&
-          slot.height > 0
-        ) {
-          setBookSlotSize({ width: slot.width, height: slot.height });
-        }
-        if (
-          image &&
-          !Array.isArray(image) &&
-          Number.isFinite(image.width) &&
-          Number.isFinite(image.height) &&
-          image.width > 0 &&
-          image.height > 0
-        ) {
-          setImageSize({ width: image.width, height: image.height });
-        }
-      });
+      if (!mountedRef.current || pageHiddenRef.current || typeof Taro.createSelectorQuery !== "function") return;
+      const requestSeq = ++bookMeasurementSeqRef.current;
+      Taro.createSelectorQuery()
+        .select(".practice-workspace__book")
+        .boundingClientRect((rect) => {
+          // 图片加载和窗口变化可能连续发起测量，仅接收仍挂载页面的最新请求。
+          if (!mountedRef.current || pageHiddenRef.current || requestSeq !== bookMeasurementSeqRef.current) return;
+          if (rect && !Array.isArray(rect) && Number.isFinite(rect.width) && rect.width > 0) {
+            const height = Number.isFinite(rect.height) && rect.height > 0 ? rect.height : 0;
+            setBookBounds((previous) => previous.width === rect.width && previous.height === height
+              ? previous : { width: rect.width, height });
+          }
+        })
+        .exec();
     },
     [],
   );
@@ -282,7 +306,7 @@ export function PracticeSession({
   useEffect(() => {
     const cached = naturalImageSizeCache.get(practice.imageUrl);
     if (cached) {
-      setNaturalImageSize(cached);
+      setLoadedImage({ imageUrl: practice.imageUrl, size: cached });
       return undefined;
     }
     let cancelled = false;
@@ -293,7 +317,7 @@ export function PracticeSession({
         const size = readNaturalImageSize(result);
         if (cancelled || !size) return;
         naturalImageSizeCache.set(practice.imageUrl, size);
-        setNaturalImageSize(size);
+        setLoadedImage({ imageUrl: practice.imageUrl, size });
       },
     });
     return () => {
@@ -301,22 +325,30 @@ export function PracticeSession({
     };
   }, [practice.imageUrl]);
 
+  const naturalImageSize = loadedImage?.imageUrl === practice.imageUrl
+    ? loadedImage.size
+    : naturalImageSizeCache.get(practice.imageUrl);
   const fittedBookSize = useMemo(
-    () => fitContainSize(bookSlotSize, naturalImageSize),
-    [bookSlotSize, naturalImageSize],
+    () => naturalImageSize
+      ? isPadPortraitLayout
+        ? fitImageToBounds(bookBounds, naturalImageSize)
+        : fitImageToWidth(bookBounds.width, naturalImageSize)
+      : null,
+    [bookBounds.width, bookBounds.height, isPadPortraitLayout, naturalImageSize],
   );
+  // 热点使用实际施加在图面上的尺寸，不再反复读取由录音区挤压后的高度。
+  const imageSize = fittedBookSize ?? { width: 0, height: 0 };
 
   useEffect(() => {
-    // 图片加载、窗口变化、等比缩放和录音控件增高后都重测可用槽位与热点参考尺寸。
+    // 阅读区由窗口及布局决定，录音状态不参与教材尺寸计算。
     measureBookImage();
   }, [
-    fittedBookSize?.height,
-    fittedBookSize?.width,
     layout.windowHeight,
     layout.windowWidth,
+    isFittedLayout,
+    isLandscapeLayout,
     measureBookImage,
     practice.imageUrl,
-    recordingState,
   ]);
 
   const clampedHotspots = useMemo(
@@ -967,9 +999,7 @@ export function PracticeSession({
         .filter((item) =>
           item.completedAtMs === undefined &&
           item.context.bookId === bundle.book.id &&
-          item.context.practiceId === requestedContext.practice.id &&
-          (bundle.book.seriesId === "think" ||
-            item.context.practiceIndex === requestedContext.practiceIndex),
+          item.context.practiceId === requestedContext.practice.id,
         )
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0];
       if (!restored || !canContinueRestore()) return;
@@ -1027,9 +1057,14 @@ export function PracticeSession({
   useDidShow(() => {
     const wasHidden = pageHiddenRef.current;
     pageHiddenRef.current = false;
+    // 后台旋转可能暂时没有有效布局；回到前台后重新读取可见阅读区。
+    if (wasHidden || isFittedLayout) {
+      if (typeof Taro.nextTick === "function") Taro.nextTick(measureBookImage);
+      else measureBookImage();
+    }
     const visiblePractice = practiceContextRef.current;
     if (persistReadingProgress) {
-      saveReadingProgress(bundle.book.id, visiblePractice.practiceIndex);
+      saveFullReadingProgress(bundle.book.id, visiblePractice.practice.imageIndex);
     }
     clearHiddenStopRetry();
     // 重试可能在后台完成，返回时用同一录音的最新快照恢复路径和持久状态。
@@ -1049,6 +1084,7 @@ export function PracticeSession({
     practiceSwitchAttemptRef.current += 1;
     pendingRestoreAttemptRef.current += 1;
     pageHiddenRef.current = true;
+    bookMeasurementSeqRef.current += 1;
     // 页面隐藏后停止两路播放；录音优先暂停，旧机型不支持暂停时安全停止。
     stopPracticePlayback(
       modelAudioControllerRef.current,
@@ -1227,9 +1263,12 @@ export function PracticeSession({
     // 同步提交上下文后再 setState，切页提交后的迟到录音不能趁下一次 render 前挂到新训练。
     pendingRestoreAttemptRef.current += 1;
     practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
+    setBookScrollHintDismissed(true);
     setBookSwiperCurrent(nextIndex);
     setCurrentPractice({ practiceIndex: nextIndex, practice: nextPractice });
-    if (persistReadingProgress) saveReadingProgress(bundle.book.id, nextIndex);
+    // 页面允许纵向滚动后，成功切页应从新教材顶部开始阅读。
+    void Taro.pageScrollTo({ scrollTop: 0, duration: 0 });
+    if (persistReadingProgress) saveFullReadingProgress(bundle.book.id, nextPractice.imageIndex);
     onPracticeChange?.(nextIndex);
   };
 
@@ -1554,17 +1593,32 @@ export function PracticeSession({
     recordingState === "recording" || recordingState === "paused"
       ? recordingElapsedMs
       : recordingDurationMs;
+  const bookViewportSize = isLandscapeLayout ? bookBounds : fittedBookSize;
+  const retryRecordingButton = recordingState === "recorded" && !isSavingRecording && pendingCheckIn ? (
+    <Button className='practice-recorder__retry device-touch-target' onClick={startRecording}>
+      重新录制
+    </Button>
+  ) : null;
 
   return (
-    <View className={`practice-page ${layoutClassName}`}>
+    <View className={`practice-page ${layoutClassName}${isFittedLayout ? " practice-page--fitted" : ""}${layout.orientation === "landscape" ? " practice-page--landscape" : ""}`}>
+      <PageMeta pageStyle={isDirectoryOpen ? "overflow: hidden;" : ""} />
       <View className='practice-page__content device-layout__content'>
         <View className='practice-header'>
           <Text className='practice-header__course'>{bundle.book.title}</Text>
-          <Text className='practice-header__section'>{practice.sectionTitle}</Text>
+          <Text className='practice-header__section'>{isLandscapeLayout ? `· ${practice.sectionTitle}` : practice.sectionTitle}</Text>
           <View className='practice-header__progress-row'>
             <Text className='practice-header__progress'>
-              跟读训练 {practiceIndex + 1} / {bundle.practices.length}
+              {!isLandscapeLayout && "跟读训练 "}{practiceIndex + 1} / {bundle.practices.length}
             </Text>
+            {isFittedLayout && !isLandscapeLayout && (
+              <Text
+                className='practice-book-expand device-touch-target'
+                onClick={() => Taro.previewImage({ current: practice.imageUrl, urls: [practice.imageUrl] })}
+              >
+                放大查看
+              </Text>
+            )}
             <Text
               className='practice-header__directory device-touch-target'
               onClick={openPracticeDirectory}
@@ -1579,10 +1633,10 @@ export function PracticeSession({
             <View
               className='practice-book-viewport'
               style={
-                fittedBookSize
+                bookViewportSize
                   ? {
-                      width: `${fittedBookSize.width}px`,
-                      height: `${fittedBookSize.height}px`,
+                      width: `${bookViewportSize.width}px`,
+                      height: `${bookViewportSize.height}px`,
                     }
                   : undefined
               }
@@ -1604,7 +1658,16 @@ export function PracticeSession({
               >
                 {bundle.practices.map((item, index) => (
                   <SwiperItem key={item.id} className='practice-book-slide'>
-                    <View className='practice-book-page'>
+                    <PracticeBookPage
+                      scrollable={isLandscapeLayout && retainedSlideIndexes.has(index)}
+                      active={index === practiceIndex}
+                      imageSize={index === practiceIndex ? fittedBookSize : null}
+                      onScroll={index === practiceIndex ? (event) => {
+                        if (event.detail.scrollTop > 0 && index === practiceContextRef.current.practiceIndex) {
+                          setBookScrollHintDismissed(true);
+                        }
+                      } : undefined}
+                    >
                       {retainedSlideIndexes.has(index) ? (
                         <Image
                           className={
@@ -1613,14 +1676,14 @@ export function PracticeSession({
                               : "practice-book-page__neighbor"
                           }
                           src={item.imageUrl}
-                          mode={fittedBookSize ? "scaleToFill" : "aspectFit"}
+                          mode={isLandscapeLayout ? "widthFix" : index === practiceIndex && fittedBookSize ? "scaleToFill" : "aspectFit"}
                           webp
                           onLoad={(event) => {
                             const size = readNaturalImageSize(event.detail);
                             if (size) {
                               naturalImageSizeCache.set(item.imageUrl, size);
                               if (index === practiceContextRef.current.practiceIndex) {
-                                setNaturalImageSize(size);
+                                setLoadedImage({ imageUrl: item.imageUrl, size });
                               }
                             }
                             if (index === practiceContextRef.current.practiceIndex) {
@@ -1654,20 +1717,26 @@ export function PracticeSession({
                           ))}
                         </View>
                       ) : null}
-                    </View>
+                    </PracticeBookPage>
                   </SwiperItem>
                 ))}
               </Swiper>
+              {isLandscapeLayout && !bookScrollHintDismissed && fittedBookSize && fittedBookSize.height > bookBounds.height && (
+                <Text className='practice-book-scroll-hint'>上下滑动阅读</Text>
+              )}
             </View>
           </View>
 
-          <View className='practice-workspace__controls'>
+          <PracticeControls fitted={isFittedLayout}>
             <View className='practice-recorder'>
               <View className='practice-recorder__heading'>
                 <Text className='practice-recorder__title'>我的跟读</Text>
-                <Text className='practice-recorder__time'>
-                  {shownDuration > 0 ? formatDuration(shownDuration) : "最长 5:00"}
-                </Text>
+                <View className='practice-recorder__heading-actions'>
+                  {!isLandscapeLayout && retryRecordingButton}
+                  <Text className='practice-recorder__time'>
+                    {shownDuration > 0 ? formatDuration(shownDuration) : "最长 5:00"}
+                  </Text>
+                </View>
               </View>
               {keepModelAudioOnTurn && activeModelTrack &&
                 !practice.tracks.some((track) => track.url === activeModelTrack.url) && (
@@ -1797,7 +1866,7 @@ export function PracticeSession({
                     {isSavingRecording
                       ? "正在安全保存录音，请稍候…"
                       : pendingCheckIn?.recoverable
-                        ? `已安全保存在本机（${formatDuration(recordingDurationMs)}），请回听确认。`
+                        ? isLandscapeLayout ? "录音已保存" : `已安全保存在本机（${formatDuration(recordingDurationMs)}），请回听确认。`
                         : `录音保存失败（${formatDuration(recordingDurationMs)}），请重试保存；关闭小程序后可能无法恢复。`}
                   </Text>
                   {!isSavingRecording && pendingCheckIn && (
@@ -1813,18 +1882,13 @@ export function PracticeSession({
                           {isPlayingRecording ? "停止回听" : "回听录音"}
                         </Button>
                         <Button
-                          className='record-actions__secondary device-touch-target'
-                          onClick={startRecording}
+                          className='check-in-button device-touch-target'
+                          onClick={submitCheckIn}
                         >
-                          重新录制
+                          完成练习
                         </Button>
                       </View>
-                      <Button
-                        className='check-in-button device-touch-target'
-                        onClick={submitCheckIn}
-                      >
-                        完成练习
-                      </Button>
+                      {isLandscapeLayout && retryRecordingButton}
                     </>
                   )}
                 </>
@@ -1840,7 +1904,7 @@ export function PracticeSession({
                   practiceIndex > 0 && requestPracticeSwitch(practiceIndex - 1)
                 }
               >
-                <Text>上一个训练</Text>
+                <Text>{isLandscapeLayout ? "上一页" : "上一个训练"}</Text>
               </View>
               <View
                 className={`practice-navigation__button device-touch-target practice-navigation__button--primary ${
@@ -1853,10 +1917,10 @@ export function PracticeSession({
                   requestPracticeSwitch(practiceIndex + 1)
                 }
               >
-                <Text>下一个训练</Text>
+                <Text>{isLandscapeLayout ? "下一页" : "下一个训练"}</Text>
               </View>
             </View>
-          </View>
+          </PracticeControls>
         </View>
       </View>
 

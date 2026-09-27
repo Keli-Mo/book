@@ -49,27 +49,39 @@ export const clampHotspotCenter = (
   };
 };
 
-/** 在可用槽位内等比放下教材图，避免 widthFix 把整页撑出滚动。 */
-export const fitContainSize = (
-  slot: HotspotImageSize,
+/** 只按列宽保持教材比例；录音区变高时由页面滚动承接，不再挤小教材。 */
+export const fitImageToWidth = (
+  width: number,
   natural: HotspotImageSize,
 ): HotspotImageSize | null => {
   if (
-    !Number.isFinite(slot.width) ||
-    !Number.isFinite(slot.height) ||
+    !Number.isFinite(width) ||
     !Number.isFinite(natural.width) ||
     !Number.isFinite(natural.height) ||
-    slot.width <= 0 ||
-    slot.height <= 0 ||
+    width <= 0 ||
     natural.width <= 0 ||
     natural.height <= 0
   ) {
     return null;
   }
 
-  const scale = Math.min(slot.width / natural.width, slot.height / natural.height);
   return {
-    width: Math.round(natural.width * scale),
-    height: Math.round(natural.height * scale),
+    width,
+    height: Math.round(width * natural.height / natural.width),
+  };
+};
+
+/** 横屏和 iPad 使用独立的阅读区边界，录音内容不参与边界计算。 */
+export const fitImageToBounds = (
+  bounds: HotspotImageSize,
+  natural: HotspotImageSize,
+): HotspotImageSize | null => {
+  if ([bounds.width, bounds.height, natural.width, natural.height]
+    .some((length) => !Number.isFinite(length) || length <= 0)) return null;
+
+  const scale = Math.min(bounds.width / natural.width, bounds.height / natural.height);
+  return {
+    width: Math.min(bounds.width, natural.width * scale),
+    height: Math.min(bounds.height, natural.height * scale),
   };
 };

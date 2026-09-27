@@ -1,7 +1,7 @@
 import type { ListeningPractice } from "./bookPractice";
 
 // 目录仅消费页号、章节和音频数，旧教材模型无需具备完整通用训练项字段。
-type DirectoryPractice = Pick<ListeningPractice, "id" | "pageNumber" | "sectionTitle"> & {
+type DirectoryPractice = Pick<ListeningPractice, "id" | "pageNumber" | "pageLabel" | "sectionTitle"> & {
   tracks: readonly unknown[];
 };
 
@@ -9,6 +9,7 @@ export interface PracticeDirectoryItem {
   id: string;
   practiceIndex: number;
   pageNumber: number;
+  pageLabel?: string;
   trackCount: number;
 }
 
@@ -25,18 +26,17 @@ export const buildPracticeDirectoryGroups = (
   practices: readonly DirectoryPractice[]
 ): PracticeDirectoryGroup[] => {
   const groups: PracticeDirectoryGroup[] = [];
-  const groupByTitle = new Map<string, PracticeDirectoryGroup>();
 
   practices.forEach((practice, practiceIndex) => {
-    let group = groupByTitle.get(practice.sectionTitle);
+    let group = groups[groups.length - 1];
 
-    if (!group) {
+    // 同名小节会在不同章节重复出现，只合并连续页面，保持目录与整本页序一致。
+    if (!group || group.title !== practice.sectionTitle) {
       group = {
         id: `practice-directory-group-${groups.length}`,
         title: practice.sectionTitle,
         items: [],
       };
-      groupByTitle.set(practice.sectionTitle, group);
       groups.push(group);
     }
 
@@ -44,6 +44,7 @@ export const buildPracticeDirectoryGroups = (
       id: practice.id,
       practiceIndex,
       pageNumber: practice.pageNumber,
+      ...(practice.pageLabel ? { pageLabel: practice.pageLabel } : {}),
       trackCount: practice.tracks.length,
     });
   });

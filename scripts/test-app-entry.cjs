@@ -94,7 +94,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
   );
   assert.equal(
     resolvePracticeEntryUrl(null),
-    "/pages/Practice/Practice?bookId=3&practice=0",
+    "/pages/Practice/Practice?bookId=3&page=0",
     "无进度时跟读入口应使用第一本可用教材",
   );
   const { buildBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
@@ -115,7 +115,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
   );
   assert.equal(
     resolvePracticeEntryUrl({ version: 1, bookId: "28", practiceIndex: 999 }),
-    "/pages/Practice/Practice?bookId=3&practice=0",
+    "/pages/Practice/Practice?bookId=3&page=0",
     "无效 Think 旧进度应回退到可用教材，不应打开错误页面",
   );
 

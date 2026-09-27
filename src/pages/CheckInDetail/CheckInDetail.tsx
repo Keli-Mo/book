@@ -2,9 +2,8 @@ import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidHide, useDidShow, useRouter, useShareAppMessage, useUnload } from "@tarojs/taro";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
-import { buildThinkBookReader } from "@/features/bookLibrary/thinkBookReader";
 import { createTrackAudioController, getPlaybackPositionMs } from "@/features/listeningPractice/audioPlayback";
-import { buildBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
+import { buildBookPracticeBundle, buildFullBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import type { CheckInSubmissionHandle } from "@/features/listeningPractice/checkInSubmissionCoordinator";
 import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
 import { getPendingCheckInStore, logRecordingDiagnostic, diagnoseLocalRecordingFailure, recoverPendingRecording, getActivePendingRecovery } from "@/features/listeningPractice/pendingCheckInRuntime";
@@ -55,7 +54,8 @@ export default function CheckInDetail() {
   const values = useMemo(() => detail?.source === "local" ? {
     id: detail.pending.share?.id || "", shareToken: detail.pending.share?.shareToken || "",
     expiresAtMs: detail.pending.share?.expiresAtMs || 0, bookId: detail.pending.context.bookId,
-    bookTitle: detail.pending.context.bookTitle, practiceIndex: detail.pending.context.practiceIndex,
+    bookTitle: detail.pending.context.bookTitle, practiceId: detail.pending.context.practiceId,
+    practiceIndex: detail.pending.context.practiceIndex,
     pageNumber: detail.pending.context.pageNumber, sectionTitle: detail.pending.context.sectionTitle,
     imageUrl: detail.pending.context.imageUrl, durationMs: detail.pending.durationMs,
     createdAt: detail.pending.completedAtMs ?? detail.pending.createdAtMs ?? detail.pending.updatedAtMs,
@@ -66,26 +66,39 @@ export default function CheckInDetail() {
   } : null, [detail]);
   const hasValidShare = Boolean(values?.id && values.shareToken && values.expiresAtMs > Date.now());
 
-  const practiceUrl = useMemo(() => {
+  const practiceTarget = useMemo(() => {
     if (!values) return null;
     try {
-      const thinkReader = buildThinkBookReader(values.bookId);
-      if (thinkReader) {
-        const page = Number.isSafeInteger(values.pageNumber)
-          ? thinkReader.pages.find((candidate) => candidate.pageNumber === values.pageNumber)
-          : null;
-        return page
-          ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${encodeURIComponent(values.bookId)}&page=${page.imageIndex}`
-          : null;
+      const bundle = buildFullBookPracticeBundle(values.bookId);
+      if (!bundle) return null;
+      // 旧音频列表、新全页列表的下标不同；已保存的稳定 ID 始终优先。
+      let practice = bundle.practices.find((candidate) => candidate.id === values.practiceId);
+      if (!practice) {
+        const imagePage = bundle.practices.find((candidate) => candidate.imageUrl === values.imageUrl);
+        const numberedPage = Number.isSafeInteger(values.pageNumber)
+          ? bundle.practices.find((candidate) => candidate.pageNumber === values.pageNumber)
+          : undefined;
+        // 两个真实坐标相互矛盾时不能选择其中一个，避免把录音带到别的教材页。
+        if (imagePage && numberedPage && imagePage.id !== numberedPage.id) return null;
+        practice = imagePage ?? numberedPage;
+        const hasPageIdentity = Boolean(values.practiceId || values.imageUrl) ||
+          (values.pageNumber !== undefined && values.pageNumber !== null);
+        if (!practice && !hasPageIdentity && Number.isSafeInteger(values.practiceIndex) && values.practiceIndex >= 0) {
+          // 仅为缺少任何稳定定位信息的旧记录解释旧音频索引，不改写录音上下文。
+          practice = buildBookPracticeBundle(values.bookId)?.practices[values.practiceIndex];
+        }
       }
-      if (!Number.isInteger(values.practiceIndex)) return null;
-      const bundle = buildBookPracticeBundle(values.bookId);
-      if (!bundle || values.practiceIndex < 0 || values.practiceIndex >= bundle.practices.length) return null;
-      return `/pages/Practice/Practice?bookId=${encodeURIComponent(values.bookId)}&practice=${values.practiceIndex}`;
+      if (!practice) return null;
+      const route = bundle.book.seriesId === "think" ? "ThinkBookReader/ThinkBookReader" : "Practice/Practice";
+      return { practice, url: `/pages/${route}?bookId=${encodeURIComponent(values.bookId)}&page=${practice.imageIndex}` };
     } catch (_error) {
       return null;
     }
   }, [values]);
+  const practiceUrl = practiceTarget?.url ?? null;
+  const recordedPageNumber = practiceTarget?.practice.pageNumber ?? values?.pageNumber;
+  const recordedPageLabel = practiceTarget?.practice.pageLabel ??
+    (recordedPageNumber === 0 ? "封面" : Number.isSafeInteger(recordedPageNumber) ? `教材页 ${recordedPageNumber}` : "教材页信息缺失");
 
   const openPractice = () => {
     const pages = Taro.getCurrentPages();
@@ -413,7 +426,7 @@ export default function CheckInDetail() {
         <View className='check-in-course-card__content'>
           <Text className='check-in-course-card__book'>{values.bookTitle}</Text>
           <Text className='check-in-course-card__section'>{values.sectionTitle}</Text>
-          <Text className='check-in-course-card__meta'>第 {values.practiceIndex + 1} 个训练 · 教材页 {values.pageNumber}</Text>
+          <Text className='check-in-course-card__meta'>第 {values.practiceIndex + 1} 个训练 · {recordedPageLabel}</Text>
         </View>
       </View>
       <View className='shared-recording'>

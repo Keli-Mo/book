@@ -33,6 +33,7 @@ export type ListeningPractice = {
   bookId: string;
   imageIndex: number;
   pageNumber: number;
+  pageLabel?: string;
   imageUrl: string;
   sectionTitle: string;
   tracks: PracticeTrack[];
@@ -318,4 +319,37 @@ export const buildBookPracticeBundle = (
     });
 
   return freezeBundle(book, practices);
+};
+
+/** 全页训练按原图片索引展开；旧构建器保留音频索引，供历史进度和录音定位。 */
+export const buildFullBookPracticeBundle = (
+  bookId: string,
+): BookPracticeBundle | null => {
+  // 沿用旧构建器的全量素材校验，已有音频页的数据和顺序也保持不变。
+  const original = buildBookPracticeBundle(bookId);
+  if (!original) return null;
+
+  const images = concatImages[bookId];
+  const catalog = catalogLists[bookId];
+  const originalByImageIndex = new Map(
+    original.practices.map((practice) => [practice.imageIndex, practice]),
+  );
+  const practices = images.map((imageUrl, imageIndex): ListeningPractice => {
+    const audioPractice = originalByImageIndex.get(imageIndex);
+    if (audioPractice) return audioPractice;
+
+    // 非数字图片已经过封面白名单校验；Think 的数字 0 同样表示封面。
+    const pageNumber = parseImagePageNumber(imageUrl) ?? 0;
+    return {
+      id: `${bookId}-page-${pageNumber}`,
+      bookId,
+      imageIndex,
+      pageNumber,
+      ...(pageNumber === 0 ? { pageLabel: "封面" } : {}),
+      imageUrl,
+      sectionTitle: getSectionTitle(catalog, imageIndex),
+      tracks: [],
+    };
+  });
+  return freezeBundle(original.book, practices);
 };

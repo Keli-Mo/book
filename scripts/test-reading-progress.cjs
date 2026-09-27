@@ -71,4 +71,59 @@ assert.equal(api(createStore(null, { writeThrows: true })).saveReadingProgress("
 assert.equal(api(createStore(null)).saveReadingProgress("missing", 0), false, "未知教材不得写入");
 assert.equal(api(createStore(null)).saveReadingProgress("3", 999999), false, "越界页码不得写入");
 
-console.log("阅读进度测试通过：合法位置可读写，损坏、越界及 Storage 故障均安全降级。");
+const { buildBookPracticeBundle, buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
+assert.equal(typeof api(createStore(null)).saveFullReadingProgress, "function", "全页进度应使用独立的稳定图片索引 API");
+
+for (let id = 3; id <= 29; id += 1) {
+  const bookId = String(id);
+  const legacy = buildBookPracticeBundle(bookId);
+  const full = buildFullBookPracticeBundle(bookId);
+  for (const practiceIndex of [0, Math.floor(legacy.practices.length / 2), legacy.practices.length - 1]) {
+    const stored = { version: 1, bookId, practiceIndex };
+    const store = createStore(stored);
+    const progress = api(store);
+    const practice = legacy.practices[practiceIndex];
+    assert.deepEqual(progress.readReadingProgress(), stored, "读取旧进度不能改写或升级存储");
+    assert.equal(store.value, stored);
+    assert.deepEqual(progress.resolveReadingProgressPractice(stored), practice, "旧索引必须保持原音频教材页");
+    assert.equal(progress.resolveReadingProgressUrl(stored), legacy.book.seriesId === "think"
+      ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${practice.imageIndex}`
+      : `/pages/Practice/Practice?bookId=${bookId}&practice=${practiceIndex}`);
+  }
+  const silentPage = full.practices.find((practice) => practice.tracks.length === 0);
+  const imageIndices = new Set([0, silentPage?.imageIndex ?? 0, full.practices.at(-1).imageIndex]);
+  for (const imageIndex of imageIndices) {
+    const store = createStore(null);
+    const progress = api(store);
+    const stored = { version: 2, bookId, imageIndex };
+    assert.equal(progress.saveFullReadingProgress(bookId, imageIndex), true);
+    assert.deepEqual(store.value, stored, "新增页也应按原图片位置保存进度");
+    assert.deepEqual(progress.readReadingProgress(), stored);
+    assert.deepEqual(progress.resolveReadingProgressPractice(stored), full.practices.find((practice) => practice.imageIndex === imageIndex));
+    assert.equal(progress.resolveReadingProgressUrl(stored), full.book.seriesId === "think"
+      ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${imageIndex}`
+      : `/pages/Practice/Practice?bookId=${bookId}&page=${imageIndex}`);
+  }
+}
+
+for (const invalid of [
+  { version: 2, bookId: "3", imageIndex: -1 },
+  { version: 2, bookId: "3", imageIndex: 1.5 },
+  { version: 2, bookId: "3", imageIndex: "0" },
+  { version: 2, bookId: "3", imageIndex: NaN },
+  { version: 2, bookId: "3", imageIndex: Infinity },
+  { version: 2, bookId: "3", imageIndex: 999999 },
+  { version: 2, bookId: "missing", imageIndex: 0 },
+  { version: 3, bookId: "3", imageIndex: 0 },
+]) {
+  const progress = api(createStore(invalid));
+  assert.equal(progress.readReadingProgress(), null);
+  assert.equal(progress.resolveReadingProgressPractice(invalid), null);
+  assert.equal(progress.resolveReadingProgressUrl(invalid), null);
+}
+assert.equal(api(createStore(null, { writeThrows: true })).saveFullReadingProgress("3", 0), false);
+assert.equal(api(createStore(null)).saveFullReadingProgress("missing", 0), false);
+assert.equal(api(createStore(null)).saveFullReadingProgress("3", -1), false);
+assert.equal(api(createStore(null)).saveFullReadingProgress("3", 999999), false);
+
+console.log("阅读进度测试通过：27 册旧音频进度保持原页，全页稳定索引、无音频页及损坏/Storage 故障均正确。");

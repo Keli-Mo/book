@@ -1,4 +1,6 @@
 import { ScrollView, Text, View } from "@tarojs/components";
+import Taro from "@tarojs/taro";
+import { useEffect, useState } from "react";
 import {
   findPracticeDirectoryGroupId,
   type PracticeDirectoryGroup,
@@ -12,23 +14,57 @@ interface PracticeDirectoryProps {
   onSelect: (practiceIndex: number) => void;
 }
 
-/** 底部训练目录只展示带示范音频的页面，并自动定位当前章节。 */
-export default function PracticeDirectory({
+/** 每次打开都重新展开当前章节，避免继承上次浏览目录的位置。 */
+export default function PracticeDirectory(props: PracticeDirectoryProps) {
+  return props.open ? <DirectoryContents {...props} /> : null;
+}
+
+function DirectoryContents({
   groups,
   currentPracticeIndex,
-  open,
   onClose,
   onSelect,
 }: PracticeDirectoryProps) {
-  if (!open) return null;
-
   const currentGroupId = findPracticeDirectoryGroupId(
     groups,
     currentPracticeIndex
   );
+  const currentGroup = groups.find((group) => group.id === currentGroupId);
+  const currentItem = currentGroup?.items.find(
+    (item) => item.practiceIndex === currentPracticeIndex
+  );
+  const [expandedGroupId, setExpandedGroupId] = useState(currentGroupId);
+  const [scrollTarget, setScrollTarget] = useState("");
+  const [locateRequest, setLocateRequest] = useState(0);
+
+  useEffect(() => {
+    setExpandedGroupId(currentGroupId);
+  }, [currentGroupId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 清空旧锚点后等待展开内容渲染，重复“定位当前页”也能再次触发滚动。
+    setScrollTarget("");
+    if (expandedGroupId) {
+      const target = expandedGroupId === currentGroupId
+        ? `practice-directory-page-${currentPracticeIndex}`
+        : expandedGroupId;
+      const locate = () => {
+        if (!cancelled) setScrollTarget(target);
+      };
+      if (typeof Taro.nextTick === "function") {
+        Taro.nextTick(locate);
+      } else {
+        locate();
+      }
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedGroupId, currentGroupId, currentPracticeIndex, locateRequest]);
 
   return (
-    <View className='practice-directory-mask' onClick={onClose}>
+    <View className='practice-directory-mask' catchMove onClick={onClose}>
       <View
         className='practice-directory-sheet'
         onClick={(event) => event.stopPropagation()}
@@ -42,10 +78,28 @@ export default function PracticeDirectory({
             关闭
           </Text>
         </View>
+        <View className='practice-directory-toolbar'>
+          <Text className='practice-directory-current'>
+            {currentGroup && currentItem
+              ? `${currentGroup.title} · ${currentItem.pageLabel || `第 ${currentItem.pageNumber} 页`}`
+              : "选择章节查看书页"}
+          </Text>
+          {currentItem && (
+            <Text
+              className='practice-directory-locate device-touch-target'
+              onClick={() => {
+                setExpandedGroupId(currentGroupId);
+                setLocateRequest((request) => request + 1);
+              }}
+            >
+              定位当前页
+            </Text>
+          )}
+        </View>
         <ScrollView
           className='practice-directory-scroll'
           scrollY
-          scrollIntoView={currentGroupId}
+          scrollIntoView={scrollTarget}
         >
           {groups.map((group) => (
             <View
@@ -53,29 +107,50 @@ export default function PracticeDirectory({
               key={group.id}
               className='practice-directory-group'
             >
-              <Text className='practice-directory-group__title'>
-                {group.title}
-              </Text>
-              <View className='practice-directory-items'>
-                {group.items.map((item) => (
-                  <View
-                    key={item.id}
-                    className={`practice-directory-item device-touch-target ${
-                      item.practiceIndex === currentPracticeIndex
-                        ? "practice-directory-item--active"
-                        : ""
-                    }`}
-                    onClick={() => onSelect(item.practiceIndex)}
-                  >
-                    <Text className='practice-directory-item__page'>
-                      {`第 ${item.pageNumber} 页`}
-                    </Text>
-                    <Text className='practice-directory-item__tracks'>
-                      {`${item.trackCount} 段音频`}
-                    </Text>
-                  </View>
-                ))}
+              <View
+                className={`practice-directory-group__header device-touch-target ${
+                  group.id === currentGroupId
+                    ? "practice-directory-group__header--current"
+                    : ""
+                }`}
+                onClick={() => setExpandedGroupId((expanded) =>
+                  expanded === group.id ? "" : group.id
+                )}
+              >
+                <View className='practice-directory-group__heading'>
+                  <Text className='practice-directory-group__title'>{group.title}</Text>
+                  {group.id === currentGroupId && (
+                    <Text className='practice-directory-group__current'>当前章节</Text>
+                  )}
+                </View>
+                <Text className='practice-directory-group__toggle'>
+                  {group.items.length} 页 · {expandedGroupId === group.id ? "收起" : "展开"}
+                </Text>
               </View>
+              {expandedGroupId === group.id && (
+                <View className='practice-directory-items'>
+                  {group.items.map((item) => (
+                    <View
+                      id={`practice-directory-page-${item.practiceIndex}`}
+                      key={item.id}
+                      className={`practice-directory-item device-touch-target ${
+                        item.practiceIndex === currentPracticeIndex
+                          ? "practice-directory-item--active"
+                          : ""
+                      }`}
+                      onClick={() => onSelect(item.practiceIndex)}
+                    >
+                      <Text className='practice-directory-item__page'>
+                        {item.pageLabel || `第 ${item.pageNumber} 页`}
+                      </Text>
+                      <Text className='practice-directory-item__tracks'>
+                        {item.practiceIndex === currentPracticeIndex ? "当前页 · " : ""}
+                        {item.trackCount ? `${item.trackCount} 段音频` : "自主跟读"}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           ))}
         </ScrollView>

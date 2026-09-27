@@ -61,7 +61,10 @@ let saveError = null;
 let storageError = null;
 let savedFileListError = null;
 let savedFileEntries = [];
+let devicePlatform = "devtools";
 const wx = {
+  getDeviceInfo: () => ({ platform: devicePlatform }),
+  getSystemInfoSync: () => ({ platform: devicePlatform }),
   getStorageSync(key) {
     return saved.get(key);
   },
@@ -142,6 +145,53 @@ const runtime = compile(
     "跨页面必须共用同一待上传仓储",
   );
   await first.ready();
+
+  // 开发者工具尚未 saveFile 时没有 store 目录，不能因此阻止首次录音。
+  const missingStore = { errMsg: String.raw`getSavedFileList:fail ENOENT: no such file or directory 'session\wx123\store'` };
+  for (const error of [
+    missingStore,
+    { errMsg: "getSavedFileList:fail ENOENT: no such file or directory, scandir '/simulator/wx123/store'" },
+  ]) {
+    savedFileListError = error;
+    assert.equal(await runtime.getLocalRecordingUsageBytes(), 0, "明确缺失的模拟器 store 根目录应计为空存储");
+    assert.equal((await first.checkCanStartRecording()).allowed, true, "首次录音可进入原生录音流程");
+  }
+  const modernDeviceInfo = wx.getDeviceInfo;
+  delete wx.getDeviceInfo;
+  assert.equal(await runtime.getLocalRecordingUsageBytes(), 0, "旧基础库仍可确认 devtools 平台");
+  wx.getDeviceInfo = modernDeviceInfo;
+
+  for (const platform of ["ios", "android", "windows", "mac", undefined]) {
+    devicePlatform = platform;
+    savedFileListError = missingStore;
+    await assert.rejects(() => runtime.getLocalRecordingUsageBytes(), error => error === missingStore,
+      "此兼容不能放宽真机或未知平台上的存储错误");
+    assert.equal((await first.checkCanStartRecording()).allowed, false);
+  }
+  devicePlatform = "devtools";
+  wx.getDeviceInfo = () => { throw new Error("device info unavailable"); };
+  await assert.rejects(() => runtime.getLocalRecordingUsageBytes(), error => error === missingStore);
+  wx.getDeviceInfo = modernDeviceInfo;
+  for (const error of [
+    { code: "EACCES", errMsg: missingStore.errMsg },
+    { errMsg: "getSavedFileList:fail EACCES: permission denied, scandir '/simulator/store'" },
+    { errMsg: "getSavedFileList:fail EIO: input/output error '/simulator/store'" },
+    { errMsg: "getSavedFileList:fail ENOENT: no such file or directory '/simulator/store/recording.mp3'" },
+    { errMsg: "getSavedFileList:fail ENOENT: no such file or directory '/simulator/usr'" },
+    { errMsg: "getSavedFileList:fail ENOENT: no such file or directory '/simulator/store-backup'" },
+    { errMsg: "getSavedFileList:fail ENOENT" },
+    { errCode: 1300002, errMsg: "getSavedFileList:fail" },
+  ]) {
+    savedFileListError = error;
+    await assert.rejects(() => runtime.getLocalRecordingUsageBytes(), received => received === error,
+      "未知错误、非 store 根目录缺失、目录内部文件缺失均不能按 0 放行");
+    assert.equal((await first.checkCanStartRecording()).allowed, false);
+  }
+  savedFileListError = null;
+  savedFileEntries = [{ filePath: "wxfile://store/large.mp3", size: 83 * 1024 * 1024 }];
+  assert.equal((await first.checkCanStartRecording()).allowed, false, "已有文件超过容量阈值仍阻止新录音");
+  savedFileEntries = [];
+
   const input = {
     tempFilePath: "wxfile://tmp/current.mp3",
     durationMs: 1234.5,

@@ -9,6 +9,7 @@ const ts = require("typescript");
 
 const root = path.resolve(__dirname, "..");
 const folder = fs.mkdtempSync(path.join(os.tmpdir(), "haisha-recording-test-"));
+const savedFolder = path.join(folder, "store");
 const files = [];
 const metadata = new Map();
 const modules = new Map();
@@ -17,16 +18,19 @@ const awaitingFingerprint = new Set();
 const sha1 = bytes => crypto.createHash("sha1").update(bytes).digest("hex");
 let sequence = 0;
 let uploadedBytes;
-const listSavedFiles = () => fs.readdirSync(folder).filter(name => /^saved-\d+\.mp3$/.test(name)).map(name => {
-  const filePath = path.join(folder, name);
+const listSavedFiles = () => fs.readdirSync(savedFolder).filter(name => /^saved-\d+\.mp3$/.test(name)).map(name => {
+  const filePath = path.join(savedFolder, name);
   return { filePath, size: fs.statSync(filePath).size };
 });
 const wx = {
+  getDeviceInfo: () => ({ platform: "devtools" }),
   getStorageSync: key => metadata.get(key),
   setStorageSync: (key, value) => metadata.set(key, JSON.parse(JSON.stringify(value))),
   saveFile({ tempFilePath, success, fail }) {
     try {
-      const savedFilePath = path.join(folder, `saved-${++sequence}.mp3`);
+      // 与当前开发者工具一致：getSavedFileList 不初始化 store，saveFile 才创建它。
+      fs.mkdirSync(savedFolder, { recursive: true });
+      const savedFilePath = path.join(savedFolder, `saved-${++sequence}.mp3`);
       fs.renameSync(tempFilePath, savedFilePath);
       files.push(savedFilePath);
       awaitingFingerprint.add(savedFilePath);
@@ -47,7 +51,8 @@ const wx = {
   },
   getFileSystemManager: () => ({
     getSavedFileList({ success, fail }) {
-      try { success({ fileList: listSavedFiles() }); } catch (error) { fail(error); }
+      try { success({ fileList: listSavedFiles() }); }
+      catch (error) { fail({ errMsg: `getSavedFileList:fail ${error.message}` }); }
     },
     access({ path: filePath, success, fail }) { fs.existsSync(filePath) ? success({}) : fail({}); },
     unlink({ filePath, success, fail }) {
@@ -77,6 +82,9 @@ const load = relative => {
   const service = load("src/services/cloudCheckIn.ts");
   const { createCheckInSubmissionCoordinator } = load("src/features/listeningPractice/checkInSubmissionCoordinator.ts");
   const store = runtime.getPendingCheckInStore();
+  assert.equal(fs.existsSync(savedFolder), false);
+  assert.equal((await store.checkCanStartRecording()).allowed, true, "store 尚未创建时仍允许首次录音");
+  assert.equal(fs.existsSync(savedFolder), false, "空间检查不能伪造文件或修改模拟器目录");
   const coordinator = createCheckInSubmissionCoordinator({
     pendingStore: store,
     getRecordingInfo: service.getCheckInRecordingInfo,
@@ -113,6 +121,7 @@ const load = relative => {
   assert.equal(fs.existsSync(tempFilePath), false);
   assert.equal(saved.item.fileSizeBytes, 4097, "保存后的实际文件大小应替代回调大小");
   assert.equal(await runtime.getLocalRecordingUsageBytes(), 4097, "容量来自已保存文件的磁盘实测大小");
+  assert.equal(fs.existsSync(savedFolder), true, "原生保存正常创建 store，后续查询读取实际文件");
   assert.equal(saved.item.contentSha1, sha1(fs.readFileSync(saved.item.localPath)));
   const shareReady = await store.beginShare(saved.item.requestId);
   assert.equal((await coordinator.submit(shareReady).promise).state, "committed");
@@ -163,5 +172,6 @@ const load = relative => {
   console.log("录音真实文件链路通过：保存后字节与指纹、云端确认前保留、同大小内容变化、旧失败录音重启重试。");
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
   for (const filePath of files) if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  if (fs.existsSync(savedFolder)) fs.rmdirSync(savedFolder);
   fs.rmdirSync(folder);
 });

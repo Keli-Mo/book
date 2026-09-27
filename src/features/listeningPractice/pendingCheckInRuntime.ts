@@ -151,6 +151,22 @@ const removeLocalFile = async (filePath: string, kind: "saved" | "temporary") =>
   }
 };
 
+const isMissingDevtoolsSavedDirectory = (error: unknown) => {
+  const details = error as { errCode?: unknown; errno?: unknown; code?: unknown; errMsg?: unknown } | undefined;
+  const code = details?.errCode ?? details?.errno ?? details?.code;
+  if (code !== undefined && code !== "ENOENT" && code !== 1300002) return false;
+  const message = typeof details?.errMsg === "string" ? details.errMsg : "";
+  // 当前开发者工具的 getSavedFileList 直接 readdir(store)，首次 saveFile 才初始化该目录。
+  // 只识别整个 store 根目录缺失；内部文件缺失、权限/IO错误和含糊的 ENOENT 仍须拒绝。
+  if (!/^getSavedFileList:fail\s+ENOENT:\s+no such file or directory(?:,\s*(?:scandir|readdir))?\s+(['"])[^'"\r\n]+[\\/]store[\\/]?\1\s*$/i.test(message)) return false;
+  try {
+    const native = wx as typeof wx & { getDeviceInfo?: () => { platform?: string } };
+    const platform = typeof native.getDeviceInfo === "function"
+      ? native.getDeviceInfo().platform : wx.getSystemInfoSync().platform;
+    return platform === "devtools";
+  } catch (_error) { return false; }
+};
+
 /** saveFile 管理区的实际占用；包含尚未写入或已经脱离索引的文件。 */
 export const getLocalRecordingUsageBytes = () =>
   new Promise<number>((resolve, reject) => {
@@ -181,7 +197,12 @@ export const getLocalRecordingUsageBytes = () =>
           reject(error);
         }
       },
-      fail: reject,
+      fail: (error) => {
+        if (isMissingDevtoolsSavedDirectory(error)) {
+          logRecordingDiagnostic("capacity.saved_directory.empty", { platform: "devtools" });
+          resolve(0);
+        } else reject(error);
+      },
     });
   });
 

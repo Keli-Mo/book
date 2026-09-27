@@ -27,12 +27,12 @@ assert.match(home, />我的</, "首页底栏应保留我的入口");
 assert.doesNotMatch(home, /library-home__heading/, "首页不应保留卡片上方的独立标题");
 assert.match(
   home,
-  /progressBundle\?\.book\.title \|\| "开始跟读练习"/,
+  /progressBook\?\.title \|\| "开始跟读练习"/,
   "首页卡片标题应显示真实书名或新用户练习入口",
 );
 assert.match(
   home,
-  /progressBundle \? "继续跟读" : "选择教材"/,
+  /progressBook \? "继续跟读" : "选择教材"/,
   "首页按钮应保留继续跟读和选择教材双态契约",
 );
 assert.doesNotMatch(home, /接着上次，读一页/, "首页不应保留生硬的引导文案");
@@ -55,9 +55,10 @@ assert.doesNotMatch(
 assert.match(myCheckIns, /mode='aspectFit'/, "教材内页应完整显示，不能裁切");
 assert.match(
   myCheckIns,
-  /教材页\s*\{context\?\.pageNumber\s*\?\?\s*cloud!\.pageNumber\}/,
+  /const pageNumber = context\?\.pageNumber\s*\?\?\s*cloud!\.pageNumber/,
   "本地录音与兼容云记录都应显示教材页数",
 );
+assert.match(myCheckIns, /pageNumber === 0 \? "封面" : `教材页 \$\{pageNumber\}`/, "封面与正文应显示各自真实页名");
 assert.match(
   myCheckInsStyles,
   /&__open,[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?justify-content:\s*center;/,

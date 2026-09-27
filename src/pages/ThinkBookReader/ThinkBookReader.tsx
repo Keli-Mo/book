@@ -35,8 +35,8 @@ export default function ThinkBookReader() {
   };
 
   return (
-    <View className={`practice-screen ${layoutClassName}`}>
-      <CheckInNavigation title='听力跟读训练' onBack={goBack} />
+    <View className={`practice-screen ${layoutClassName}${layout.isPad || layout.orientation === "landscape" ? " practice-screen--fitted" : ""}`}>
+      <CheckInNavigation title='听力跟读训练' onBack={goBack} compact />
       {route.reader && route.initialPage !== null ? (
         <ThinkPracticeSession
           key={`${route.reader.book.id}:${route.initialPage}`}
@@ -89,7 +89,6 @@ function ThinkPracticeSession({
       layout={layout}
       layoutClassName={layoutClassName}
       keepModelAudioOnTurn
-      persistReadingProgress={false}
       onPracticeChange={setPageIndex}
     />
   );

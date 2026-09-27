@@ -154,6 +154,7 @@ export default function MyCheckIns() {
             const local = item.kind === "local" ? item.pending : null;
             const cloud = item.kind === "cloud" ? item.cloud : null;
             const context = local?.context;
+            const pageNumber = context?.pageNumber ?? cloud!.pageNumber;
             const detailUrl = local
               ? `/pages/CheckInDetail/CheckInDetail?localId=${encodeURIComponent(local.requestId)}`
               : `/pages/CheckInDetail/CheckInDetail?id=${encodeURIComponent(cloud!.id)}&token=${encodeURIComponent(cloud!.shareToken)}`;
@@ -165,7 +166,7 @@ export default function MyCheckIns() {
                 <Text className='check-in-list-card__section'>{context?.sectionTitle || cloud!.sectionTitle}</Text>
                 <Text className='check-in-list-card__book'>{context?.bookTitle || cloud!.bookTitle}</Text>
                 <Text className='check-in-list-card__meta'>
-                  教材页 {context?.pageNumber ?? cloud!.pageNumber} · {formatRecordingDuration(local?.durationMs ?? cloud!.durationMs)} · {formatCheckInTime(local?.completedAtMs ?? local?.createdAtMs ?? local?.updatedAtMs ?? cloud!.createdAt)}
+                  {pageNumber === 0 ? "封面" : `教材页 ${pageNumber}`} · {formatRecordingDuration(local?.durationMs ?? cloud!.durationMs)} · {formatCheckInTime(local?.completedAtMs ?? local?.createdAtMs ?? local?.updatedAtMs ?? cloud!.createdAt)}
                 </Text>
                 {!local?.recoverable && local && (
                   <Text className='pending-check-in-status__warning'>临时文件，关闭小程序后可能无法恢复</Text>

@@ -1,12 +1,11 @@
 import type { BookCatalogItem } from "@/features/bookLibrary/bookCatalog";
 import {
-  buildBookPracticeBundle,
+  buildFullBookPracticeBundle,
   type BookPracticeBundle,
   type ListeningPractice,
   type PracticeTrack,
 } from "@/features/listeningPractice/bookPractice";
 import { catalogLists } from "@/pages/BookDetail/Components/BookPreview/constants/catalogList";
-import { concatImages } from "@/pages/BookDetail/Components/BookPreview/constants/images";
 
 export type ThinkBookId = "26" | "27" | "28" | "29";
 
@@ -23,8 +22,8 @@ export type ThinkReaderPage = {
   pageLabel: string;
   sectionTitle: string;
   tracks: PracticeTrack[];
-  /** 当前音频题，或本页承接的上一页音频题，在跟读列表中的位置。 */
-  practiceIndex: number;
+  /** 旧音频列表的索引，既有续页沿用前页；其余无音频页为 null。 */
+  practiceIndex: number | null;
 };
 
 export type ThinkBookReader = {
@@ -45,104 +44,71 @@ const THINK_2_STUDENT_CONTINUATION_PAGES = new Set([
 ]);
 
 const THINK_BOOK_CONFIG: Record<ThinkBookId, {
-  pageOffset: number;
   continuationPages: ReadonlySet<number>;
 }> = {
-  "26": { pageOffset: 0, continuationPages: THINK_1_STUDENT_CONTINUATION_PAGES },
-  "27": { pageOffset: 3, continuationPages: new Set() },
-  "28": { pageOffset: 0, continuationPages: THINK_2_STUDENT_CONTINUATION_PAGES },
-  "29": { pageOffset: 3, continuationPages: new Set() },
+  "26": { continuationPages: THINK_1_STUDENT_CONTINUATION_PAGES },
+  "27": { continuationPages: new Set() },
+  "28": { continuationPages: THINK_2_STUDENT_CONTINUATION_PAGES },
+  "29": { continuationPages: new Set() },
 };
 
 const isThinkBookId = (bookId: string): bookId is ThinkBookId =>
   bookId === "26" || bookId === "27" || bookId === "28" || bookId === "29";
 
-/** Think 阅读器仅展示音频题及其跨页内容。 */
+/** Think 阅读器展示全部登记图片，并保留旧音频题与跨页关联。 */
 export const buildThinkBookReader = (bookId: string): ThinkBookReader | null => {
   if (!isThinkBookId(bookId)) return null;
 
-  const bundle = buildBookPracticeBundle(bookId);
+  const bundle = buildFullBookPracticeBundle(bookId);
   if (!bundle) return null;
 
-  const imageUrls = concatImages[bookId];
   const catalog = catalogLists[bookId];
   const config = THINK_BOOK_CONFIG[bookId];
   const practiceByPage = new Map<number, {
     practice: ListeningPractice;
     index: number;
   }>();
-  bundle.practices.forEach((practice, index) => {
+  bundle.practices.filter((practice) => practice.tracks.length > 0).forEach((practice, index) => {
     practiceByPage.set(practice.imageIndex, { practice, index });
   });
 
-  let sectionIndex = 0;
-  let sectionTitle = "课程导入";
-  const pages: ThinkReaderPage[] = [];
-  imageUrls.forEach((imageUrl, imageIndex) => {
-    while (sectionIndex < catalog.length && catalog[sectionIndex].page <= imageIndex) {
-      sectionTitle = catalog[sectionIndex].name;
-      sectionIndex += 1;
-    }
+  const pages: ThinkReaderPage[] = bundle.practices.map((practice) => {
+    const { imageIndex, imageUrl, pageNumber, sectionTitle, tracks } = practice;
     const indexedPractice = practiceByPage.get(imageIndex);
     const isContinuation = config.continuationPages.has(imageIndex);
-    if (!indexedPractice && !isContinuation) return;
-    const relatedPractice = indexedPractice ?? practiceByPage.get(imageIndex - 1);
-    if (!relatedPractice) throw new Error(`Think 跨页内容 ${imageIndex} 找不到前页音频题`);
-    const printedPage = imageIndex + config.pageOffset;
-    pages.push({
+    const relatedPractice = indexedPractice ?? (isContinuation ? practiceByPage.get(imageIndex - 1) : undefined);
+    if (isContinuation && !relatedPractice) throw new Error(`Think 跨页内容 ${imageIndex} 找不到前页音频题`);
+    return {
       imageIndex,
       imageUrl,
-      pageNumber: printedPage,
-      pageLabel: `第 ${printedPage} 页`,
+      pageNumber,
+      pageLabel: practice.pageLabel ?? `第 ${pageNumber} 页`,
       sectionTitle,
-      tracks: indexedPractice?.practice.tracks ?? [],
-      practiceIndex: relatedPractice.index,
-    });
+      tracks,
+      practiceIndex: relatedPractice?.index ?? null,
+    };
   });
 
-  const chapters: ThinkReaderChapter[] = [];
-  catalog.forEach(({ name, page }, catalogIndex) => {
-    const nextSection = catalog[catalogIndex + 1]?.page ?? imageUrls.length;
-    const pageIndex = pages.findIndex((readerPage) =>
-      readerPage.imageIndex >= page && readerPage.imageIndex < nextSection,
-    );
-    if (pageIndex >= 0) {
-      chapters.push({ name, imageIndex: pages[pageIndex].imageIndex, pageIndex });
-    }
-  });
+  const chapters: ThinkReaderChapter[] = catalog.map(({ name, page }) => ({
+    name, imageIndex: page, pageIndex: page,
+  }));
 
   return {
     book: bundle.book,
-    sourcePageCount: imageUrls.length,
+    sourcePageCount: bundle.practices.length,
     pages,
     chapters,
   };
 };
 
-/** 将筛选后的 Think 页面交给现有跟读界面，同时保留原音频页的训练数据。 */
+/** Think 和普通教材共用全页训练模型，避免两套页号与封面规则。 */
 export const buildThinkPracticeBundle = (reader: ThinkBookReader): BookPracticeBundle => {
-  const originalBundle = buildBookPracticeBundle(reader.book.id);
-  if (!originalBundle) throw new Error(`Think 教材 ${reader.book.id} 找不到音频训练数据`);
-
-  const originalByImageIndex = new Map(
-    originalBundle.practices.map((practice) => [practice.imageIndex, practice]),
-  );
-  return {
-    book: reader.book,
-    coverUrl: originalBundle.coverUrl,
-    practices: reader.pages.map((page) => originalByImageIndex.get(page.imageIndex) ?? {
-      id: `${reader.book.id}-page-${page.pageNumber}`,
-      bookId: reader.book.id,
-      imageIndex: page.imageIndex,
-      pageNumber: page.pageNumber,
-      imageUrl: page.imageUrl,
-      sectionTitle: page.sectionTitle,
-      tracks: [],
-    }),
-  };
+  const bundle = buildFullBookPracticeBundle(reader.book.id);
+  if (!bundle) throw new Error(`Think 教材 ${reader.book.id} 找不到全页训练数据`);
+  return bundle;
 };
 
-/** 路由参数采用筛选后从 0 开始的阅读页索引。 */
+/** 路由参数采用从 0 开始的源图片索引。 */
 export const parseThinkReaderPage = (raw: unknown, pageCount: number): number | null => {
   if (!Number.isSafeInteger(pageCount) || pageCount <= 0) return null;
   const index = typeof raw === "string" && /^(?:0|[1-9]\d*)$/.test(raw)
@@ -154,7 +120,7 @@ export const parseThinkReaderPage = (raw: unknown, pageCount: number): number | 
     : null;
 };
 
-/** 旧分享链接使用原 PDF 图片索引；被筛掉的页面跳到下一张保留页。 */
+/** 新旧分享链接均按原图片索引打开同一页。 */
 export const resolveThinkReaderPage = (raw: unknown, reader: ThinkBookReader): number | null => {
   const imageIndex = parseThinkReaderPage(raw, reader.sourcePageCount);
   if (imageIndex === null || reader.pages.length === 0) return null;

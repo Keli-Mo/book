@@ -46,7 +46,7 @@ export default function BookLibrary() {
   const openBook = (book: BookCatalogItem) => {
     const action = resolveBookAction(book);
 
-    // Think 两册进入完整阅读页；既有教材继续进入已验证的跟读训练页。
+    // 各册从原图片首页进入完整跟读页，Think 保留原阅读器路由。
     Taro.navigateTo({ url: action.url });
   };
 

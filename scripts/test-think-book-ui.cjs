@@ -37,7 +37,7 @@ const stopControlOf = (tree) => elements(tree).find((node) =>
 async function run() {
   for (const bookId of ["26", "27", "28", "29"]) {
     const reader = buildThinkBookReader(bookId);
-    assert.ok(reader, `Think ${bookId} 应有筛选后的阅读页`);
+    assert.ok(reader, `Think ${bookId} 应有完整阅读页`);
     const page = openReader(bookId, 0);
     page.render();
     await settle();
@@ -55,7 +55,7 @@ async function run() {
     const image = requireClass(tree, "practice-book-page__image", bookId);
     assert.equal(image.props.src, reader.pages[0].imageUrl);
     assert.equal(hotspotsOf(tree).length, reader.pages[0].tracks.length);
-    requireClass(tree, "audio-hotspot__visual", bookId);
+    if (reader.pages[0].tracks.length) requireClass(tree, "audio-hotspot__visual", bookId);
     requireClass(tree, "practice-recorder", bookId);
     assert.equal(textOf(requireClass(tree, "practice-recorder__title", bookId)), "我的跟读");
     assert.match(textOf(requireClass(tree, "record-button", bookId)), /开始跟读录音/);

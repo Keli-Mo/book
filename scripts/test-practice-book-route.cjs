@@ -43,7 +43,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
   );
   return loaded.exports;
 };
-const { buildBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
+const { buildBookPracticeBundle, buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 const { requestRecorderAction, resolveRecorderCallback } = load("src/features/listeningPractice/recordingStateMachine.ts");
 const livePages = new Set();
 
@@ -339,7 +339,7 @@ const createPage = (file, params, options = {}) => {
       __esModule: true,
       default: (props) => ({ type: "Text", props }),
     },
-    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "ScrollView", "Swiper", "SwiperItem"].map((name) => [name, name])),
+    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "ScrollView", "Swiper", "SwiperItem", "PageMeta"].map((name) => [name, name])),
     "@tarojs/taro": { __esModule: true, default: taro, ...taro },
     "@/constant": { sharedImage: "share.png" },
     "@/services/cloudCheckIn": {
@@ -448,6 +448,9 @@ const createFakeTimers = () => {
 };
 
 async function testRoutes() {
+  const firstAudioPageIndex = buildBookPracticeBundle("22").practices[0].imageIndex;
+  const pageCount22 = buildFullBookPracticeBundle("22").practices.length;
+  const progress22 = (offset) => new RegExp(`跟读训练 ${firstAudioPageIndex + offset + 1} / ${pageCount22}`);
   const practiceSessionSource = read("src/pages/Practice/PracticeSession.tsx");
   const practiceSource = `${read("src/pages/Practice/Practice.tsx")}\n${practiceSessionSource}`;
   assert.doesNotMatch(practiceSource, /SAMPLE_BOOK_(?:ID|TITLE|COVER|PRACTICES)|book3Practice/, "Practice 必须移除固定 CASA 模型，改为实际 router 选择教材");
@@ -459,9 +462,9 @@ async function testRoutes() {
   );
   assert.equal(fs.existsSync(path.join(projectRoot, "src/features/listeningPractice/book3Practice.ts")), false, "固定 CASA 死文件应在替换引用后删除");
   for (const bookId of ["3", "22", "25"]) {
-    const bundle = buildBookPracticeBundle(bookId);
+    const bundle = buildFullBookPracticeBundle(bookId);
     for (const index of [0, bundle.practices.length - 1]) {
-      const page = createPage("src/pages/Practice/Practice.tsx", { bookId, practice: String(index) }, { savedFilePath: "/saved/recording.mp3" });
+      const page = createPage("src/pages/Practice/Practice.tsx", { bookId, page: String(index) }, { savedFilePath: "/saved/recording.mp3" });
       let tree = page.render();
       const practice = bundle.practices[index];
       assert.equal(textOf(byClass(tree, "practice-header__course")), bundle.book.title);
@@ -470,9 +473,11 @@ async function testRoutes() {
       assert.equal(textOf(byClass(tree, "practice-header__section")), practice.sectionTitle);
       const hotspots = elements(tree).filter((node) => String(node.props?.className || "").split(" ").includes("audio-hotspot"));
       assert.equal(hotspots.length, practice.tracks.length);
-      assert.deepEqual(hotspots[0].props.style, { left: practice.tracks[0].left, top: practice.tracks[0].top });
-      hotspots[0].props.onClick();
-      assert.equal(page.audios.at(-1).src, practice.tracks[0].url);
+      if (practice.tracks.length) {
+        assert.deepEqual(hotspots[0].props.style, { left: practice.tracks[0].left, top: practice.tracks[0].top });
+        hotspots[0].props.onClick();
+        assert.equal(page.audios.at(-1).src, practice.tracks[0].url);
+      }
       const directory = elements(tree).find((node) => node.type?.name === "PracticeDirectory");
       assert.deepEqual(directory.props.groups.flatMap((group) => group.items).map((item) => item.id), bundle.practices.map((item) => item.id));
       await directory.props.onSelect(bundle.practices.length);
@@ -966,7 +971,7 @@ async function testRoutes() {
   saveDuringSwitchTree = saveDuringSwitchPage.render();
   assert.match(
     textOf(byClass(saveDuringSwitchTree, "practice-header__progress")),
-    /跟读训练 1 \/ 24/,
+    progress22(0),
     "切页事务期间若原训练新录音完成落盘，应取消切页并留在原训练",
   );
   assert.equal(
@@ -1101,7 +1106,7 @@ async function testRoutes() {
   switchingRemovalTree = switchingRemovalPage.render();
   assert.match(
     textOf(byClass(switchingRemovalTree, "practice-header__progress")),
-    /跟读训练 2 \/ 24/,
+    progress22(1),
     "删除完成后切页事务应继续落到目标训练",
   );
 
@@ -1168,7 +1173,7 @@ async function testRoutes() {
   );
   assert.match(
     textOf(byClass(switchingDuringUploadPage.render(), "practice-header__progress")),
-    /跟读训练 1 \/ 24/,
+    progress22(0),
     "完成收口期间旧点击必须被同步互斥，且不得删除录音",
   );
   uploadBeforeSwitch.resolve({ state: "cancelled", error: new Error("用户取消") });
@@ -1204,7 +1209,7 @@ async function testRoutes() {
   );
   assert.equal(
     discardedStopErrorPage.savedRecordings[0].context.practiceIndex,
-    1,
+    firstAudioPageIndex + 1,
     "旧 stop 错误不能让训练 B 的录音误贴或丢失",
   );
 
@@ -1237,7 +1242,7 @@ async function testRoutes() {
     1,
     "训练 A 的废弃 stop 超时且无 terminal 时，解锁后训练 B 的新录音仍必须正常保存",
   );
-  assert.equal(discardedStopTimeoutPage.savedRecordings[0].context.practiceIndex, 1);
+  assert.equal(discardedStopTimeoutPage.savedRecordings[0].context.practiceIndex, firstAudioPageIndex + 1);
 
   const hiddenPermission = deferred();
   const hiddenPermissionPage = createPage(
@@ -1423,7 +1428,7 @@ async function testRoutes() {
     restoreAfterSwitchTree = restoreAfterSwitchPage.render();
     assert.match(
       textOf(byClass(restoreAfterSwitchTree, "practice-header__progress")),
-      /跟读训练 2 \/ 24/,
+      progress22(1),
       `旧 ${delayedStage} 恢复任务返回时应保留已经提交的新训练`,
     );
     assert.equal(
@@ -1506,7 +1511,7 @@ async function testRoutes() {
   assert.equal(leavingPage.savedRecordings.length, 1, "离页 stop 结果仍必须进入本地待上传队列");
   assert.equal(leavingPage.savedRecordings[0].durationMs, 2300);
   assert.equal(leavingPage.savedRecordings[0].context.bookId, "22", "离页保存必须保留原教材");
-  assert.equal(leavingPage.savedRecordings[0].context.practiceIndex, 0, "离页保存必须保留原训练页");
+  assert.equal(leavingPage.savedRecordings[0].context.practiceIndex, firstAudioPageIndex, "离页保存必须保留原训练页");
   assert.equal(
     typeof leavingPage.recorderTerminalOutcomes[0]?.then,
     "function",
@@ -1534,7 +1539,7 @@ async function testRoutes() {
   await pausedLeavingPage.recorderHandlers.Stop({ tempFilePath: "/tmp/paused-leaving.mp3", duration: 2400, fileSize: 8200 });
   await settle();
   assert.equal(pausedLeavingPage.savedRecordings[0].context.bookId, "22");
-  assert.equal(pausedLeavingPage.savedRecordings[0].context.practiceIndex, 0);
+  assert.equal(pausedLeavingPage.savedRecordings[0].context.practiceIndex, firstAudioPageIndex);
 
   const modelPlaybackLeavingPage = createPage("src/pages/Practice/Practice.tsx", { bookId: "22", practice: "0" });
   let modelPlaybackTree = modelPlaybackLeavingPage.render();
@@ -1592,7 +1597,7 @@ async function testRoutes() {
     assert.equal(page.audios.length, 0, "非法路由不能初始化录音会话");
   }
   const broken = createPage("src/pages/Practice/Practice.tsx", { bookId: "22", practice: "0" }, {
-    overrides: { "@/features/listeningPractice/bookPractice": { buildBookPracticeBundle() { throw new Error("教材 22 第 2 页：缺少图片"); } } },
+    overrides: { "@/features/listeningPractice/bookPractice": { buildFullBookPracticeBundle() { throw new Error("教材 22 第 2 页：缺少图片"); } } },
   });
   assert.match(textOf(broken.render()), /教材 22 第 2 页：缺少图片/);
   const brokenButton = elements(broken.render()).find((node) => node.type === "Button" && textOf(node) === "选择教材");
@@ -1608,21 +1613,22 @@ async function testRoutes() {
   }
   await testHistory({}, false);
   await testHistory({ bookId: "unknown", practiceIndex: 0 }, false);
-  await testHistory({ bookId: "book &1", practiceIndex: 0 }, true, { "@/features/listeningPractice/bookPractice": { buildBookPracticeBundle: () => buildBookPracticeBundle("22") } });
-  await testHistory({ bookId: "22", practiceIndex: 0 }, false, { "@/features/listeningPractice/bookPractice": { buildBookPracticeBundle() { throw new Error("损坏教材"); } } });
+  await testHistory({ bookId: "book &1", practiceIndex: 0 }, true, { "@/features/listeningPractice/bookPractice": { buildBookPracticeBundle: () => buildBookPracticeBundle("22"), buildFullBookPracticeBundle: () => buildFullBookPracticeBundle("22") } });
+  await testHistory({ bookId: "22", practiceIndex: 0 }, false, { "@/features/listeningPractice/bookPractice": { buildFullBookPracticeBundle() { throw new Error("损坏教材"); } } });
   const { BOOKS, resolveBookAction } = load("src/features/bookLibrary/bookCatalog.ts");
   for (const book of BOOKS.filter((item) => item.seriesId !== "think")) {
-    assert.equal(resolveBookAction(book).url, `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&practice=0`);
+    assert.equal(resolveBookAction(book).url, `/pages/Practice/Practice?bookId=${encodeURIComponent(book.id)}&page=0`);
   }
   for (const book of BOOKS.filter((item) => item.seriesId === "think")) {
     assert.equal(resolveBookAction(book).url, `/pages/ThinkBookReader/ThinkBookReader?bookId=${encodeURIComponent(book.id)}&page=0`);
   }
-  assert.equal(resolveBookAction({ ...BOOKS[0], id: "book &1" }).url, "/pages/Practice/Practice?bookId=book%20%261&practice=0");
+  assert.equal(resolveBookAction({ ...BOOKS[0], id: "book &1" }).url, "/pages/Practice/Practice?bookId=book%20%261&page=0");
   console.log("教材路由测试通过：真实路由、首尾边界、恢复页、教材内容、打卡与历史回跳正确。");
 }
 
 async function testHistory(fields, valid, overrides = {}) {
-  const detail = { id: "record", bookTitle: "历史书名", sectionTitle: "历史章节", imageUrl: "history.png", durationMs: 1000, createdAt: 0, recordingUrl: "record.mp3", shareToken: "token", isOwner: true, ...fields };
+  // 最早只有旧音频索引的记录仍可解析；带稳定坐标的记录另由专门回归覆盖。
+  const detail = { id: "record", bookTitle: "历史书名", sectionTitle: "历史章节", durationMs: 1000, createdAt: 0, recordingUrl: "record.mp3", shareToken: "token", isOwner: true, ...fields };
   const page = createPage("src/pages/CheckInDetail/CheckInDetail.tsx", { id: "record" }, { detail, overrides });
   page.render();
   await settle();
@@ -1630,7 +1636,8 @@ async function testHistory(fields, valid, overrides = {}) {
   const button = byClass(tree, "check-in-actions__practice");
   assert.equal(textOf(button), valid ? "我也来跟读" : "选择教材", JSON.stringify(fields));
   button.props.onClick();
-  assert.equal(page.navigations.at(-1), valid ? `/pages/Practice/Practice?bookId=${encodeURIComponent(fields.bookId)}&practice=${fields.practiceIndex}` : "/pages/BookLibrary/BookLibrary");
+  const expectedPage = valid ? (buildBookPracticeBundle(fields.bookId) ?? buildBookPracticeBundle("22")).practices[fields.practiceIndex].imageIndex : null;
+  assert.equal(page.navigations.at(-1), valid ? `/pages/Practice/Practice?bookId=${encodeURIComponent(fields.bookId)}&page=${expectedPage}` : "/pages/BookLibrary/BookLibrary");
 }
 
 module.exports = { createPage, elements, textOf, byClass, buildBookPracticeBundle, load };

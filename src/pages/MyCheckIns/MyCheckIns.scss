@@ -256,3 +256,54 @@
   .my-check-ins__notice { align-items: stretch; flex-direction: column; }
   .my-check-ins__notice-button { width: 100%; }
 }
+
+// 完整 Pad 横屏提高录音卡片的阅读尺寸，窄窗口继续使用原布局。
+@media (min-width: 960PX) {
+  .my-check-ins.device-layout--pad.device-layout--landscape {
+    max-width: 1200PX;
+    padding-top: 24PX;
+    padding-right: 32PX;
+    padding-left: 32PX;
+
+    .my-check-ins__intro { padding: 4PX 4PX 20PX; }
+    .my-check-ins__title { font-size: 26PX; line-height: 36PX; }
+    .my-check-ins__tip { margin-top: 8PX; font-size: 14PX; line-height: 22PX; }
+
+    .check-in-list-card {
+      margin-bottom: 20PX;
+      border-radius: 18PX;
+      box-shadow: 0 6PX 20PX rgba(43, 80, 67, 0.08);
+
+      &__preview { width: 120PX; min-height: 168PX; flex-basis: 120PX; padding: 8PX; }
+      &__image { height: 152PX; border-radius: 6PX; }
+      &__content { padding: 16PX 18PX 14PX; }
+      &__section { font-size: 18PX; line-height: 26PX; }
+      &__book { margin-top: 6PX; font-size: 14PX; line-height: 21PX; }
+      &__meta { margin-top: 8PX; font-size: 14PX; line-height: 21PX; overflow-wrap: anywhere; }
+      &__actions { gap: 10PX; padding-top: 14PX; }
+      &__open,
+      &__delete,
+      &__submit,
+      &__cancel,
+      &__delete-local { height: 48PX; min-height: 48PX; padding: 0 10PX; border-radius: 10PX; font-size: 15PX; }
+      &__delete { width: 64PX; flex: none; }
+    }
+
+    .pending-check-in-status__warning { margin-top: 8PX; font-size: 14PX; line-height: 21PX; overflow-wrap: anywhere; }
+
+    // 两列仍只由共享 split 条件开启，这里仅调整间隔。
+    &.device-layout--split {
+      .my-check-ins__list { gap: 20PX; }
+      .check-in-list-card { margin-bottom: 0; }
+    }
+
+    .my-check-ins-state {
+      padding-top: 40PX;
+      padding-right: 32PX;
+      padding-left: 32PX;
+
+      &__title { font-size: 22PX; line-height: 30PX; }
+      &__text { margin-top: 12PX; font-size: 15PX; line-height: 24PX; }
+    }
+  }
+}

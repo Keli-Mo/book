@@ -280,3 +280,90 @@
 .is-pressed {
   opacity: 0.68;
 }
+
+// iPad 竖屏与首页保持相近的阅读尺寸，工具栏固定、教材列表独立滚动。
+@media (min-width: 600PX) {
+  .book-library.device-layout--pad.device-layout--portrait {
+    max-width: 960PX;
+    padding-top: 20PX;
+
+    .book-library__heading { padding: 4PX 0 18PX; }
+    .book-library__title { font-size: 28PX; line-height: 38PX; }
+    .book-library__count { margin-top: 6PX; font-size: 14PX; line-height: 20PX; }
+
+    .book-search {
+      height: 52PX;
+      padding: 0 16PX;
+      border-width: 1PX;
+      border-radius: 16PX;
+
+      &__input { height: 52PX; margin-left: 10PX; font-size: 16PX; line-height: 52PX; }
+      &__clear { width: 48PX; height: 48PX; }
+    }
+
+    .series-filters { margin-top: 18PX; margin-bottom: 16PX; }
+    .series-filter {
+      height: 48PX;
+      margin-right: 10PX;
+      padding: 0 18PX;
+      border-width: 1PX;
+      border-radius: 24PX;
+      font-size: 15PX;
+    }
+
+    .book-list { border-top-width: 1PX; }
+    .book-row {
+      min-height: 116PX;
+      padding: 10PX 0;
+
+      &::after { left: 90PX; height: 1PX; }
+      &__cover {
+        width: 72PX;
+        height: 96PX;
+        flex-basis: 72PX;
+        border-radius: 6PX;
+        box-shadow: 0 3PX 10PX rgba(26, 54, 44, 0.12);
+      }
+      &__text { margin-left: 18PX; }
+      &__title { font-size: 18PX; line-height: 26PX; }
+      &__meta { margin-top: 8PX; font-size: 14PX; line-height: 22PX; }
+    }
+
+    .book-empty {
+      min-height: 320PX;
+
+      &__title { margin-top: 16PX; font-size: 21PX; line-height: 30PX; }
+      &__tip { margin-top: 10PX; font-size: 15PX; line-height: 22PX; }
+    }
+  }
+}
+
+@media (min-width: 960PX) {
+  .book-library.device-layout--pad.device-layout--portrait {
+    padding-top: 24PX;
+
+    .book-library__heading { padding-bottom: 22PX; }
+    .book-library__title { font-size: 32PX; line-height: 42PX; }
+    .book-library__count { font-size: 15PX; line-height: 22PX; }
+
+    .book-search {
+      height: 56PX;
+
+      &__input { height: 56PX; font-size: 17PX; line-height: 56PX; }
+    }
+    .series-filters { margin-top: 20PX; margin-bottom: 20PX; }
+    .series-filter { height: 52PX; margin-right: 12PX; padding: 0 20PX; border-radius: 26PX; font-size: 16PX; }
+
+    .book-row {
+      min-height: 136PX;
+      padding-top: 12PX;
+      padding-bottom: 12PX;
+
+      &::after { left: 104PX; }
+      &__cover { width: 84PX; height: 112PX; flex-basis: 84PX; }
+      &__text { margin-left: 20PX; }
+      &__title { font-size: 21PX; line-height: 30PX; }
+      &__meta { margin-top: 10PX; font-size: 15PX; line-height: 22PX; }
+    }
+  }
+}

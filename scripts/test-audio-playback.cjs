@@ -348,9 +348,10 @@ assert.match(
 
 console.log("音频播放测试通过：首次停止保护、离页停止与分享进度均正确。");
 
-const { createPage, elements, textOf, byClass } = require("./test-practice-book-route.cjs");
+const { createPage, elements, textOf, byClass, buildBookPracticeBundle } = require("./test-practice-book-route.cjs");
 
 async function testBookPlaybackLifecycle() {
+  const audioPages = buildBookPracticeBundle("22").practices;
   const practiceToasts = [];
   const page = createPage(
     "src/pages/Practice/Practice.tsx",
@@ -364,7 +365,7 @@ async function testBookPlaybackLifecycle() {
   tree = page.render();
   assert.equal(firstModelAudio.events.includes("destroy"), false, "打开目录只是布局变化，不能停止示范音频");
   const directory = elements(tree).find((node) => node.type?.name === "PracticeDirectory");
-  await directory.props.onSelect(1);
+  await directory.props.onSelect(audioPages[1].imageIndex);
   assert.ok(firstModelAudio.events.includes("destroy"), "换训练应通过现有控制器销毁旧示范音频");
   tree = page.render();
   await page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200 });
@@ -400,7 +401,7 @@ async function testBookPlaybackLifecycle() {
   byClass(tree, "practice-header__directory").props.onClick();
   tree = page.render();
   assert.equal(recording.events.filter((event) => event === "stop").length, previousStops, "打开目录不能停止录音回听");
-  await elements(tree).find((node) => node.type?.name === "PracticeDirectory").props.onSelect(2);
+  await elements(tree).find((node) => node.type?.name === "PracticeDirectory").props.onSelect(audioPages[2].imageIndex);
   assert.ok(recording.events.includes("destroy"), "换训练应释放旧录音回听会话");
 
   tree = page.render();
