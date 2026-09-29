@@ -88,6 +88,7 @@ const createFakeTrackAudio = ({ eventsOnDestroy = [] } = {}) => {
   const listeners = {
     ended: [],
     error: [],
+    pause: [],
     play: [],
     stop: [],
     timeUpdate: [],
@@ -96,12 +97,26 @@ const createFakeTrackAudio = ({ eventsOnDestroy = [] } = {}) => {
   const audio = {
     loop: true,
     currentTime: 0,
+    duration: 0,
+    paused: true,
+    playbackRate: 1,
     get src() { return source; },
     set src(value) {
       source = value;
       events.push(`src:${value}`);
     },
-    play: () => events.push("play"),
+    play: () => {
+      audio.paused = false;
+      events.push("play");
+    },
+    pause: () => {
+      audio.paused = true;
+      events.push("pause");
+    },
+    seek: (seconds) => {
+      audio.currentTime = seconds;
+      events.push(`seek:${seconds}`);
+    },
     destroy: () => {
       events.push("destroy");
       for (const event of eventsOnDestroy) {
@@ -111,11 +126,13 @@ const createFakeTrackAudio = ({ eventsOnDestroy = [] } = {}) => {
     },
     onEnded: (listener) => listeners.ended.push(listener),
     onError: (listener) => listeners.error.push(listener),
+    onPause: (listener) => listeners.pause.push(listener),
     onPlay: (listener) => listeners.play.push(listener),
     onStop: (listener) => listeners.stop.push(listener),
     onTimeUpdate: (listener) => listeners.timeUpdate.push(listener),
     emitEnded: () => listeners.ended.forEach((listener) => listener()),
     emitError: () => listeners.error.forEach((listener) => listener({ errCode: 1, errMsg: "old" })),
+    emitPause: () => listeners.pause.forEach((listener) => listener()),
     emitPlay: () => listeners.play.forEach((listener) => listener()),
     emitStop: () => listeners.stop.forEach((listener) => listener()),
     emitTimeUpdate: () => listeners.timeUpdate.forEach((listener) => listener()),
@@ -128,6 +145,7 @@ const trackAudios = [];
 const shownTrackIds = [];
 const playbackErrors = [];
 const playbackStarts = [];
+const playbackPauses = [];
 const playbackTimes = [];
 const trackController = createTrackAudioController(
   () => {
@@ -139,8 +157,10 @@ const trackController = createTrackAudioController(
   (error) => playbackErrors.push(error),
   {
     onPlay: () => playbackStarts.push("play"),
-    onTimeUpdate: (seconds) => playbackTimes.push(seconds),
+    onPause: () => playbackPauses.push("pause"),
+    onTimeUpdate: (currentTime, duration) => playbackTimes.push([currentTime, duration]),
   },
+  { sameTrackAction: "pause" },
 );
 
 trackController.toggle("track-a", "audio-a.mp3");
@@ -151,15 +171,48 @@ assert.deepEqual(
 );
 assert.deepEqual(shownTrackIds, ["track-a"]);
 trackAudios[0].currentTime = 1.25;
+trackAudios[0].duration = 8.75;
 trackAudios[0].emitPlay();
 trackAudios[0].emitTimeUpdate();
 assert.deepEqual(playbackStarts, ["play"], "当前会话的 onPlay 应转发给页面 hook");
-assert.deepEqual(playbackTimes, [1.25], "当前会话的 onTimeUpdate 应转发原生秒数");
+assert.deepEqual(
+  playbackTimes,
+  [[1.25, 8.75]],
+  "当前会话的 onTimeUpdate 应同时转发 currentTime 与 duration",
+);
+
+trackController.toggle("track-a", "audio-a.mp3");
+assert.equal(trackAudios.length, 1, "同一音轨暂停时必须保留原音频实例");
+assert.deepEqual(
+  trackAudios[0].events,
+  ["src:audio-a.mp3", "play", "pause"],
+  "同一音轨播放中再次点击应 pause，不能 destroy 或回到开头",
+);
+trackAudios[0].emitPause();
+assert.deepEqual(playbackPauses, ["pause"], "当前会话的 onPause 应转发给页面 hook");
+assert.equal(shownTrackIds.at(-1), "track-a", "暂停期间应保留当前音轨，供原实例续播");
+
+trackController.toggle("track-a", "audio-a.mp3");
+assert.equal(trackAudios.length, 1, "暂停后继续不得新建音频实例");
+assert.deepEqual(
+  trackAudios[0].events,
+  ["src:audio-a.mp3", "play", "pause", "play"],
+  "暂停后再次点击应在原实例调用 play 继续",
+);
+
+assert.equal(typeof trackController.seek, "function", "示范音频控制器应提供可拖动进度条使用的 seek");
+trackController.seek(4.5);
+assert.equal(trackAudios[0].currentTime, 4.5, "seek 应把当前实例定位到指定秒数");
+assert.equal(trackAudios[0].events.at(-1), "seek:4.5", "seek 必须调用原生音频定位能力");
+
+assert.equal(typeof trackController.setPlaybackRate, "function", "示范音频控制器应支持设置倍速");
+trackController.setPlaybackRate(1.25);
+assert.equal(trackAudios[0].playbackRate, 1.25, "1.25× 应立即应用到正在播放的实例");
 
 trackController.toggle("track-b", "audio-b.mp3");
 assert.deepEqual(
   trackAudios[0].events,
-  ["src:audio-a.mp3", "play", "destroy"],
+  ["src:audio-a.mp3", "play", "pause", "play", "seek:4.5", "destroy"],
   "切换音轨时应先销毁旧播放会话",
 );
 assert.deepEqual(
@@ -167,6 +220,7 @@ assert.deepEqual(
   ["src:audio-b.mp3", "play"],
   "新音轨应使用独立播放会话",
 );
+assert.equal(trackAudios[1].playbackRate, 1.25, "用户选择的 1.25× 应沿用到随后播放的音轨");
 assert.equal(shownTrackIds.at(-1), "track-b");
 
 trackAudios[0].emitStop();
@@ -182,13 +236,14 @@ assert.equal(
 );
 assert.equal(playbackErrors.length, 0, "旧会话的错误不能误报到新播放");
 assert.deepEqual(playbackStarts, ["play"], "旧会话迟到的 play 不能复活页面播放态");
-assert.deepEqual(playbackTimes, [1.25], "旧会话迟到的 timeUpdate 不能覆盖新会话进度");
+assert.deepEqual(playbackTimes, [[1.25, 8.75]], "旧会话迟到的 timeUpdate 不能覆盖新会话进度");
 
 trackAudios[1].currentTime = 2.5;
+trackAudios[1].duration = 12;
 trackAudios[1].emitPlay();
 trackAudios[1].emitTimeUpdate();
 assert.deepEqual(playbackStarts, ["play", "play"]);
-assert.deepEqual(playbackTimes, [1.25, 2.5]);
+assert.deepEqual(playbackTimes, [[1.25, 8.75], [2.5, 12]]);
 
 trackAudios[1].emitEnded();
 assert.equal(shownTrackIds.at(-1), null, "当前音轨结束后应恢复未播放状态");
@@ -203,13 +258,19 @@ const hooklessController = createTrackAudioController(
     return audio;
   },
   (trackId) => hooklessTrackIds.push(trackId),
+  undefined,
+  {},
+  { sameTrackAction: "pause" },
 );
 hooklessController.toggle("model", "model.mp3");
 hooklessAudios[0].emitPlay();
 hooklessAudios[0].emitTimeUpdate();
 hooklessController.toggle("model", "model.mp3");
-assert.deepEqual(hooklessTrackIds, ["model", null], "未提供 hooks 时示范音频切换语义应保持不变");
-assert.equal(hooklessAudios[0].events.at(-1), "destroy", "未提供 hooks 时停止仍应释放当前实例");
+assert.deepEqual(hooklessTrackIds, ["model"], "未提供 hooks 时暂停也应保留当前音轨");
+assert.equal(hooklessAudios[0].events.at(-1), "pause", "未提供 hooks 时同轨第二次点击仍应暂停而非释放");
+hooklessController.toggle("model", "model.mp3");
+assert.equal(hooklessAudios.length, 1, "未提供 hooks 时续播仍应复用原实例");
+assert.equal(hooklessAudios[0].events.at(-1), "play", "未提供 hooks 时第三次点击应从暂停位置续播");
 
 const synchronousAudios = [];
 const synchronousTrackIds = [];
@@ -262,6 +323,10 @@ assert.equal(getPlaybackPositionMs(Number.POSITIVE_INFINITY, 5000), 0, "无限�
 
 const practice = fs.readFileSync(
   path.join(projectRoot, "src/pages/Practice/PracticeSession.tsx"),
+  "utf8",
+);
+const practiceStyles = fs.readFileSync(
+  path.join(projectRoot, "src/pages/Practice/Practice.scss"),
   "utf8",
 );
 const checkInDetail = fs.readFileSync(
@@ -356,17 +421,213 @@ async function testBookPlaybackLifecycle() {
   const page = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "22", practice: "0" },
-    { showToast: ({ title }) => practiceToasts.push(title) },
+    {
+      showToast: ({ title }) => practiceToasts.push(title),
+    },
   );
   let tree = page.render();
   byClass(tree, "audio-hotspot").props.onClick();
   const firstModelAudio = page.audios.at(-1);
+  firstModelAudio.currentTime = 3.5;
+  firstModelAudio.duration = 12;
+  firstModelAudio.trigger("TimeUpdate");
+  tree = page.render();
+
+  const modelPlayer = byClass(tree, "practice-model-player");
+  assert.ok(modelPlayer, "示范音频开始后页面应显示常驻播放器");
+  const progressRow = byClass(tree, "practice-header__progress-row");
+  const bookViewport = byClass(tree, "practice-book-viewport");
+  assert.ok(
+    elements(progressRow).includes(modelPlayer),
+    "示范播放器应放入标题下方现有进度行，避免悬浮遮挡教材页面",
+  );
+  assert.equal(
+    elements(bookViewport).includes(modelPlayer),
+    false,
+    "示范播放器不能继续覆盖在教材书页 viewport 内",
+  );
+  let modelProgress = byClass(tree, "practice-model-player__progress");
+  assert.equal(modelProgress?.type, "Slider", "示范播放器应使用可拖动的 Slider 进度条");
+  assert.equal(modelProgress.props.value, 3.5, "进度条应显示 currentTime");
+  assert.equal(modelProgress.props.max, 12, "进度条上限应使用音频 duration");
+
+  let modelToggle = byClass(tree, "practice-model-player__toggle");
+  assert.doesNotMatch(textOf(modelToggle), /暂停|继续|播放/, "播放控制按钮可见内容应只使用图标");
+  assert.match(String(modelToggle.props["aria-label"] || ""), /暂停/, "播放中图标按钮应通过 aria-label 说明暂停操作");
+  modelToggle.props.onClick();
+  assert.equal(page.audios.length, 1, "暂停示范音频不能创建或销毁原实例");
+  assert.equal(firstModelAudio.events.at(-1), "pause", "播放器暂停按钮应调用原生 pause");
+  tree = page.render();
+  modelToggle = byClass(tree, "practice-model-player__toggle");
+  assert.doesNotMatch(textOf(modelToggle), /暂停|继续|播放/, "暂停后的控制按钮也只能显示图标");
+  assert.match(String(modelToggle.props["aria-label"] || ""), /继续|播放/, "暂停后图标按钮应通过 aria-label 说明继续操作");
+  byClass(tree, "audio-hotspot").props.onClick();
+  assert.equal(page.audios.length, 1, "同一热点继续播放必须复用原音频实例");
+  assert.equal(firstModelAudio.events.at(-1), "play", "同一热点再次点击应从暂停位置继续");
+
+  modelProgress = byClass(page.render(), "practice-model-player__progress");
+  modelProgress.props.onChanging({ detail: { value: 7 } });
+  tree = page.render();
+  assert.equal(
+    elements(tree).find((node) => node.type === "Swiper")?.props.disableTouch,
+    true,
+    "拖动音频进度时必须锁定教材 Swiper，避免误翻页",
+  );
+  modelProgress = byClass(tree, "practice-model-player__progress");
+  modelProgress.props.onChange({ detail: { value: 7 } });
+  assert.equal(firstModelAudio.currentTime, 7, "松开进度条后应 seek 到用户选择的秒数");
+  assert.equal(firstModelAudio.events.at(-1), "seek:7", "进度条拖动应调用当前实例的 seek");
+  tree = page.render();
+  assert.equal(
+    elements(tree).find((node) => node.type === "Swiper")?.props.disableTouch,
+    false,
+    "结束拖动后应恢复教材 Swiper",
+  );
+
+  firstModelAudio.duration = 12.2;
+  firstModelAudio.trigger("TimeUpdate");
+  tree = page.render();
+  modelProgress = byClass(tree, "practice-model-player__progress");
+  modelProgress.props.onChanging({ detail: { value: 13 } });
+  modelProgress = byClass(page.render(), "practice-model-player__progress");
+  modelProgress.props.onChange({ detail: { value: 13 } });
+  assert.equal(firstModelAudio.currentTime, 12.2, "拖到整数刻度末端时 seek 不能超过真实小数时长");
+  tree = page.render();
+  assert.equal(
+    byClass(tree, "practice-model-player__progress").props.value,
+    12.2,
+    "拖动结束后的 UI 进度也必须裁剪到真实小数时长",
+  );
+  assert.equal(
+    textOf(byClass(tree, "practice-model-player__time")),
+    "0:12 / 0:12",
+    "小数时长音频不能显示当前进度超过总时长",
+  );
+
+  let rateTrigger = byClass(tree, "practice-model-player__rate");
+  assert.match(textOf(rateTrigger), /1(?:\.0)?\s*[x×]/i, "倍速入口默认应显示当前 1× 倍速");
+  assert.equal(byClass(tree, "practice-model-player__rate-menu"), undefined, "未点击倍速入口时不应预先展开菜单");
+  await rateTrigger.props.onClick();
+  tree = page.render();
+  assert.equal(page.actionSheetCalls.length, 0, "点击倍速入口不应再打开底部微信 ActionSheet");
+  const rateMenu = byClass(tree, "practice-model-player__rate-menu");
+  assert.ok(rateMenu, "点击倍速入口应在播放器附近展开内联菜单");
+  const modelPlayerWithRateMenu = byClass(tree, "practice-model-player");
+  const viewportWithRateMenu = byClass(tree, "practice-book-viewport");
+  assert.ok(
+    elements(modelPlayerWithRateMenu).includes(rateMenu),
+    "倍速菜单必须锚定在 practice-model-player 内",
+  );
+  assert.equal(
+    elements(viewportWithRateMenu).includes(rateMenu),
+    false,
+    "倍速菜单不能挂载到教材书页 viewport 内",
+  );
+  const rateOptions = elements(rateMenu).filter((node) =>
+    String(node.props?.className || "").split(" ").includes("practice-model-player__rate-option"),
+  );
+  assert.equal(rateOptions.length, 5, "内联倍速菜单应提供五个选项");
+  assert.deepEqual(
+    rateOptions.map((option) => textOf(option).trim()),
+    ["0.75×", "1.0×", "1.25×", "1.5×", "2.0×"],
+    "内联倍速菜单应严格提供 0.75×、1.0×、1.25×、1.5× 和 2.0×",
+  );
+  await rateOptions[2].props.onClick();
+  assert.equal(firstModelAudio.playbackRate, 1.25, "选择 1.25× 后应立即应用到当前音频");
+  tree = page.render();
+  assert.equal(byClass(tree, "practice-model-player__rate-menu"), undefined, "选择倍速后应立即收起内联菜单");
+  rateTrigger = byClass(tree, "practice-model-player__rate");
+  assert.match(textOf(rateTrigger), /1\.25\s*[x×]/i, "选择后倍速入口应显示当前 1.25×");
+
+  const progressStyle = practiceStyles.match(
+    /\.practice-model-player\s*\{[\s\S]*?&__progress\s*\{([\s\S]*?)\n\s*\}/,
+  )?.[1] || "";
+  assert.match(
+    progressStyle,
+    /transform:\s*translateY\(7PX\)\s*;/i,
+    "Slider 应按实测偏差下移 7PX，使原生轨道在变薄的播放器内视觉居中",
+  );
+  const modelPlayerStyle = practiceStyles.match(
+    /\.practice-model-player\s*\{([\s\S]*?)\n\s*&__toggle/,
+  )?.[1] || "";
+  assert.match(modelPlayerStyle, /width:\s*auto\s*;/i, "播放器应恢复横向自适应长度");
+  assert.match(modelPlayerStyle, /max-width:\s*520PX\s*;/i, "播放器横向长度应继续沿用宽屏上限");
+  assert.match(modelPlayerStyle, /height:\s*38PX\s*;/i, "播放器应缩小上下厚度，而不是缩短横向长度");
+  assert.match(modelPlayerStyle, /min-height:\s*38PX\s*;/i, "播放器的最小上下厚度应同步缩小");
+  assert.match(modelPlayerStyle, /flex:\s*1\s*;/i, "播放器应继续占用标题行可用的横向空间");
+  const modelPlayerControlStyle = practiceStyles.match(
+    /&__toggle,\s*\n\s*&__rate\s*\{([\s\S]*?)\n\s*\}/,
+  )?.[1] || "";
+  assert.match(modelPlayerControlStyle, /width:\s*44PX\s*;/i, "播放与倍速按钮应保留 44PX 横向占位与命中盒");
+  assert.match(modelPlayerControlStyle, /height:\s*44PX\s*;/i, "播放与倍速按钮应保留 44PX 纵向命中盒");
+  assert.match(modelPlayerControlStyle, /border:\s*3PX\s+solid\s+transparent\s*;/i,
+    "按钮应使用透明边框把可见背景压薄至 38PX");
+  assert.match(modelPlayerControlStyle, /background-clip:\s*padding-box\s*;/i,
+    "按钮背景只能绘制在 38PX 可见区域内");
+  assert.match(
+    practiceStyles,
+    /\.practice-header__progress-row--audio-active\s+\.practice-header__directory\s*\{[^}]*margin-left:\s*auto\s*;/i,
+    "播放器变薄后目录入口仍应保持在行尾",
+  );
+  const rateMenuStyle = practiceStyles.match(
+    /(?:&__rate-menu|\.practice-model-player__rate-menu)\s*\{([\s\S]*?)\n\s*\}/,
+  )?.[1] || "";
+  assert.match(
+    practiceStyles,
+    /\.practice-model-player\s*\{[\s\S]{0,400}?position:\s*relative\s*;/i,
+    "播放器应建立相对定位上下文，让内联倍速菜单锚定在组件边上",
+  );
+  assert.match(rateMenuStyle, /position:\s*absolute\s*;/i, "倍速菜单应绝对定位，不挤动播放器和书页");
+  assert.match(rateMenuStyle, /top:\s*calc\(100%\s*\+\s*[^)]+\)\s*;/i,
+    "倍速菜单应紧贴播放器下沿展开，而不是固定在屏幕底部");
+  assert.doesNotMatch(rateMenuStyle, /position:\s*fixed\s*;/i,
+    "倍速菜单不能退化为覆盖屏幕底部的 fixed 面板");
+
+  const conservativeDevicePage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { canIUse: (schema) => schema !== "InnerAudioContext.playbackRate" },
+  );
+  let conservativeDeviceTree = conservativeDevicePage.render();
+  byClass(conservativeDeviceTree, "audio-hotspot").props.onClick();
+  conservativeDeviceTree = conservativeDevicePage.render();
+  const conservativeRateTrigger = byClass(conservativeDeviceTree, "practice-model-player__rate");
+  assert.ok(
+    conservativeRateTrigger,
+    "机型能力探测返回 false 时也必须显示倍速入口，避免华为等模拟机误隐藏",
+  );
+  conservativeRateTrigger.props.onClick();
+  conservativeDeviceTree = conservativeDevicePage.render();
+  const conservativeRateOptions = elements(
+    byClass(conservativeDeviceTree, "practice-model-player__rate-menu"),
+  ).filter((node) =>
+    String(node.props?.className || "").split(" ").includes("practice-model-player__rate-option"),
+  );
+  conservativeRateOptions[4].props.onClick();
+  assert.equal(
+    conservativeDevicePage.audios.at(-1).playbackRate,
+    2,
+    "能力探测误报时仍应把用户选择的 2× 写入真实音频实例",
+  );
+
+  const pausesBeforePageTurn = firstModelAudio.events.filter((event) => event === "pause").length;
   byClass(tree, "practice-header__directory").props.onClick();
   tree = page.render();
   assert.equal(firstModelAudio.events.includes("destroy"), false, "打开目录只是布局变化，不能停止示范音频");
   const directory = elements(tree).find((node) => node.type?.name === "PracticeDirectory");
   await directory.props.onSelect(audioPages[1].imageIndex);
-  assert.ok(firstModelAudio.events.includes("destroy"), "换训练应通过现有控制器销毁旧示范音频");
+  assert.equal(firstModelAudio.events.includes("destroy"), false, "目录换页后示范音频必须继续播放");
+  assert.equal(
+    firstModelAudio.events.filter((event) => event === "pause").length,
+    pausesBeforePageTurn,
+    "目录换页不能暂停示范音频",
+  );
+  tree = page.render();
+  await elements(tree).find((node) => node.type === "Swiper").props.onChange({
+    detail: { current: 2, source: "touch" },
+  });
+  assert.equal(firstModelAudio.events.includes("destroy"), false, "手势翻页后示范音频必须继续播放");
+  assert.equal(firstModelAudio.paused, false, "手势翻页不能暂停示范音频");
   tree = page.render();
   await page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200 });
   tree = page.render();
@@ -375,6 +636,7 @@ async function testBookPlaybackLifecycle() {
   tree = page.render();
   assert.ok(elements(tree).some((node) => node.type === "Button" && textOf(node) === "停止回听"), "A 原生 onPlay 后应显示停止按钮");
   elements(tree).find((node) => node.type === "Button" && textOf(node) === "停止回听").props.onClick();
+  assert.equal(recordingA.events.at(-1), "destroy", "录音回听第二次点击仍应停止并释放，不能改成暂停");
   tree = page.render();
   elements(tree).find((node) => node.type === "Button" && textOf(node) === "回听录音").props.onClick();
   const recordingB = page.audios.findLast((audio) => audio.src === "/tmp/recording.mp3");
@@ -418,6 +680,62 @@ async function testBookPlaybackLifecycle() {
   tree = page.setRoute({ bookId: "25", practice: "23" });
   assert.ok(oldRecording.events.includes("destroy"), "换书/路由训练应释放旧录音回听会话");
   assert.equal(textOf(byClass(tree, "practice-header__course")), "Reading Explorer 5");
-  console.log("音频教材回归通过：换书、换训练停止两路音频，目录布局变化保持播放。");
+  console.log("音频教材回归通过：示范音频可暂停、拖动、多档倍速和跨页续播，换书仍释放会话。");
 }
-testBookPlaybackLifecycle().catch((error) => { console.error(error); process.exitCode = 1; });
+
+async function testSameUrlPlaybackAcrossPages() {
+  const audioPages = buildBookPracticeBundle("7").practices;
+  const firstPage = audioPages.find((practice) => practice.pageNumber === 61);
+  const secondPage = audioPages.find((practice) => practice.pageNumber === 62);
+  const firstTrack = firstPage?.tracks[0];
+  const secondTrack = secondPage?.tracks[0];
+  assert.ok(firstPage && secondPage && firstTrack && secondTrack, "教材 7 应保留跨页共用音频的真实回归样本");
+  assert.notEqual(firstTrack.id, secondTrack.id, "真实回归样本必须来自不同页面、不同 trackId");
+  assert.equal(firstTrack.url, secondTrack.url, "真实回归样本的两个热点必须指向同一音频 URL");
+
+  const page = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "7", page: String(firstPage.imageIndex) },
+  );
+  try {
+    let tree = page.render();
+    byClass(tree, "audio-hotspot").props.onClick();
+    const sharedAudio = page.audios.at(-1);
+    sharedAudio.currentTime = 6.25;
+    sharedAudio.duration = 18;
+    sharedAudio.trigger("TimeUpdate");
+
+    tree = page.render();
+    await elements(tree).find((node) => node.type === "Swiper").props.onChange({
+      detail: { current: secondPage.imageIndex, source: "touch" },
+    });
+    tree = page.render();
+    let sharedHotspot = byClass(tree, "audio-hotspot");
+    assert.match(
+      sharedHotspot.props.className,
+      /audio-hotspot--playing/,
+      "翻到不同 trackId 但 URL 相同的下一页时，热点仍应代表当前播放实例",
+    );
+    assert.match(textOf(sharedHotspot), /Ⅱ/, "跨页共用音频的热点应继续显示播放中");
+
+    sharedHotspot.props.onClick();
+    assert.equal(page.audios.length, 1, "点击跨页同 URL 热点只能暂停原实例，不能新建并从 0 播放");
+    assert.equal(sharedAudio.events.at(-1), "pause", "点击跨页同 URL 热点应暂停原实例");
+    assert.equal(sharedAudio.events.includes("destroy"), false, "暂停跨页同 URL 音频不能销毁原实例");
+    assert.equal(sharedAudio.currentTime, 6.25, "暂停跨页同 URL 音频必须保留原播放进度");
+
+    tree = page.render();
+    sharedHotspot = byClass(tree, "audio-hotspot");
+    assert.match(sharedHotspot.props.className, /audio-hotspot--paused/, "暂停后当前页热点应显示可继续状态");
+    sharedHotspot.props.onClick();
+    assert.equal(page.audios.length, 1, "继续跨页同 URL 音频必须复用原实例");
+    assert.equal(sharedAudio.events.at(-1), "play", "暂停后再次点击应在原实例继续播放");
+    assert.equal(sharedAudio.currentTime, 6.25, "继续播放不能把跨页共用音频重置到 0");
+  } finally {
+    page.dispose();
+  }
+}
+
+testBookPlaybackLifecycle()
+  .then(testSameUrlPlaybackAcrossPages)
+  .catch((error) => { console.error(error); process.exitCode = 1; });

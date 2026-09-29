@@ -12,10 +12,16 @@ interface TrackAudio {
   src: string;
   loop: boolean;
   currentTime: number;
+  duration: number;
+  paused: boolean;
+  playbackRate: number;
   play: () => void;
+  pause: () => void;
+  seek: (seconds: number) => void;
   destroy: () => void;
   onEnded: (callback: () => void) => void;
   onError: (callback: (error: TrackAudioError) => void) => void;
+  onPause: (callback: () => void) => void;
   onPlay: (callback: () => void) => void;
   onStop: (callback: () => void) => void;
   onTimeUpdate: (callback: () => void) => void;
@@ -23,6 +29,8 @@ interface TrackAudio {
 
 interface TrackAudioController {
   toggle: (trackId: string, url: string) => void;
+  seek: (seconds: number) => boolean;
+  setPlaybackRate: (rate: number) => void;
   stop: () => boolean;
   dispose: () => boolean;
 }
@@ -33,7 +41,12 @@ interface AudioStopController {
 
 interface TrackAudioHooks {
   onPlay?: () => void;
-  onTimeUpdate?: (seconds: number) => void;
+  onPause?: () => void;
+  onTimeUpdate?: (currentTime: number, duration: number) => void;
+}
+
+interface TrackAudioControllerOptions {
+  sameTrackAction?: "stop" | "pause";
 }
 
 /**
@@ -57,8 +70,10 @@ export const createTrackAudioController = (
   onTrackChange: (trackId: string | null) => void,
   onPlaybackError?: (error: TrackAudioError) => void,
   hooks: TrackAudioHooks = {},
+  options: TrackAudioControllerOptions = {},
 ): TrackAudioController => {
   let generation = 0;
+  let playbackRate = 1;
   let activeSession: {
     audio: TrackAudio;
     generation: number;
@@ -88,6 +103,7 @@ export const createTrackAudioController = (
     generation = sessionGeneration;
     activeSession = { audio, generation: sessionGeneration, trackId };
     audio.loop = false;
+    if (playbackRate !== 1) audio.playbackRate = playbackRate;
 
     const finishCurrentSession = () => {
       if (!isCurrentSession(sessionGeneration)) return;
@@ -102,9 +118,13 @@ export const createTrackAudioController = (
       if (!isCurrentSession(sessionGeneration)) return;
       hooks.onPlay?.();
     });
+    audio.onPause(() => {
+      if (!isCurrentSession(sessionGeneration)) return;
+      hooks.onPause?.();
+    });
     audio.onTimeUpdate(() => {
       if (!isCurrentSession(sessionGeneration)) return;
-      hooks.onTimeUpdate?.(audio.currentTime);
+      hooks.onTimeUpdate?.(audio.currentTime, audio.duration);
     });
     audio.onError((error) => {
       if (!isCurrentSession(sessionGeneration)) return;
@@ -123,12 +143,34 @@ export const createTrackAudioController = (
   return {
     toggle(trackId, url) {
       if (activeSession?.trackId === trackId) {
-        releaseActiveSession(true);
+        if (options.sameTrackAction === "pause") {
+          if (activeSession.audio.paused) activeSession.audio.play();
+          else activeSession.audio.pause();
+        } else {
+          releaseActiveSession(true);
+        }
         return;
       }
 
       releaseActiveSession(false);
       startTrack(trackId, url);
+    },
+
+    seek(seconds) {
+      const audio = activeSession?.audio;
+      if (!audio || !Number.isFinite(seconds)) return false;
+      const nonNegativeSeconds = Math.max(0, seconds);
+      const boundedSeconds = Number.isFinite(audio.duration) && audio.duration > 0
+        ? Math.min(nonNegativeSeconds, audio.duration)
+        : nonNegativeSeconds;
+      audio.seek(boundedSeconds);
+      return true;
+    },
+
+    setPlaybackRate(rate) {
+      if (!Number.isFinite(rate)) return;
+      playbackRate = Math.min(2, Math.max(0.5, rate));
+      if (activeSession) activeSession.audio.playbackRate = playbackRate;
     },
 
     stop() {

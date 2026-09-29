@@ -242,7 +242,11 @@ assert.match(readerComponent, /import \{ PracticeSession \} from "\.\.\/Practice
 assert.match(readerComponent, /import "\.\.\/Practice\/Practice\.scss"/,
   "Think 阅读页应沿用现有跟读样式");
 assert.match(readerComponent, /bundle=\{bundle\}/, "Think 阅读页应将保留页适配为跟读数据");
-assert.match(readerComponent, /keepModelAudioOnTurn/, "Think 翻页时示范音频应继续播放");
+assert.doesNotMatch(
+  readerComponent,
+  /keepModelAudioOnTurn/,
+  "所有教材都应统一跨页续播，Think 不再依赖专用开关",
+);
 assert.match(readerComponent, /&page=\$\{page\.imageIndex\}/, "分享链接应保留原 PDF 图片索引");
 
 console.log("Think 1/2 全页阅读模型验证通过：516 页、208 个音频页及旧跨页/播放契约。");

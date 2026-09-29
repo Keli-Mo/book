@@ -1,4 +1,4 @@
-import { Button, Image, PageMeta, ScrollView, Swiper, SwiperItem, Text, View, type ScrollViewProps } from "@tarojs/components";
+import { Button, Image, PageMeta, ScrollView, Slider, Swiper, SwiperItem, Text, View, type ScrollViewProps } from "@tarojs/components";
 import Taro, {
   useDidHide,
   useDidShow,
@@ -65,6 +65,15 @@ const formatDuration = (durationMs: number) => {
   return `${minutes}:${seconds}`;
 };
 
+const formatAudioTime = (seconds: number) =>
+  formatDuration(Math.floor(Math.max(0, Number.isFinite(seconds) ? seconds : 0)) * 1000);
+
+const MODEL_PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
+type ModelPlaybackRate = typeof MODEL_PLAYBACK_RATES[number];
+const MODEL_PLAYBACK_RATE_LABELS = ["0.75×", "1.0×", "1.25×", "1.5×", "2.0×"] as const;
+const formatModelPlaybackRate = (rate: ModelPlaybackRate) =>
+  MODEL_PLAYBACK_RATE_LABELS[MODEL_PLAYBACK_RATES.indexOf(rate)];
+
 const RECORDER_OPTIONS = {
   duration: 300000,
   sampleRate: 16000,
@@ -90,6 +99,14 @@ const getRecorderTimeoutOperation = (error: unknown) => {
 
 type NaturalImageSize = { width: number; height: number };
 const naturalImageSizeCache = new Map<string, NaturalImageSize>();
+// 先在 Think 1 学生书验证固定画布；后续书籍通过同一配置逐册启用。
+const STABLE_PORTRAIT_CANVAS_BY_BOOK_ID: Readonly<Record<string, NaturalImageSize>> = {
+  "26": { width: 1040, height: 1411 },
+};
+const DEFAULT_THINK_HOTSPOT_LEFT_SHIFT_PX = 8;
+const THINK_HOTSPOT_LEFT_SHIFT_PX_BY_BOOK_ID: Readonly<Record<string, number>> = {
+  "26": 22,
+};
 
 const readNaturalImageSize = (value: unknown): NaturalImageSize | null => {
   if (!value || typeof value !== "object") return null;
@@ -110,9 +127,10 @@ function PracticeControls({ fitted, children }: { fitted: boolean; children: Rea
   ) : <View className='practice-workspace__controls'>{children}</View>;
 }
 
-function PracticeBookPage({ scrollable, active, imageSize, onScroll, children }: {
+function PracticeBookPage({ scrollable, active, fitToImage, imageSize, onScroll, children }: {
   scrollable: boolean;
   active: boolean;
+  fitToImage: boolean;
   imageSize: NaturalImageSize | null;
   onScroll?: ScrollViewProps["onScroll"];
   children: ReactNode;
@@ -120,14 +138,16 @@ function PracticeBookPage({ scrollable, active, imageSize, onScroll, children }:
   const page = (
     <View
       className='practice-book-page'
-      style={scrollable && imageSize ? { width: `${imageSize.width}px`, height: `${imageSize.height}px` } : undefined}
+      style={(scrollable || fitToImage) && imageSize
+        ? { width: `${imageSize.width}px`, height: `${imageSize.height}px` }
+        : undefined}
     >
       {children}
     </View>
   );
   return scrollable ? (
-    // 成功切页才重建原生滚动节点；录音状态更新和取消切页保留阅读位置。
-    <ScrollView key={active ? "active" : "neighbor"} className='practice-book-scroll' scrollY onScroll={onScroll}>
+    // 离开页归零，当前页允许自由滚动；保留原生节点，避免重建已预加载的图片。
+    <ScrollView className='practice-book-scroll' scrollY scrollTop={active ? undefined : 0} onScroll={onScroll}>
       {page}
     </ScrollView>
   ) : page;
@@ -139,7 +159,6 @@ export function PracticeSession({
   initialPractice,
   layout,
   layoutClassName,
-  keepModelAudioOnTurn = false,
   persistReadingProgress = true,
   onPracticeChange,
 }: {
@@ -148,7 +167,6 @@ export function PracticeSession({
   initialPractice: ListeningPractice;
   layout: DeviceLayoutState;
   layoutClassName: string;
-  keepModelAudioOnTurn?: boolean;
   persistReadingProgress?: boolean;
   onPracticeChange?: (index: number) => void;
 }) {
@@ -165,6 +183,13 @@ export function PracticeSession({
   });
   const [isDirectoryOpen, setIsDirectoryOpen] = useState(false);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const [modelPlaybackState, setModelPlaybackState] = useState<"idle" | "playing" | "paused">("idle");
+  const [modelPlaybackCurrentTime, setModelPlaybackCurrentTime] = useState(0);
+  const [modelPlaybackDuration, setModelPlaybackDuration] = useState(0);
+  const [modelSeekPreview, setModelSeekPreview] = useState<number | null>(null);
+  const [isModelSeekDragging, setIsModelSeekDragging] = useState(false);
+  const [modelPlaybackRate, setModelPlaybackRate] = useState<ModelPlaybackRate>(1);
+  const [isModelRateMenuOpen, setIsModelRateMenuOpen] = useState(false);
   const activeModelTrack = useMemo(() => {
     if (!playingTrackId) return null;
     for (const item of bundle.practices) {
@@ -328,13 +353,31 @@ export function PracticeSession({
   const naturalImageSize = loadedImage?.imageUrl === practice.imageUrl
     ? loadedImage.size
     : naturalImageSizeCache.get(practice.imageUrl);
+  const stablePortraitCanvasNaturalSize = isLandscapeLayout
+    ? null
+    : STABLE_PORTRAIT_CANVAS_BY_BOOK_ID[bundle.book.id] ?? null;
+  const stablePortraitCanvasSize = useMemo(
+    () => stablePortraitCanvasNaturalSize
+      ? isPadPortraitLayout
+        ? fitImageToBounds(bookBounds, stablePortraitCanvasNaturalSize)
+        : fitImageToWidth(bookBounds.width, stablePortraitCanvasNaturalSize)
+      : null,
+    [bookBounds, isPadPortraitLayout, stablePortraitCanvasNaturalSize],
+  );
   const fittedBookSize = useMemo(
     () => naturalImageSize
-      ? isPadPortraitLayout
+      ? stablePortraitCanvasSize
+        ? fitImageToBounds(stablePortraitCanvasSize, naturalImageSize)
+        : isPadPortraitLayout
         ? fitImageToBounds(bookBounds, naturalImageSize)
         : fitImageToWidth(bookBounds.width, naturalImageSize)
       : null,
-    [bookBounds.width, bookBounds.height, isPadPortraitLayout, naturalImageSize],
+    [
+      bookBounds,
+      isPadPortraitLayout,
+      naturalImageSize,
+      stablePortraitCanvasSize,
+    ],
   );
   // 热点使用实际施加在图面上的尺寸，不再反复读取由录音区挤压后的高度。
   const imageSize = fittedBookSize ?? { width: 0, height: 0 };
@@ -362,14 +405,16 @@ export function PracticeSession({
         const center = clampHotspotCenter(originalCenter, {
           width: imageSize.width,
           height: imageSize.height,
-        }, undefined, bundle.book.seriesId === "think" ? 8 : 0);
+        }, undefined, bundle.book.seriesId === "think"
+          ? THINK_HOTSPOT_LEFT_SHIFT_PX_BY_BOOK_ID[bundle.book.id] ?? DEFAULT_THINK_HOTSPOT_LEFT_SHIFT_PX
+          : 0);
         return {
           ...track,
           left: `${center.left}%`,
           top: `${center.top}%`,
         };
       }),
-    [bundle.book.seriesId, imageSize.height, imageSize.width, practice.tracks],
+    [bundle.book.id, bundle.book.seriesId, imageSize.height, imageSize.width, practice.tracks],
   );
 
   const clearHiddenStopRetry = useCallback(() => {
@@ -549,6 +594,12 @@ export function PracticeSession({
       (trackId) => {
         if (mountedRef.current && !pageHiddenRef.current) {
           setPlayingTrackId(trackId);
+          setModelPlaybackState(trackId ? "playing" : "idle");
+          setModelPlaybackCurrentTime(0);
+          setModelPlaybackDuration(0);
+          setModelSeekPreview(null);
+          setIsModelSeekDragging(false);
+          setIsModelRateMenuOpen(false);
         }
       },
       (error) => {
@@ -557,6 +608,25 @@ export function PracticeSession({
           Taro.showToast({ title: "示范音频播放失败", icon: "none" });
         }
       },
+      {
+        onPlay: () => {
+          if (mountedRef.current && !pageHiddenRef.current) {
+            setModelPlaybackState("playing");
+          }
+        },
+        onPause: () => {
+          if (mountedRef.current && !pageHiddenRef.current) {
+            setModelPlaybackState("paused");
+          }
+        },
+        onTimeUpdate: (currentTime, duration) => {
+          if (mountedRef.current && !pageHiddenRef.current) {
+            setModelPlaybackCurrentTime(currentTime);
+            setModelPlaybackDuration(duration);
+          }
+        },
+      },
+      { sameTrackAction: "pause" },
     );
     modelAudioControllerRef.current = modelAudioController;
 
@@ -1091,6 +1161,12 @@ export function PracticeSession({
       recordingAudioRef.current,
     );
     setPlayingTrackId(null);
+    setModelPlaybackState("idle");
+    setModelPlaybackCurrentTime(0);
+    setModelPlaybackDuration(0);
+    setModelSeekPreview(null);
+    setIsModelSeekDragging(false);
+    setIsModelRateMenuOpen(false);
     setIsPlayingRecording(false);
 
     const current = recordingMachineRef.current;
@@ -1150,8 +1226,49 @@ export function PracticeSession({
 
     recordingAudioRef.current?.stop();
     // 示范音频由用户手动控制，录音中和暂停时也允许播放或切换。
-    if (keepModelAudioOnTurn && activeModelTrack?.url === url) controller.stop();
-    else controller.toggle(trackId, url);
+    if (playingTrackId && activeModelTrack?.url === url) {
+      controller.toggle(playingTrackId, url);
+      return;
+    }
+    controller.toggle(trackId, url);
+  };
+
+  const toggleModelPlayback = () => {
+    if (!playingTrackId || !activeModelTrack) return;
+    setIsModelRateMenuOpen(false);
+    modelAudioControllerRef.current?.toggle(playingTrackId, activeModelTrack.url);
+  };
+
+  const handleModelSeekChanging = (event: { detail: { value: number } }) => {
+    const value = Number(event.detail.value);
+    if (!Number.isFinite(value)) return;
+    const boundedValue = modelPlaybackDuration > 0
+      ? Math.min(Math.max(0, value), modelPlaybackDuration)
+      : Math.max(0, value);
+    setIsModelRateMenuOpen(false);
+    setIsModelSeekDragging(true);
+    setModelSeekPreview(boundedValue);
+  };
+
+  const handleModelSeekChange = (event: { detail: { value: number } }) => {
+    const value = Number(event.detail.value);
+    if (Number.isFinite(value)) {
+      const boundedValue = modelPlaybackDuration > 0
+        ? Math.min(Math.max(0, value), modelPlaybackDuration)
+        : Math.max(0, value);
+      modelAudioControllerRef.current?.seek(boundedValue);
+      setModelPlaybackCurrentTime(boundedValue);
+    }
+    setModelSeekPreview(null);
+    setIsModelSeekDragging(false);
+  };
+
+  const selectModelPlaybackRate = (nextRate: ModelPlaybackRate) => {
+    const controller = modelAudioControllerRef.current;
+    if (!controller) return;
+    controller.setPlaybackRate(nextRate);
+    setModelPlaybackRate(nextRate);
+    setIsModelRateMenuOpen(false);
   };
 
   const removeCurrentPending = async () => {
@@ -1249,10 +1366,7 @@ export function PracticeSession({
       applyRecordingMachine(resetRecordingMachine(current));
       clearRecordingView();
     }
-    if (!keepModelAudioOnTurn) {
-      modelAudioControllerRef.current?.stop();
-      setPlayingTrackId(null);
-    }
+    // 示范音频独立于书页切换，翻页只更换教材与录音上下文。
     // 放弃新录音并切换训练时，之前保留的旧录音继续留在“我的打卡”。
     replacementPendingIdsRef.current.clear();
     if (!canCommitSwitch()) {
@@ -1290,9 +1404,11 @@ export function PracticeSession({
     }
     if (nextIndex === practiceContextRef.current.practiceIndex) {
       setIsDirectoryOpen(false);
+      setIsModelRateMenuOpen(false);
       if (options?.fromSwiper) setBookSwiperCurrent(nextIndex);
       return;
     }
+    setIsModelRateMenuOpen(false);
     const animate = options?.animate !== false && !options?.fromSwiper;
     const fromSwiper = options?.fromSwiper === true;
     // 训练切换意图出现后，旧训练尚在等待权限的 continuation 永远不得启动录音。
@@ -1386,6 +1502,7 @@ export function PracticeSession({
       Taro.showToast({ title: "打卡上传中，请稍候", icon: "none" });
       return;
     }
+    setIsModelRateMenuOpen(false);
     setIsDirectoryOpen(true);
   };
 
@@ -1593,7 +1710,39 @@ export function PracticeSession({
     recordingState === "recording" || recordingState === "paused"
       ? recordingElapsedMs
       : recordingDurationMs;
-  const bookViewportSize = isLandscapeLayout ? bookBounds : fittedBookSize;
+  // 新页尺寸未返回时保留上一页的比例，避免翻页途中清空视口宽高。
+  // 这里只稳定外框；热点仍使用当前图片确认后的 fittedBookSize。
+  const viewportNaturalSize = naturalImageSize ?? loadedImage?.size;
+  const hasMeasuredBookBounds = bookBounds.width > 0 && bookBounds.height > 0;
+  const bookViewportSize = isLandscapeLayout
+    ? bookBounds
+    : stablePortraitCanvasNaturalSize && isPadPortraitLayout
+      ? hasMeasuredBookBounds ? bookBounds : null
+      : stablePortraitCanvasSize ?? (viewportNaturalSize
+        ? isPadPortraitLayout
+          ? fitImageToBounds(bookBounds, viewportNaturalSize)
+          : fitImageToWidth(bookBounds.width, viewportNaturalSize)
+        : null);
+  const bookViewportStyle = bookViewportSize
+    ? {
+        width: `${bookViewportSize.width}px`,
+        height: `${bookViewportSize.height}px`,
+      }
+    : stablePortraitCanvasNaturalSize
+      ? isPadPortraitLayout ? {
+          width: "100%",
+          height: "100%",
+        } : {
+          width: "100%",
+          aspectRatio: `${stablePortraitCanvasNaturalSize.width} / ${stablePortraitCanvasNaturalSize.height}`,
+        }
+      : undefined;
+  const shownModelPlaybackTime = modelSeekPreview ?? modelPlaybackCurrentTime;
+  const modelProgressMax = Math.max(1, Math.ceil(modelPlaybackDuration));
+  const modelProgressValue = Math.min(
+    modelPlaybackDuration > 0 ? modelPlaybackDuration : modelProgressMax,
+    Math.max(0, shownModelPlaybackTime),
+  );
   const retryRecordingButton = recordingState === "recorded" && !isSavingRecording && pendingCheckIn ? (
     <Button className='practice-recorder__retry device-touch-target' onClick={startRecording}>
       重新录制
@@ -1607,10 +1756,70 @@ export function PracticeSession({
         <View className='practice-header'>
           <Text className='practice-header__course'>{bundle.book.title}</Text>
           <Text className='practice-header__section'>{isLandscapeLayout ? `· ${practice.sectionTitle}` : practice.sectionTitle}</Text>
-          <View className='practice-header__progress-row'>
+          <View className={`practice-header__progress-row${playingTrackId && activeModelTrack ? " practice-header__progress-row--audio-active" : ""}`}>
             <Text className='practice-header__progress'>
-              {!isLandscapeLayout && "跟读训练 "}{practiceIndex + 1} / {bundle.practices.length}
+              {!isLandscapeLayout && <Text className='practice-header__progress-prefix'>跟读训练 </Text>}
+              {practiceIndex + 1} / {bundle.practices.length}
             </Text>
+            {playingTrackId && activeModelTrack && (
+              <View className='practice-model-player' catchMove>
+                <Button
+                  className='practice-model-player__toggle device-touch-target'
+                  aria-label={modelPlaybackState === "paused" ? "继续播放示范音频" : "暂停示范音频"}
+                  onClick={toggleModelPlayback}
+                >
+                  <View
+                    className={`practice-model-player__play-icon practice-model-player__play-icon--${
+                      modelPlaybackState === "paused" ? "play" : "pause"
+                    }`}
+                  />
+                </Button>
+                <View className='practice-model-player__body'>
+                  <Slider
+                    className='practice-model-player__progress'
+                    min={0}
+                    max={modelProgressMax}
+                    step={1}
+                    value={modelProgressValue}
+                    disabled={modelPlaybackDuration <= 0}
+                    activeColor='#2f896c'
+                    backgroundColor='#dce8e3'
+                    blockColor='#2f896c'
+                    blockSize={14}
+                    onChanging={handleModelSeekChanging}
+                    onChange={handleModelSeekChange}
+                  />
+                  <Text className='practice-model-player__time'>
+                    {formatAudioTime(shownModelPlaybackTime)} / {formatAudioTime(modelPlaybackDuration)}
+                  </Text>
+                </View>
+                <Button
+                  className='practice-model-player__rate device-touch-target'
+                  aria-label={`选择播放速度，当前 ${formatModelPlaybackRate(modelPlaybackRate)}`}
+                  aria-expanded={isModelRateMenuOpen}
+                  onClick={() => setIsModelRateMenuOpen((open) => !open)}
+                >
+                  {formatModelPlaybackRate(modelPlaybackRate)}
+                </Button>
+                {isModelRateMenuOpen && (
+                  <View className='practice-model-player__rate-menu' catchMove>
+                    {MODEL_PLAYBACK_RATES.map((rate) => (
+                      <Button
+                        key={rate}
+                        className={`practice-model-player__rate-option${
+                          rate === modelPlaybackRate ? " practice-model-player__rate-option--active" : ""
+                        }`}
+                        aria-label={`使用 ${formatModelPlaybackRate(rate)} 播放`}
+                        aria-pressed={rate === modelPlaybackRate}
+                        onClick={() => selectModelPlaybackRate(rate)}
+                      >
+                        {formatModelPlaybackRate(rate)}
+                      </Button>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
             {isFittedLayout && !isLandscapeLayout && (
               <Text
                 className='practice-book-expand device-touch-target'
@@ -1632,14 +1841,7 @@ export function PracticeSession({
           <View className='practice-workspace__book'>
             <View
               className='practice-book-viewport'
-              style={
-                bookViewportSize
-                  ? {
-                      width: `${bookViewportSize.width}px`,
-                      height: `${bookViewportSize.height}px`,
-                    }
-                  : undefined
-              }
+              style={bookViewportStyle}
             >
               <Swiper
                 className='practice-book-swiper'
@@ -1649,6 +1851,7 @@ export function PracticeSession({
                 easingFunction='easeOutCubic'
                 disableTouch={
                   bookSwipeLocked ||
+                  isModelSeekDragging ||
                   recordingState === "uploading" ||
                   recordingState === "starting" ||
                   recordingState === "stopping" ||
@@ -1657,10 +1860,14 @@ export function PracticeSession({
                 onChange={handleBookSwiperChange}
               >
                 {bundle.practices.map((item, index) => (
-                  <SwiperItem key={item.id} className='practice-book-slide'>
+                  <SwiperItem
+                    key={item.id}
+                    className={`practice-book-slide${stablePortraitCanvasNaturalSize ? " practice-book-slide--stable-canvas" : ""}`}
+                  >
                     <PracticeBookPage
                       scrollable={isLandscapeLayout && retainedSlideIndexes.has(index)}
                       active={index === practiceIndex}
+                      fitToImage={Boolean(stablePortraitCanvasNaturalSize) && index === practiceIndex}
                       imageSize={index === practiceIndex ? fittedBookSize : null}
                       onScroll={index === practiceIndex ? (event) => {
                         if (event.detail.scrollTop > 0 && index === practiceContextRef.current.practiceIndex) {
@@ -1676,7 +1883,7 @@ export function PracticeSession({
                               : "practice-book-page__neighbor"
                           }
                           src={item.imageUrl}
-                          mode={isLandscapeLayout ? "widthFix" : index === practiceIndex && fittedBookSize ? "scaleToFill" : "aspectFit"}
+                          mode={isLandscapeLayout ? "widthFix" : "aspectFit"}
                           webp
                           onLoad={(event) => {
                             const size = readNaturalImageSize(event.detail);
@@ -1692,29 +1899,35 @@ export function PracticeSession({
                           }}
                         />
                       ) : null}
-                      {index === practiceIndex ? (
+                      {index === practiceIndex && (!stablePortraitCanvasNaturalSize || fittedBookSize) ? (
                         <View className='practice-book-page__hotspots'>
-                          {clampedHotspots.map((hotspot, hotspotIndex) => (
-                            <View
-                              key={hotspot.id}
-                              className={`audio-hotspot device-touch-target ${
-                                playingTrackId === hotspot.id ||
-                                (keepModelAudioOnTurn && activeModelTrack?.url === hotspot.url)
-                                  ? "audio-hotspot--playing" : ""
-                              }`}
-                              style={{ left: hotspot.left, top: hotspot.top }}
-                              onClick={() => playModelAudio(hotspot.id, hotspot.url)}
-                            >
-                              <View className='audio-hotspot__visual'>
-                                <Text className='audio-hotspot__icon'>
-                                  {playingTrackId === hotspot.id ||
-                                  (keepModelAudioOnTurn && activeModelTrack?.url === hotspot.url)
-                                    ? "◼" : "▶"}
-                                </Text>
-                                <Text className='audio-hotspot__number'>{hotspotIndex + 1}</Text>
+                          {clampedHotspots.map((hotspot, hotspotIndex) => {
+                            const isActiveModelTrack = playingTrackId === hotspot.id ||
+                              activeModelTrack?.url === hotspot.url;
+                            const isPlayingModelTrack = isActiveModelTrack &&
+                              modelPlaybackState === "playing";
+                            return (
+                              <View
+                                key={hotspot.id}
+                                className={`audio-hotspot device-touch-target${
+                                  isPlayingModelTrack
+                                    ? " audio-hotspot--playing"
+                                    : isActiveModelTrack
+                                      ? " audio-hotspot--paused"
+                                      : ""
+                                }`}
+                                style={{ left: hotspot.left, top: hotspot.top }}
+                                onClick={() => playModelAudio(hotspot.id, hotspot.url)}
+                              >
+                                <View className='audio-hotspot__visual'>
+                                  <Text className='audio-hotspot__icon'>
+                                    {isPlayingModelTrack ? "Ⅱ" : "▶"}
+                                  </Text>
+                                  <Text className='audio-hotspot__number'>{hotspotIndex + 1}</Text>
+                                </View>
                               </View>
-                            </View>
-                          ))}
+                            );
+                          })}
                         </View>
                       ) : null}
                     </PracticeBookPage>
@@ -1738,16 +1951,6 @@ export function PracticeSession({
                   </Text>
                 </View>
               </View>
-              {keepModelAudioOnTurn && activeModelTrack &&
-                !practice.tracks.some((track) => track.url === activeModelTrack.url) && (
-                <Button
-                  className='record-actions__secondary device-touch-target'
-                  onClick={() => modelAudioControllerRef.current?.stop()}
-                >
-                  停止当前音频
-                </Button>
-              )}
-
               {recordingState === "checking" && (
                 <View className='recorder-status recorder-status--neutral'>
                   <Text>

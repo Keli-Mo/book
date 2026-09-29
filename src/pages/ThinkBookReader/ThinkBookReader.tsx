@@ -88,7 +88,6 @@ function ThinkPracticeSession({
       initialPractice={bundle.practices[initialPage]}
       layout={layout}
       layoutClassName={layoutClassName}
-      keepModelAudioOnTurn
       onPracticeChange={setPageIndex}
     />
   );

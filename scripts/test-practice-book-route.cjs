@@ -65,6 +65,7 @@ const createPage = (file, params, options = {}) => {
   const recorderReleaseCalls = [];
   const recorderTerminalOutcomes = [];
   const modalCalls = [];
+  const actionSheetCalls = [];
   const pendingItems = [...(options.pendingItems || [])];
   const recorderActionOutcomes = Object.fromEntries(
     Object.entries(options.recorderActionOutcomes || {}).map(([action, outcomes]) => [
@@ -106,6 +107,7 @@ const createPage = (file, params, options = {}) => {
   };
   const taro = {
     useRouter: () => ({ params }),
+    canIUse: (schema) => options.canIUse ? options.canIUse(schema) : true,
     useDidShow(callback) { frame.show = callback; },
     useDidHide(callback) { frame.hide = callback; },
     useUnload(callback) { frame.unload = callback; },
@@ -130,6 +132,11 @@ const createPage = (file, params, options = {}) => {
       if (options.showModal) return options.showModal(input);
       return { confirm: true };
     },
+    showActionSheet: async (input) => {
+      actionSheetCalls.push(input);
+      if (options.showActionSheet) return options.showActionSheet(input);
+      return { tapIndex: 0 };
+    },
     getSetting: async () => {
       permissionChecks.push("scope.record:granted");
       if (options.getSetting) return options.getSetting();
@@ -139,11 +146,28 @@ const createPage = (file, params, options = {}) => {
     authorize: async () => {},
     createInnerAudioContext() {
       const handlers = {};
-      const audio = { src: "", events: [], currentTime: 0 };
-      for (const event of ["Play", "Ended", "Stop", "Error", "TimeUpdate"]) audio[`on${event}`] = (callback) => { handlers[event] = callback; };
+      const audio = {
+        src: "",
+        events: [],
+        currentTime: 0,
+        duration: 0,
+        paused: true,
+        playbackRate: 1,
+      };
+      for (const event of ["Play", "Pause", "Ended", "Stop", "Error", "TimeUpdate"]) audio[`on${event}`] = (callback) => { handlers[event] = callback; };
       audio.play = () => {
+        audio.paused = false;
         audio.events.push("play");
         if (!options.deferAudioPlay) handlers.Play?.();
+      };
+      audio.pause = () => {
+        audio.paused = true;
+        audio.events.push("pause");
+        handlers.Pause?.();
+      };
+      audio.seek = (seconds) => {
+        audio.currentTime = seconds;
+        audio.events.push(`seek:${seconds}`);
       };
       audio.stop = () => { audio.events.push("stop"); handlers.Stop?.(); };
       audio.destroy = () => { audio.events.push("destroy"); };
@@ -339,7 +363,7 @@ const createPage = (file, params, options = {}) => {
       __esModule: true,
       default: (props) => ({ type: "Text", props }),
     },
-    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "ScrollView", "Swiper", "SwiperItem", "PageMeta"].map((name) => [name, name])),
+    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "Slider", "ScrollView", "Swiper", "SwiperItem", "PageMeta"].map((name) => [name, name])),
     "@tarojs/taro": { __esModule: true, default: taro, ...taro },
     "@/constant": { sharedImage: "share.png" },
     "@/services/cloudCheckIn": {
@@ -385,7 +409,7 @@ const createPage = (file, params, options = {}) => {
   };
   const page = {
     render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending, completedPending,
-    modalCalls,
+    modalCalls, actionSheetCalls,
     recorderReleaseCalls, recorderTerminalOutcomes,
     get acquireAttempts() { return acquireAttempts; },
     stateValues() {

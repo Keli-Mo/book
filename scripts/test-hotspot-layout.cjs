@@ -133,12 +133,12 @@ assertHotspot(
   { left: 50, top: 40 },
 );
 assertHotspot(
-  "Think 音频图标向左移动 8px 但纵坐标不变",
+  "Think 音频图标向左移动 22px 但纵坐标不变",
   { left: 50, top: 40 },
   { width: 400, height: 600 },
-  { left: 48, top: 40 },
+  { left: 44.5, top: 40 },
   undefined,
-  8,
+  22,
 );
 assertHotspot(
   "左移后仍保持在图片触控边界内",
@@ -146,7 +146,7 @@ assertHotspot(
   { width: 400, height: 600 },
   { left: 5.5, top: 40 },
   undefined,
-  8,
+  22,
 );
 
 const edgeCases = [
