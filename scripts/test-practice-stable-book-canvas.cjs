@@ -86,6 +86,74 @@ function fixture(bookId, getImageSize, initialPage = "95", {
   return { page, requests, measurements };
 }
 
+function od6Fixture(bookId, getImageSize, initialPage = "0", {
+  layout = PHONE,
+  slot = SLOT,
+  deferMeasurement = false,
+} = {}) {
+  const requests = [];
+  const measurements = [];
+  const prefix = bookId === "30" ? "student-book/pages/od6-sb" : "workbook/pages/od6-wb";
+  const practices = [0, 1].map((pageNumber) => ({
+    id: `${bookId}-page-${pageNumber}`,
+    bookId,
+    imageIndex: pageNumber,
+    pageNumber,
+    ...(pageNumber === 0 ? { pageLabel: "封面" } : {}),
+    imageUrl: `https://example.com/oxford-discover-2e-l6/${prefix}_${pageNumber}.jpg`,
+    sectionTitle: "课程导入",
+    tracks: [],
+  }));
+  const bundle = {
+    book: {
+      id: bookId,
+      seriesId: "oxford-discover",
+      title: `Oxford Discover 6 · ${bookId === "30" ? "学生书" : "练习册"}`,
+      level: "Level 6",
+      kind: bookId === "30" ? "学生书" : "练习册",
+      cover: practices[0].imageUrl,
+      available: true,
+    },
+    coverUrl: practices[0].imageUrl,
+    practices,
+  };
+  const page = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId, page: initialPage },
+    {
+      overrides: {
+        "@/features/listeningPractice/bookPractice": {
+          buildFullBookPracticeBundle: (requestedId) => requestedId === bookId ? bundle : null,
+          buildBookPracticeBundle: () => ({ ...bundle, practices: [] }),
+        },
+        "@/hooks/useDeviceLayout": { useDeviceLayout: () => layout },
+      },
+      taroOverrides: {
+        getImageInfo(request) {
+          requests.push(request);
+          const size = getImageSize?.(request.src);
+          if (size) request.success(size);
+        },
+        createSelectorQuery() {
+          let callback;
+          const query = {
+            select() { return query; },
+            boundingClientRect(next) { callback = next; return query; },
+            exec() {
+              const deliver = () => callback?.({ ...slot });
+              if (deferMeasurement) measurements.push(deliver);
+              else deliver();
+            },
+          };
+          return query;
+        },
+      },
+    },
+  );
+  render(page);
+  return { page, requests, measurements };
+}
+
 async function swipeForward(page) {
   const tree = render(page);
   const swiper = byClass(tree, "practice-book-swiper");
@@ -258,3 +326,47 @@ test("未参与试点的 Think 2 学生书仍按当前图片比例定框", () =>
     page.dispose();
   }
 });
+
+for (const [bookId, canonical] of Object.entries({
+  "30": { width: 1536, height: 1987 },
+  "31": { width: 1536, height: 1984 },
+})) {
+  test(`Oxford Discover 6 教材 ${bookId} 首帧按固定比例预留画布`, () => {
+    const { page, measurements } = od6Fixture(bookId, undefined, "0", {
+      deferMeasurement: true,
+    });
+    try {
+      const waitingStyle = byClass(render(page), "practice-book-viewport").props.style;
+      assert.ok(waitingStyle, "OD6 测宽返回前也必须预留固定画布");
+      assert.equal(waitingStyle.width, "100%");
+      assert.equal(waitingStyle.aspectRatio, `${canonical.width} / ${canonical.height}`);
+      assert.equal(byClass(render(page), "practice-book-page__hotspots"), undefined,
+        "真实图面尺寸返回前不能绘制热点层");
+      measurements.splice(0).forEach((deliver) => deliver());
+      const measured = sizeOf(byClass(render(page), "practice-book-viewport"));
+      assert.equal(measured.width, SLOT.width);
+      assert.equal(measured.height, Math.round(SLOT.width * canonical.height / canonical.width));
+    } finally {
+      page.unload();
+      page.dispose();
+    }
+  });
+
+  test(`Oxford Discover 6 教材 ${bookId} 翻页时保持固定画布`, async () => {
+    const { page } = od6Fixture(
+      bookId,
+      (src) => /_0\.jpg$/.test(src)
+        ? { width: canonical.width - 70, height: canonical.height + 90 }
+        : { width: canonical.width, height: canonical.height },
+    );
+    try {
+      const before = sizeOf(byClass(render(page), "practice-book-viewport"));
+      const after = sizeOf(byClass(await swipeForward(page), "practice-book-viewport"));
+      assert.deepEqual(after, before, "相邻页原图比例不同时外层画布也不能跳动");
+      assert.ok(hasClass(byClass(render(page), "practice-book-slide"), "practice-book-slide--stable-canvas"));
+    } finally {
+      page.unload();
+      page.dispose();
+    }
+  });
+}

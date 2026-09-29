@@ -99,9 +99,11 @@ const getRecorderTimeoutOperation = (error: unknown) => {
 
 type NaturalImageSize = { width: number; height: number };
 const naturalImageSizeCache = new Map<string, NaturalImageSize>();
-// 先在 Think 1 学生书验证固定画布；后续书籍通过同一配置逐册启用。
+// 固定画布在原图尺寸返回前预留书页比例，避免相邻页加载时外层跳动。
 const STABLE_PORTRAIT_CANVAS_BY_BOOK_ID: Readonly<Record<string, NaturalImageSize>> = {
   "26": { width: 1040, height: 1411 },
+  "30": { width: 1536, height: 1987 },
+  "31": { width: 1536, height: 1984 },
 };
 const DEFAULT_THINK_HOTSPOT_LEFT_SHIFT_PX = 8;
 const THINK_HOTSPOT_LEFT_SHIFT_PX_BY_BOOK_ID: Readonly<Record<string, number>> = {

@@ -15747,6 +15747,281 @@ const audioList29 = {
         { offset: ["13.866%", "82.371%"], url: think2AudioUrl("workbook", "Thk2e_BE_L2_WB_Unit_10_p121_t04.mp3"), flag: "Percentage" },
     ],
 }
+
+const od6AudioBaseUrl =
+    'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/oxford-discover-2e-l6/student-book/audio';
+const od6Track = (disc: number, track: string, left: number, top: number) => ({
+    offset: [`${left}%`, `${top}%`],
+    url: `${od6AudioBaseUrl}/disc-${disc}/${disc}-${track}.mp3`,
+    flag: "Percentage",
+});
+
+// Oxford Discover 2e Level 6 Student Book (ID 30).
+// 历史音频键仍为 imageIndex + 2；本书图片索引与 PDF 页对齐，因此键 = 印刷页 + 2。
+// 依据源 PDF 的印刷音轨标记确认题目，在同题附近留白设置坐标；跨页 Reading 仅在第一页设置热点。
+const audioList30 = {
+    // printed p8 / PDF 9
+    10: [od6Track(1, "02", 78.125, 12.072)],
+    // printed p10 / PDF 11
+    12: [od6Track(1, "03", 18.5, 5.296)],
+    // printed p13 / PDF 14
+    15: [od6Track(1, "04", 71.094, 9.658)],
+    // printed p14 / PDF 15
+    16: [
+        od6Track(1, "05", 67, 19.2),
+        od6Track(1, "06", 52, 41.5),
+        od6Track(1, "07", 42, 60.576),
+    ],
+    // printed p15 / PDF 16
+    17: [od6Track(1, "08", 73.958, 24.547)],
+    // printed p16 / PDF 17
+    18: [od6Track(1, "09", 78.125, 12.072)],
+    // printed p18 / PDF 19
+    20: [od6Track(1, "10", 18.5, 5.296)],
+    // printed p21 / PDF 22
+    23: [od6Track(1, "11", 80.99, 9.054)],
+    // printed p22 / PDF 23
+    24: [
+        od6Track(1, "12", 63.802, 18.511),
+        od6Track(1, "13", 57.552, 32.797),
+        od6Track(1, "14", 31.771, 58.149),
+    ],
+    // printed p23 / PDF 24
+    25: [od6Track(1, "15", 94, 28.3)],
+    // printed p28 / PDF 29
+    30: [od6Track(1, "16", 77.083, 12.072)],
+    // printed p30 / PDF 31
+    32: [od6Track(1, "17", 18.5, 5.296)],
+    // printed p33 / PDF 34
+    35: [od6Track(1, "18", 71.094, 9.658)],
+    // printed p34 / PDF 35
+    36: [
+        od6Track(1, "19", 51.562, 20.926),
+        od6Track(1, "20", 57.292, 45.674),
+        od6Track(1, "21", 32.812, 59.96),
+    ],
+    // printed p35 / PDF 36
+    37: [od6Track(1, "22", 82.292, 27.565)],
+    // printed p36 / PDF 37
+    38: [od6Track(1, "23", 78.125, 12.072)],
+    // printed p38 / PDF 39
+    40: [od6Track(1, "24", 18.5, 5.296)],
+    // printed p41 / PDF 42
+    43: [od6Track(1, "25", 71.094, 9.658)],
+    // printed p42 / PDF 43
+    44: [
+        od6Track(1, "26", 76.563, 18.621),
+        od6Track(1, "27", 78, 37),
+        od6Track(1, "28", 40.625, 54.125),
+    ],
+    // printed p43 / PDF 44
+    45: [od6Track(1, "29", 86.719, 31.388)],
+    // printed p48 / PDF 49
+    50: [od6Track(1, "30", 78.125, 12.072)],
+    // printed p50 / PDF 51
+    52: [od6Track(1, "31", 18.5, 5.296)],
+    // printed p53 / PDF 54
+    55: [od6Track(1, "32", 78.385, 9.256)],
+    // printed p54 / PDF 55
+    56: [
+        od6Track(1, "33", 55.208, 18.913),
+        od6Track(1, "34", 56.51, 40.241),
+        od6Track(1, "35", 47.396, 50.101),
+    ],
+    // printed p55 / PDF 56
+    57: [od6Track(1, "36", 79, 29.5)],
+    // printed p56 / PDF 57
+    58: [od6Track(2, "02", 78.125, 12.072)],
+    // printed p58 / PDF 59
+    60: [od6Track(2, "03", 18.5, 5.296)],
+    // printed p61 / PDF 62
+    63: [od6Track(2, "04", 71.094, 10.865)],
+    // printed p62 / PDF 63
+    64: [
+        od6Track(2, "05", 65.625, 18.109),
+        od6Track(2, "06", 57.552, 36.217),
+        od6Track(2, "07", 31.25, 59.96),
+    ],
+    // printed p63 / PDF 64
+    65: [od6Track(2, "08", 80.208, 27.767)],
+    // printed p67 / PDF 68, Testing Practice 1
+    69: [od6Track(2, "09", 6.25, 18.511)],
+    // printed p70 / PDF 71
+    72: [od6Track(2, "10", 78.125, 12.072)],
+    // printed p72 / PDF 73
+    74: [od6Track(2, "11", 18.5, 5.296)],
+    // printed p75 / PDF 76
+    77: [od6Track(2, "12", 65.104, 10.06)],
+    // printed p76 / PDF 77
+    78: [
+        od6Track(2, "13", 56.25, 20.926),
+        od6Track(2, "14", 51.302, 41.046),
+        od6Track(2, "15", 42.188, 55.533),
+    ],
+    // printed p77 / PDF 78
+    79: [od6Track(2, "16", 90.625, 29.175)],
+    // printed p78 / PDF 79
+    80: [od6Track(2, "17", 78.125, 12.475)],
+    // printed p80 / PDF 81
+    82: [od6Track(2, "18", 18.5, 5.296)],
+    // printed p83 / PDF 84
+    85: [od6Track(2, "19", 65.104, 9.658)],
+    // printed p84 / PDF 85
+    86: [
+        od6Track(2, "20", 52.083, 18.913),
+        od6Track(2, "21", 51.302, 40.241),
+        od6Track(2, "22", 31.771, 63.984),
+    ],
+    // printed p85 / PDF 86
+    87: [od6Track(2, "23", 72, 30)],
+    // printed p90 / PDF 91
+    92: [od6Track(2, "24", 77.083, 12.072)],
+    // printed p92 / PDF 93
+    94: [od6Track(2, "25", 18.5, 5.296)],
+    // printed p95 / PDF 96
+    97: [od6Track(2, "26", 71.094, 10.865)],
+    // printed p96 / PDF 97
+    98: [
+        od6Track(2, "27", 55.99, 20.926),
+        od6Track(2, "28", 59.635, 23.34),
+        od6Track(2, "29", 31.771, 53.722),
+    ],
+    // printed p97 / PDF 98
+    99: [od6Track(2, "30", 94, 34)],
+    // printed p98 / PDF 99
+    100: [od6Track(2, "31", 77.083, 12.072)],
+    // printed p100 / PDF 101
+    102: [od6Track(2, "32", 18.5, 5.296)],
+    // printed p103 / PDF 104
+    105: [od6Track(2, "33", 71.094, 10.463)],
+    // printed p104 / PDF 105
+    106: [
+        od6Track(2, "34", 52.083, 19.316),
+        od6Track(2, "35", 59.375, 33.4),
+        od6Track(2, "36", 44, 50.135),
+    ],
+    // printed p105 / PDF 106
+    107: [od6Track(2, "37", 79.427, 28.169)],
+    // printed p110 / PDF 111
+    112: [od6Track(3, "02", 78.125, 12.072)],
+    // printed p112 / PDF 113
+    114: [od6Track(3, "03", 18.5, 5.296)],
+    // printed p115 / PDF 116
+    117: [od6Track(3, "04", 71.094, 11.67)],
+    // printed p116 / PDF 117
+    118: [
+        od6Track(3, "05", 51.562, 18.913),
+        od6Track(3, "06", 60.156, 33.602),
+        od6Track(3, "07", 41.146, 50.503),
+    ],
+    // printed p117 / PDF 118
+    119: [od6Track(3, "08", 52.083, 29.376)],
+    // printed p118 / PDF 119
+    120: [od6Track(3, "09", 78.125, 12.072)],
+    // printed p120 / PDF 121
+    122: [od6Track(3, "10", 18.5, 5.296)],
+    // printed p123 / PDF 124
+    125: [od6Track(3, "11", 71.094, 10.06)],
+    // printed p124 / PDF 125
+    126: [
+        od6Track(3, "12", 94, 18.908),
+        od6Track(3, "13", 56.25, 31.791),
+        od6Track(3, "14", 54.167, 46.881),
+    ],
+    // printed p125 / PDF 126
+    127: [od6Track(3, "15", 25.521, 32.998)],
+    // printed p129 / PDF 130, Testing Practice 2
+    131: [
+        od6Track(3, "16", 64.844, 15.091),
+        od6Track(3, "17", 57.552, 48.089),
+    ],
+    // printed p132 / PDF 133
+    134: [od6Track(3, "18", 78.125, 12.072)],
+    // printed p134 / PDF 135
+    136: [od6Track(3, "19", 18.5, 5.296)],
+    // printed p137 / PDF 138
+    139: [od6Track(3, "20", 71.094, 10.865)],
+    // printed p138 / PDF 139
+    140: [
+        od6Track(3, "21", 51.562, 18.913),
+        od6Track(3, "22", 51.823, 37.626),
+        od6Track(3, "23", 46.354, 53.722),
+    ],
+    // printed p139 / PDF 140
+    141: [od6Track(3, "24", 80.729, 34.205)],
+    // printed p140 / PDF 141
+    142: [od6Track(3, "25", 78.125, 12.475)],
+    // printed p142 / PDF 143
+    144: [od6Track(3, "26", 18.5, 5.296)],
+    // printed p145 / PDF 146
+    147: [od6Track(3, "27", 71.094, 10.06)],
+    // printed p146 / PDF 147
+    148: [
+        od6Track(3, "28", 43.75, 20.121),
+        od6Track(3, "29", 51.823, 37.626),
+        od6Track(3, "30", 50, 54.125),
+    ],
+    // printed p147 / PDF 148
+    149: [od6Track(3, "31", 38.542, 34.205)],
+    // printed p152 / PDF 153
+    154: [od6Track(3, "32", 78.125, 12.072)],
+    // printed p154 / PDF 155
+    156: [od6Track(3, "33", 18.5, 5.296)],
+    // printed p157 / PDF 158
+    159: [od6Track(3, "34", 71.094, 10.865)],
+    // printed p158 / PDF 159
+    160: [
+        od6Track(3, "35", 55.729, 20.926),
+        od6Track(3, "36", 57.552, 41.247),
+        od6Track(3, "37", 52.604, 60.765),
+    ],
+    // printed p159 / PDF 160
+    161: [od6Track(3, "38", 6.25, 32.596)],
+    // printed p160 / PDF 161
+    162: [od6Track(4, "02", 78.125, 12.072)],
+    // printed p162 / PDF 163
+    164: [od6Track(4, "03", 18.5, 5.296)],
+    // printed p165 / PDF 166; OCR missed the digits, blue speaker circle was verified directly
+    167: [od6Track(4, "04", 73.177, 11.67)],
+    // printed p166 / PDF 167
+    168: [
+        od6Track(4, "05", 63.021, 18.511),
+        od6Track(4, "06", 51.823, 37.223),
+        od6Track(4, "07", 49.479, 50.704),
+    ],
+    // printed p167 / PDF 168
+    169: [od6Track(4, "08", 73.958, 31.187)],
+    // printed p172 / PDF 173
+    174: [od6Track(4, "09", 78.125, 12.072)],
+    // printed p174 / PDF 175
+    176: [od6Track(4, "10", 18.5, 5.296)],
+    // printed p177 / PDF 178
+    179: [od6Track(4, "11", 71.094, 11.67)],
+    // printed p178 / PDF 179
+    180: [
+        od6Track(4, "12", 61.979, 18.913),
+        od6Track(4, "13", 55.208, 32.394),
+        od6Track(4, "14", 53.646, 52.314),
+    ],
+    // printed p179 / PDF 180
+    181: [od6Track(4, "15", 94, 28.3)],
+    // printed p180 / PDF 181
+    182: [od6Track(4, "16", 77.083, 12.072)],
+    // printed p182 / PDF 183
+    184: [od6Track(4, "17", 18.5, 5.296)],
+    // printed p185 / PDF 186
+    187: [od6Track(4, "18", 71.615, 10.865)],
+    // printed p186 / PDF 187
+    188: [
+        od6Track(4, "19", 49.219, 19.316),
+        od6Track(4, "20", 52.865, 29.577),
+        od6Track(4, "21", 65, 47),
+    ],
+    // printed p187 / PDF 188
+    189: [od6Track(4, "22", 82.292, 27.364)],
+    // printed p191 / PDF 192, Testing Practice 3
+    193: [od6Track(4, "23", 78.906, 11.066)],
+};
 export const allAudioList = {
     //广告
     '1': [],
@@ -15786,6 +16061,10 @@ export const allAudioList = {
     // Think 2 学生书与练习册
     '28': audioList28,
     '29': audioList29,
+    // Oxford Discover 2e Level 6 学生书
+    '30': audioList30,
+    // Oxford Discover 2e Level 6 练习册（无配套示范音频）
+    '31': {},
 }
 
 // const audioList22 = {

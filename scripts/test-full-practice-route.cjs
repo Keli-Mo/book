@@ -7,8 +7,24 @@ const { buildBookPracticeBundle } = load("src/features/listeningPractice/bookPra
 const opened = [];
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 const open = (bookId, params, options) => {
-  const file = Number(bookId) >= 26 ? "src/pages/ThinkBookReader/ThinkBookReader.tsx" : "src/pages/Practice/Practice.tsx";
-  const page = createPage(file, { bookId, ...params }, options);
+  const file = BOOKS.find((book) => book.id === bookId)?.seriesId === "think"
+    ? "src/pages/ThinkBookReader/ThinkBookReader.tsx" : "src/pages/Practice/Practice.tsx";
+  const page = createPage(file, { bookId, ...params }, bookId === "30" || bookId === "31" ? {
+    ...options,
+    taroOverrides: {
+      getImageInfo(request) { request.success({ width: 1536, height: bookId === "30" ? 1987 : 1984 }); },
+      createSelectorQuery() {
+        let callback;
+        const query = {
+          select() { return query; },
+          boundingClientRect(next) { callback = next; return query; },
+          exec() { callback?.({ width: 374, height: 560 }); return query; },
+        };
+        return query;
+      },
+      ...options?.taroOverrides,
+    },
+  } : options);
   opened.push(page);
   return page;
 };
@@ -35,17 +51,23 @@ async function run() {
     page.dispose();
   }
 
-  for (const bookId of ["3", "11", "22", "25"]) {
+  for (const bookId of ["3", "11", "22", "25", "30"]) {
     const legacy = buildBookPracticeBundle(bookId);
     for (const index of [0, legacy.practices.length - 1]) {
       const practice = legacy.practices[index];
       const oldPage = open(bookId, { practice: String(index) });
+      oldPage.render();
       const tree = oldPage.render();
       assert.equal(imageOf(tree), practice.imageUrl, "旧链接仍打开原教材页");
       assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), `跟读训练 ${practice.imageIndex + 1} / ${concatImages[bookId].length}`);
       const hotspots = elements(tree).filter((node) => String(node.props?.className || "").split(" ").includes("audio-hotspot"));
       assert.equal(hotspots.length, practice.tracks.length);
-      assert.deepEqual(hotspots[0].props.style, { left: practice.tracks[0].left, top: practice.tracks[0].top });
+      if (bookId === "30") {
+        assert.equal(Number.parseFloat(hotspots[0].props.style.left), Number.parseFloat(practice.tracks[0].left));
+        assert.equal(Number.parseFloat(hotspots[0].props.style.top), Number.parseFloat(practice.tracks[0].top));
+      } else {
+        assert.deepEqual(hotspots[0].props.style, { left: practice.tracks[0].left, top: practice.tracks[0].top });
+      }
       hotspots[0].props.onClick();
       assert.equal(oldPage.audios.at(-1).src, practice.tracks[0].url, "补全页面不改变原点读坐标和音源");
       oldPage.dispose();
@@ -67,7 +89,7 @@ async function run() {
   assert.equal(JSON.stringify(pending.context), contextBefore, "恢复不能修改原始录音上下文或请求摘要");
   restored.dispose();
 
-  for (const bookId of ["11", "27"]) {
+  for (const bookId of ["11", "27", "30", "31"]) {
     const page = open(bookId, { page: "0" }, { savedFilePath: "/saved/cover-recording.mp3" });
     let tree = page.render(); await settle(); tree = page.render();
     assert.equal(byClass(tree, "audio-hotspot"), undefined, "封面不虚构示范音频");
@@ -94,6 +116,6 @@ async function run() {
     assert.match(textOf(page.render()), /暂时无法打开训练/, `拒绝非法页索引 ${raw}`);
     page.dispose();
   }
-  console.log("全部 27 本教材全页路由、旧链接/草稿兼容、封面录音回听和完成练习通过");
+  console.log("全部 29 本教材全页路由、旧链接/草稿兼容、OD6 无音频练习册录音、封面回听和完成练习通过");
 }
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => opened.forEach((page) => page.dispose()));

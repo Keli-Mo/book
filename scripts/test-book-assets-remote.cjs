@@ -58,32 +58,38 @@ const testCollection = () => {
 
 const testRealConstantCollection = () => {
   const constants = loadBookAssetConstants();
-  assert.equal(constants.bookCovers.length, 27, "远端校验必须覆盖 27 张教材书架封面");
+  assert.equal(constants.bookCovers.length, 29, "远端校验必须覆盖 29 张教材书架封面");
   assert.equal(constants.seriesCovers.length, 6, "远端校验必须覆盖 6 张首页系列封面");
   const assets = collectBookAssets(constants);
   const sources = assets.flatMap((asset) => asset.sources);
-  assert.equal(assets.length, 6_959, "新增 Think 2 后，教材页、音频及封面应有 6,959 个唯一素材");
+  assert.equal(assets.length, 7_475, "新增 OD6 后，教材页、音频及封面应有 7,475 个唯一素材");
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type !== "audio")).length,
-    4_587,
+    4_973,
   );
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type === "audio")).length,
-    2_372,
-    "新增 Think 2 的 156 个正式音频后，音频唯一 URL 应为 2,372",
+    2_502,
+    "新增 OD6 的 130 个正式音频后，音频唯一 URL 应为 2,502",
   );
-  assert.equal(sources.filter((source) => source.type === "image").length, 4_572);
-  assert.equal(sources.filter((source) => source.type === "cover").length, 27);
+  assert.equal(sources.filter((source) => source.type === "image").length, 4_958);
+  assert.equal(sources.filter((source) => source.type === "cover").length, 29);
   assert.equal(sources.filter((source) => source.type === "series-cover").length, 6);
   assert.equal(
     sources.filter((source) => source.type === "audio").length,
-    2_510,
-    "含 Think 1/2 重复印刷标签的音频热点来源数应为 2,510",
+    2_640,
+    "含 OD6 和 Think 1/2 重复印刷标签的音频热点来源数应为 2,640",
   );
   assert.deepEqual(
     [...new Set(sources.map(({ bookId }) => bookId).filter(Boolean))],
-    Array.from({ length: 27 }, (_, index) => String(index + 3)),
+    Array.from({ length: 29 }, (_, index) => String(index + 3)),
   );
+  assert.deepEqual(constants.bookIds, Array.from({ length: 29 }, (_, index) => String(index + 3)),
+    "扫描范围必须包含 OD6 学生书和无音频练习册");
+  assert.equal(sources.filter((source) => source.bookId === "30" && source.type === "image").length, 201);
+  assert.equal(sources.filter((source) => source.bookId === "30" && source.type === "audio").length, 130);
+  assert.equal(sources.filter((source) => source.bookId === "31" && source.type === "image").length, 185);
+  assert.equal(sources.some((source) => source.bookId === "31" && source.type === "audio"), false);
 };
 
 const testRedirectIsNotFollowedOrRetried = async () => {

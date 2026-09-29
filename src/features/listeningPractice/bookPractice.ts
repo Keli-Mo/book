@@ -62,6 +62,9 @@ const EMPTY_AUDIO_KEY_WHITELIST: Record<string, readonly number[]> = {
   "22": [1], "23": [1], "24": [1], "25": [1],
 };
 
+// 练习册没有配套示范音频，但仍需进入整本阅读和自主录音。
+const EMPTY_AUDIO_BOOK_WHITELIST = new Set(["31"]);
+
 const toFiniteCoordinate = (value: unknown, coordinateType: string) => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`${coordinateType}坐标必须为有限数值`);
@@ -279,7 +282,7 @@ export const buildBookPracticeBundle = (
       tracks: rawTracks as OriginalAudioTrack[],
     });
   });
-  if (mappedAudioPages.length === 0) {
+  if (mappedAudioPages.length === 0 && !EMPTY_AUDIO_BOOK_WHITELIST.has(bookId)) {
     throw bookDataError(bookId, "音频数据：", "应至少包含一个非空音频页");
   }
 

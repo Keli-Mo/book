@@ -2,6 +2,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { createPage, byClass, textOf, load } = require("./test-practice-book-route.cjs");
+const { BOOKS } = load("src/features/bookLibrary/bookCatalog.ts");
 const { buildBookPracticeBundle, buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 
 const settle = async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve(); };
@@ -11,7 +12,7 @@ const fromPractice = (bundle, practice, practiceIndex) => ({
   sectionTitle: practice.sectionTitle,
 });
 const expectedUrl = (bookId, imageIndex) =>
-  `/pages/${Number(bookId) >= 26 ? "ThinkBookReader/ThinkBookReader" : "Practice/Practice"}?bookId=${bookId}&page=${imageIndex}`;
+  `/pages/${BOOKS.find((book) => book.id === bookId)?.seriesId === "think" ? "ThinkBookReader/ThinkBookReader" : "Practice/Practice"}?bookId=${bookId}&page=${imageIndex}`;
 async function readAndReturn(context, source = "local") {
   const original = JSON.stringify(context);
   const pending = {
@@ -131,6 +132,18 @@ for (const bookId of ["26", "27", "28", "29"]) {
     const result = await readAndReturn(fromPractice(bundle, practice, practice.imageIndex));
     assert.equal(result.url, expectedUrl(bookId, practice.imageIndex));
   });
+}
+
+for (const bookId of ["30", "31"]) {
+  for (const source of ["local", "cloud"]) {
+    test(`OD6 ${bookId} ${source}: 无音频页录音回到通用训练的原图片索引`, async () => {
+      const bundle = buildFullBookPracticeBundle(bookId);
+      const practice = bundle.practices.find((p) => p.tracks.length === 0 && p.imageIndex > 0);
+      assert.ok(practice);
+      const result = await readAndReturn(fromPractice(bundle, practice, practice.imageIndex), source);
+      assert.equal(result.url, `/pages/Practice/Practice?bookId=${bookId}&page=${practice.imageIndex}`);
+    });
+  }
 }
 
 test("Think 旧练习册录音仍按印刷页和稳定 ID 回到原 PDF 图片索引", async () => {

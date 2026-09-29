@@ -74,11 +74,22 @@ assert.equal(api(createStore(null)).saveReadingProgress("3", 999999), false, "�
 const { buildBookPracticeBundle, buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 assert.equal(typeof api(createStore(null)).saveFullReadingProgress, "function", "全页进度应使用独立的稳定图片索引 API");
 
-for (let id = 3; id <= 29; id += 1) {
+for (let id = 3; id <= 31; id += 1) {
   const bookId = String(id);
   const legacy = buildBookPracticeBundle(bookId);
   const full = buildFullBookPracticeBundle(bookId);
-  for (const practiceIndex of [0, Math.floor(legacy.practices.length / 2), legacy.practices.length - 1]) {
+  const legacyIndices = legacy.practices.length > 0
+    ? [0, Math.floor(legacy.practices.length / 2), legacy.practices.length - 1] : [];
+  if (legacy.practices.length === 0) {
+    assert.equal(bookId, "31", "只有 OD6 无音频练习册不存在旧音频索引");
+    const invalidLegacy = { version: 1, bookId, practiceIndex: 0 };
+    const progress = api(createStore(invalidLegacy));
+    assert.equal(progress.readReadingProgress(), null);
+    assert.equal(progress.resolveReadingProgressPractice(invalidLegacy), null);
+    assert.equal(progress.resolveReadingProgressUrl(invalidLegacy), null);
+    assert.equal(progress.saveReadingProgress(bookId, 0), false, "不能把无音频练习册的全页索引写成旧音频索引");
+  }
+  for (const practiceIndex of legacyIndices) {
     const stored = { version: 1, bookId, practiceIndex };
     const store = createStore(stored);
     const progress = api(store);
@@ -126,4 +137,4 @@ assert.equal(api(createStore(null)).saveFullReadingProgress("missing", 0), false
 assert.equal(api(createStore(null)).saveFullReadingProgress("3", -1), false);
 assert.equal(api(createStore(null)).saveFullReadingProgress("3", 999999), false);
 
-console.log("阅读进度测试通过：27 册旧音频进度保持原页，全页稳定索引、无音频页及损坏/Storage 故障均正确。");
+console.log("阅读进度测试通过：29 册全页稳定索引、OD6 无音频练习册、旧音频原页及损坏/Storage 故障均正确。");
