@@ -108,9 +108,9 @@ function od6Fixture(bookId, getImageSize, initialPage = "0", {
     book: {
       id: bookId,
       seriesId: "oxford-discover",
-      title: `Oxford Discover 6 · ${bookId === "30" ? "学生书" : "练习册"}`,
+      title: bookId === "30" ? "Oxford Discover 6" : "Oxford Discover 6 · 练习册",
       level: "Level 6",
-      kind: bookId === "30" ? "学生书" : "练习册",
+      kind: bookId === "30" ? "学生用书" : "练习册",
       cover: practices[0].imageUrl,
       available: true,
     },

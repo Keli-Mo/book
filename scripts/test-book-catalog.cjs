@@ -113,9 +113,9 @@ assert.deepEqual(
   [
     {
       id: "30",
-      title: "Oxford Discover 6 · 学生书",
+      title: "Oxford Discover 6",
       level: "Level 6",
-      kind: "学生书",
+      kind: "学生用书",
       cover: "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/oxford-discover-2e-l6/student-book/pages/od6-sb_0.jpg",
     },
     {

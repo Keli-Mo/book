@@ -327,9 +327,9 @@ export const BOOKS: BookCatalogItem[] = [
   {
     id: "30",
     seriesId: "oxford-discover",
-    title: "Oxford Discover 6 · 学生书",
+    title: "Oxford Discover 6",
     level: "Level 6",
-    kind: "学生书",
+    kind: "学生用书",
     cover: cover("oxford-discover-2e-l6/student-book/pages/od6-sb_0.jpg"),
     available: true,
   },
