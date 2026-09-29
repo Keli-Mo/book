@@ -30,10 +30,6 @@ const hotspotsOf = (tree) => elements(tree).filter((node) =>
   String(node.props?.className || "").split(" ").includes("audio-hotspot"),
 );
 
-const stopControlOf = (tree) => elements(tree).find((node) =>
-  typeof node.props?.onClick === "function" && textOf(node).trim() === "停止当前音频",
-);
-
 async function run() {
   for (const bookId of ["26", "27", "28", "29"]) {
     const reader = buildThinkBookReader(bookId);
@@ -123,10 +119,18 @@ async function run() {
     continuationPage.imageUrl, "下一页应显示 p13 跨页续页");
   assert.equal(hotspotsOf(tree).length, 0, "跨页续页不应虚构音频图标");
   assert.equal(audio.events.includes("destroy"), false, "翻到跨页续页时音频应继续播放");
-  const stop = stopControlOf(tree);
-  assert.ok(stop, "无图标续页应有明确的停止当前音频控件");
-  stop.props.onClick();
-  assert.ok(audio.events.includes("destroy"), "显式停止应销毁播放实例");
+  const player = requireClass(tree, "practice-model-player", "28");
+  const toggle = requireClass(player, "practice-model-player__toggle", "28");
+  assert.doesNotMatch(textOf(toggle), /暂停|继续|播放/, "跨页播放器应使用图标，不显示操作文字");
+  assert.match(String(toggle.props["aria-label"] || ""), /暂停/, "播放中图标应通过 aria-label 说明暂停操作");
+  toggle.props.onClick();
+  assert.equal(audio.events.at(-1), "pause", "跨页播放器应暂停并保留原实例");
+  assert.equal(audio.events.includes("destroy"), false, "暂停不能销毁播放实例");
+  tree = page.render();
+  const resumeToggle = requireClass(tree, "practice-model-player__toggle", "28");
+  assert.match(String(resumeToggle.props["aria-label"] || ""), /继续|播放/, "暂停后图标应说明继续操作");
+  resumeToggle.props.onClick();
+  assert.equal(audio.events.at(-1), "play", "跨页播放器应从暂停位置继续");
 
   const hidePage = openReader("28", 12);
   hidePage.render();

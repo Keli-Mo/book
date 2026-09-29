@@ -7,13 +7,14 @@ const projectRoot = path.resolve(__dirname, "..");
 const report = validateBookData({ log: false });
 
 assert.equal(report.mappingVersion, "audio-key-minus-2/v1");
-assert.equal(report.books.length, 27, "应覆盖教材 3–29");
-assert.equal(report.imageCount, 4572, "教材图片总数应为 4,572");
-assert.equal(report.practicePageCount, 1601, "接入 Think 2 后训练页总数应为 1,601");
-assert.equal(report.audioSegmentCount, 2510, "接入 Think 2 后应有 2,510 个热点");
-assert.equal(report.mappings.length, 2510, "每个音频热点都应保留一条可追踪映射");
+assert.equal(report.books.length, 29, "应覆盖教材 3–31");
+assert.equal(report.imageCount, 4958, "教材图片总数应为 4,958");
+assert.equal(report.practicePageCount, 1694, "接入 OD6 后音频训练页总数应为 1,694");
+assert.equal(report.audioSegmentCount, 2640, "接入 OD6 后应有 2,640 个热点");
+assert.equal(report.mappings.length, 2640, "每个音频热点都应保留一条可追踪映射");
 assert.deepEqual(
-  report.books.slice(-4).map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) =>
+  report.books.filter(({ bookId }) => Number(bookId) >= 26 && Number(bookId) <= 29)
+    .map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) =>
     ({ bookId, imageCount, audioPageCount, audioSegmentCount })),
   [
     { bookId: "26", imageCount: 132, audioPageCount: 71, audioSegmentCount: 131 },
@@ -23,6 +24,19 @@ assert.deepEqual(
   ],
   "Think 1/2 四书应保留所有来源图片及逐页音频热点",
 );
+assert.deepEqual(
+  report.books.slice(-2).map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) =>
+    ({ bookId, imageCount, audioPageCount, audioSegmentCount })),
+  [
+    { bookId: "30", imageCount: 201, audioPageCount: 93, audioSegmentCount: 130 },
+    { bookId: "31", imageCount: 185, audioPageCount: 0, audioSegmentCount: 0 },
+  ],
+  "OD6 学生书与无音频练习册都应纳入校验报告",
+);
+assert.equal(report.mappings.some(({ bookId }) => bookId === "31"), false,
+  "OD6 练习册不能补造学生书音频热点");
+assert.equal(report.books.find(({ bookId }) => bookId === "31").noAudioCatalogRanges.length, 19,
+  "无音频练习册的18个单元及写作资源必须完整纳入目录报告");
 
 const thinkRepeatedTrack = report.mappings.filter(({ bookId, audioFilename }) =>
   bookId === "26" && audioFilename === "Thk2e_BrE_L1_SB_Unit_1_p15_t04.mp3");
@@ -202,6 +216,8 @@ const representativeMappings = [
   ["11", 6, 4, 4, "Unit 0", "ow2e_sb1_ame_0.1.mp3"],
   ["15", 10, 8, 9, "Unit 1 Families and Friends", "1·02.mp3"],
   ["20", 11, 9, 10, "Unit 1 Mysteries", "Foundations Reading 1a.mp3"],
+  ["30", 10, 8, 8, "Unit 1 The Earthworm and the Spider", "1-02.mp3"],
+  ["30", 193, 191, 191, "Unit 18 Why Stories Matter", "4-23.mp3"],
 ];
 for (const [bookId, rawAudioKey, imageIndex, imagePageNumber, section, audioFilename] of representativeMappings) {
   const mapping = report.mappings.find(
@@ -253,7 +269,9 @@ assert.match(
   "越界警告应能直接定位到书、键、图、页、轨及原坐标",
 );
 assert.match(cli.stdout, /坐标轻微越界 2 处（仅警告）/);
+assert.match(cli.stdout, /教材 31：185 张图片，0 个音频页，0 段音频，边界坐标 无热点/,
+  "无音频练习册的命令行报告应明确标记无热点");
 
 console.log(
-  "教材音频映射校验器测试通过：27 本、4,572 图、1,601 页、2,510 个热点，Think 1/2 页码与复用音轨已核对，2 个历史越界仅警告。",
+  "教材音频映射校验器测试通过：29 本、4,958 图、1,694 页、2,640 个热点，OD6 两册和 Think 1/2 历史映射已核对，2 个历史越界仅警告。",
 );

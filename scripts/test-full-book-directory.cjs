@@ -19,7 +19,7 @@ test("KET 练习册的重复 Vocabulary extra 必须留在各自章节位置", (
     "翻到后续词汇页再开目录，应定位本页所在小节");
 });
 
-test("27 册 4572 页目录展开后与整本翻页顺序完全相同", () => {
+test("29 册 4958 页目录展开后与整本翻页顺序完全相同", () => {
   let totalPages = 0;
   for (const book of BOOKS) {
     const bundle = buildFullBookPracticeBundle(book.id);
@@ -36,8 +36,8 @@ test("27 册 4572 页目录展开后与整本翻页顺序完全相同", () => {
     }
     totalPages += items.length;
   }
-  assert.equal(BOOKS.length, 27);
-  assert.equal(totalPages, 4572);
+  assert.equal(BOOKS.length, 29);
+  assert.equal(totalPages, 4958);
 });
 
 test("仅连续同名页面共享分组，隔章重复标题不会倒序合并", () => {

@@ -324,6 +324,24 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover("think-l2/workbook/pages/think-2-wb_0.jpg"),
     available: true,
   },
+  {
+    id: "30",
+    seriesId: "oxford-discover",
+    title: "Oxford Discover 6",
+    level: "Level 6",
+    kind: "学生用书",
+    cover: cover("oxford-discover-2e-l6/student-book/pages/od6-sb_0.jpg"),
+    available: true,
+  },
+  {
+    id: "31",
+    seriesId: "oxford-discover",
+    title: "Oxford Discover 6 · 练习册",
+    level: "Level 6",
+    kind: "练习册",
+    cover: cover("oxford-discover-2e-l6/workbook/pages/od6-wb_0.jpg"),
+    available: true,
+  },
 ];
 
 const bookById = new Map(BOOKS.map((book) => [book.id, book]));
@@ -363,8 +381,8 @@ export const BOOK_SERIES: BookSeries[] = [
     id: "oxford-discover",
     title: "Oxford Discover",
     shortTitle: "OD",
-    rangeLabel: "Level 1–5",
-    cover: requireBook("19").cover,
+    rangeLabel: "Level 1–6",
+    cover: requireBook("30").cover,
   }),
   createBookSeries({
     id: "reading-explorer",

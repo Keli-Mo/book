@@ -96,7 +96,7 @@ function assertImageSize(page, slot, mode, message = "教材尺寸", imageNatura
   assert.ok(Math.abs(width - height * imageNatural.width / imageNatural.height) <= 1, `${message}必须保持原图比例`);
   if (mode.isPad && !scrollable) {
     assert.ok(width <= slot.width && height <= slot.height, "Pad 竖屏整页不能超出阅读区");
-    assert.equal(byClass(tree, "practice-book-page__image").props.mode, "scaleToFill", "等比定框后图像与热点共用相同尺寸");
+    assert.equal(byClass(tree, "practice-book-page__image").props.mode, "aspectFit", "保持统一显示模式，等比定框后图像与热点共用相同尺寸");
     assert.equal(byClass(tree, "practice-book-scroll-hint"), undefined);
   }
   return { width, height, outerStyle };
@@ -116,7 +116,7 @@ function assertControls(page, mode) {
   if (mode.orientation === "landscape") {
     assert.equal(scroll?.type, "ScrollView", "横屏书页使用原生纵向滚动");
     assert.equal(scroll.props.scrollY, true);
-    assert.ok(scroll.key !== undefined && scroll.key !== null, "滚动节点需要显式 key 以便翻页复位");
+    assert.equal(scroll.props.scrollTop, undefined, "当前页允许原生滚动，不持续覆盖用户阅读位置");
   } else {
     assert.equal(byClass(tree, "practice-book-scroll"), undefined, "竖屏不增加书内滚动容器");
   }
@@ -249,12 +249,13 @@ for (const route of routes) {
   }
 
   for (const mode of [modes[1], modes[3]]) {
-    test(`${route.name}：${mode.name}成功翻页及返回时更换对应滚动节点，使新当前页从顶部开始`, async () => {
+    test(`${route.name}：${mode.name}成功翻页及返回时保留已加载图片的滚动节点，离开页归零`, async () => {
       const { page, slot } = fixture(route, mode);
       try {
         const initialTree = render(page);
         const imageA = byClass(initialTree, "practice-book-page__image").props.src;
         const scrollA = activeBookScroll(initialTree);
+        scrollA.props.onScroll({ detail: { scrollTop: 180 } });
         const initialProgress = progress(page);
         const acquireAttempts = page.acquireAttempts;
         await byClass(page.render(), "practice-navigation__button--primary").props.onClick();
@@ -264,44 +265,44 @@ for (const route of routes) {
         const inactiveA = imageContainer(nextTree, "practice-book-scroll", imageA);
         const activeB = activeBookScroll(nextTree);
         assert.ok(inactiveA, "相邻旧页保留在 Swiper 中，才能验证原生滚动节点复位");
-        assert.notEqual(inactiveA.key, scrollA.key, "旧页离开 active 状态时更换其滚动节点");
+        assert.equal(inactiveA.key, scrollA.key, "旧页离开时不能卸载已加载的图片子树");
+        assert.equal(inactiveA.props.scrollTop, 0, "离开书页后通过滚动属性归零");
+        assert.equal(activeB.props.scrollTop, undefined, "新页允许用户继续滚动");
         assert.notEqual(progress(page), initialProgress);
         await byClass(page.render(), "practice-navigation__button").props.onClick();
         const backTree = render(page);
         assert.equal(byClass(backTree, "practice-book-page__image").props.src, imageA);
-        assert.notEqual(activeBookScroll(backTree).key, inactiveA.key, "回到旧页时重建 active 原生节点，从顶部阅读");
-        assert.notEqual(imageContainer(backTree, "practice-book-scroll", imageB).key, activeB.key);
+        assert.equal(activeBookScroll(backTree).key, inactiveA.key, "回到旧页时复用已有原生图片节点");
+        assert.equal(activeBookScroll(backTree).props.scrollTop, undefined);
+        const inactiveB = imageContainer(backTree, "practice-book-scroll", imageB);
+        assert.equal(inactiveB.key, activeB.key);
+        assert.equal(inactiveB.props.scrollTop, 0);
         assert.equal(progress(page), initialProgress);
-        assert.equal(page.acquireAttempts, acquireAttempts, "只更新书页滚动节点，不重新挂载录音会话");
+        assert.equal(page.acquireAttempts, acquireAttempts, "翻页不重新挂载录音会话");
         assertImageSize(page, slot, mode, "返回旧页后");
       } finally { cleanup(page); }
     });
   }
 
-  test(`${route.name}：横屏录音中取消翻页保留书内滚动节点和录音状态`, async () => {
-    const { page, slot } = fixture(route, modes[1], { confirmSwitch: false });
+  test(`${route.name}：横屏录音中翻页保留录音状态`, async () => {
+    const { page, slot } = fixture(route, modes[1]);
     try {
       await begin(page);
-      const initial = render(page);
-      const imageUrl = byClass(initial, "practice-book-page__image").props.src;
-      const scrollKey = activeBookScroll(initial).key;
       const initialProgress = progress(page);
       const recorderActions = [...page.recorderActions];
       await byClass(page.render(), "practice-navigation__button--primary").props.onClick();
       const tree = render(page);
-      assert.equal(progress(page), initialProgress);
-      assert.equal(byClass(tree, "practice-book-page__image").props.src, imageUrl);
-      assert.equal(activeBookScroll(tree).key, scrollKey, "取消操作不能将正在阅读的图片滚回顶部");
-      assert.deepEqual(page.recorderActions, recorderActions, "取消翻页不得停止或重启录音");
-      assert.ok(byClass(tree, "record-button--pause"), "继续保留录音中操作");
+      assert.notEqual(progress(page), initialProgress, "下一个训练不需要确认");
+      assert.equal(page.modalCalls.length, 0, "翻页不弹出放弃录音");
+      assert.deepEqual(page.recorderActions, recorderActions, "跨页不得停止或重启录音");
+      assert.ok(byClass(tree, "record-button--pause"), "翻页后继续录音");
       assertImageSize(page, slot, modes[1]);
       const swiper = byClass(tree, "practice-book-swiper");
-      swiper.props.onChange({ detail: { current: swiper.props.current + 1, source: "touch" } });
+      const beforeSwipe = swiper.props.current;
+      swiper.props.onChange({ detail: { current: beforeSwipe + 1, source: "touch" } });
       await settle();
-      const reverted = render(page);
-      assert.equal(byClass(reverted, "practice-book-swiper").props.current, swiper.props.current, "取消滑动翻页应回到原页");
-      assert.equal(activeBookScroll(reverted).key, scrollKey, "取消滑动翻页也不重建当前书页滚动节点");
-      assert.equal(progress(page), initialProgress);
+      const turned = render(page);
+      assert.equal(byClass(turned, "practice-book-swiper").props.current, beforeSwipe + 1, "滑动翻页应进入下一页");
       assert.deepEqual(page.recorderActions, recorderActions);
     } finally { cleanup(page); }
   });

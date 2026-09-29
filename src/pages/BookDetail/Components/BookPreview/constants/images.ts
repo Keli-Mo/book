@@ -174,6 +174,14 @@ const concatImages = {
     "29": Array.from({ length: 126 }, (_, index) =>
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/think-l2/workbook/pages/think-2-wb_' + (index === 0 ? 0 : index + 3) + '.jpg'
     ),
+    // Oxford Discover 6 学生书：保留 PDF 1–201 页，文件页号为零基索引。
+    "30": Array.from({ length: 201 }, (_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/oxford-discover-2e-l6/student-book/pages/od6-sb_' + index + '.jpg'
+    ),
+    // Oxford Discover 6 练习册：保留 PDF 1–185 页，文件页号为零基索引。
+    "31": Array.from({ length: 185 }, (_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/oxford-discover-2e-l6/workbook/pages/od6-wb_' + index + '.jpg'
+    ),
     
     ...images,
 }

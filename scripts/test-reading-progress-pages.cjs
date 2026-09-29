@@ -69,7 +69,7 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   assert.equal(storage.get(key).imageIndex, 4);
   practice.hide();
 
-  for (let id = 3; id <= 29; id += 1) {
+  for (let id = 3; id <= 30; id += 1) {
     const bookId = String(id);
     const sourceBundle = buildBookPracticeBundle(bookId);
     const practiceIndex = Math.min(7, sourceBundle.practices.length - 1);
@@ -88,7 +88,7 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
     assert.deepEqual(storage.get(key), { version: 1, bookId, practiceIndex }, "首页显示旧进度不能改写存储");
   }
 
-  for (const bookId of ["11", "22", "26", "27", "28", "29"]) {
+  for (const bookId of ["11", "22", "26", "27", "28", "29", "30", "31"]) {
     const full = buildFullBookPracticeBundle(bookId);
     const silentPage = full.practices.find((item) => item.tracks.length === 0);
     assert.ok(silentPage, "测试教材必须包含新增无音频页");
@@ -112,6 +112,21 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   think.render();
   assert.deepEqual(storage.get(key), { version: 2, bookId: "28", imageIndex: thinkLast.imageIndex });
   think.hide();
+
+  for (const bookId of ["30", "31"]) {
+    const od6 = mount("Practice", { bookId, page: "0" });
+    od6.show(); await settle();
+    assert.deepEqual(storage.get(key), { version: 2, bookId, imageIndex: 0 }, "OD6 应沿用通用训练页并保存稳定位置");
+    const last = buildFullBookPracticeBundle(bookId).practices.at(-1);
+    await directory(od6).props.onSelect(last.imageIndex);
+    od6.render();
+    assert.deepEqual(storage.get(key), { version: 2, bookId, imageIndex: last.imageIndex });
+    assert.equal(byClass(od6.render(), "practice-book-page__image").props.src, last.imageUrl);
+    home.show(); tree = home.render();
+    await byClass(tree, "continue-card__button").props.onClick();
+    assert.equal(home.navigations.at(-1), `/pages/Practice/Practice?bookId=${bookId}&page=${last.imageIndex}`);
+    od6.hide();
+  }
 
   const cancelled = mount("Practice", { bookId: "3", practice: "1" }, { taroOverrides: { showModal: async () => ({ confirm: false }) } });
   cancelled.show();

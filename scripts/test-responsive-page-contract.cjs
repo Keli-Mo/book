@@ -567,8 +567,7 @@ check("普通训练和 Think 的手机竖屏保留自然滚动", () => {
 check("手机竖屏教材按宽度定尺寸，各布局按实际图面对齐热点", () => {
   const image = byClass(practice.contentAst, "practice-book-page__image", "Image")[0];
   assert.ok(image);
-  assert.ok(practice.source.includes("aspectFit"), "固有尺寸未定时教材图应保持比例");
-  assert.ok(practice.source.includes("scaleToFill"), "定框后应铺满图面，热点百分比才能对齐课文");
+  // 图片比例及翻页前后的显示模式由 fitted-layout / swipe-rendering 运行时用例验证。
   assert.ok(attribute(image, "onLoad"), "教材图应在 onLoad 后测量");
   assert.ok(propertyCalls(practice.contentAst, "select", ".practice-workspace__book"));
   assert.ok(propertyCalls(practice.contentAst, "boundingClientRect"));
