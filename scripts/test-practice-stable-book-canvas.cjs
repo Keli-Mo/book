@@ -171,6 +171,10 @@ test("Think 1 学生书首帧使用固定画布，尺寸返回后热点位于真
     assert.equal(waitingStyle.width, "100%", "测宽返回前先占满可用宽度");
     assert.equal(waitingStyle.aspectRatio, `${STANDARD_PAGE.width} / ${STANDARD_PAGE.height}`,
       "测宽返回前按固定比例预留高度");
+    const waitingImage = byClass(waiting, "practice-book-page__image");
+    assert.equal(waitingImage.props.mode, "aspectFit");
+    assert.equal(waitingImage.props.style?.height, "100%",
+      "Think 1 固定画布图片也必须有确定高度");
     assert.equal(byClass(waiting, "practice-book-page__hotspots"), undefined,
       "真实图面尺寸返回前不能把热点放在固定画布上");
 
@@ -340,6 +344,10 @@ for (const [bookId, canonical] of Object.entries({
       assert.ok(waitingStyle, "OD6 测宽返回前也必须预留固定画布");
       assert.equal(waitingStyle.width, "100%");
       assert.equal(waitingStyle.aspectRatio, `${canonical.width} / ${canonical.height}`);
+      const waitingImage = byClass(render(page), "practice-book-page__image");
+      assert.equal(waitingImage.props.mode, "aspectFit");
+      assert.equal(waitingImage.props.style?.height, "100%",
+        "固定画布的 aspectFit 图片必须有确定高度，不能被手机竖屏的 height:auto 覆盖");
       assert.equal(byClass(render(page), "practice-book-page__hotspots"), undefined,
         "真实图面尺寸返回前不能绘制热点层");
       measurements.splice(0).forEach((deliver) => deliver());

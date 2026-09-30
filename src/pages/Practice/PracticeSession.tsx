@@ -1921,6 +1921,7 @@ export function PracticeSession({
                               : "practice-book-page__neighbor"
                           }
                           src={item.imageUrl}
+                          style={stablePortraitCanvasNaturalSize ? { height: "100%" } : undefined}
                           mode={
                             isLandscapeLayout || (!isFittedLayout && !stablePortraitCanvasNaturalSize)
                               ? "widthFix"
