@@ -640,7 +640,7 @@ export function PracticeSession({
           }
         },
       },
-      { sameTrackAction: "pause" },
+      { sameTrackAction: "pause", loop: true },
     );
     modelAudioControllerRef.current = modelAudioController;
 
@@ -2150,7 +2150,7 @@ export function PracticeSession({
                   practiceIndex > 0 && requestPracticeSwitch(practiceIndex - 1)
                 }
               >
-                <Text>{isLandscapeLayout ? "上一页" : "上一个训练"}</Text>
+                <Text>上一页</Text>
               </View>
               <View
                 className={`practice-navigation__button device-touch-target practice-navigation__button--primary ${
@@ -2163,7 +2163,7 @@ export function PracticeSession({
                   requestPracticeSwitch(practiceIndex + 1)
                 }
               >
-                <Text>{isLandscapeLayout ? "下一页" : "下一个训练"}</Text>
+                <Text>下一页</Text>
               </View>
             </View>
           </PracticeControls>

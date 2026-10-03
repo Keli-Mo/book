@@ -47,6 +47,7 @@ interface TrackAudioHooks {
 
 interface TrackAudioControllerOptions {
   sameTrackAction?: "stop" | "pause";
+  loop?: boolean;
 }
 
 /**
@@ -102,7 +103,7 @@ export const createTrackAudioController = (
     const sessionGeneration = generation + 1;
     generation = sessionGeneration;
     activeSession = { audio, generation: sessionGeneration, trackId };
-    audio.loop = false;
+    audio.loop = options.loop ?? false;
     if (playbackRate !== 1) audio.playbackRate = playbackRate;
 
     const finishCurrentSession = () => {

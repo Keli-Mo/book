@@ -212,6 +212,7 @@ const createLocalPage = ({ pending = makePending(), beginShare, submit, isSubmit
   await byClass(tree, "shared-recording__play").props.onClick();
   assert.equal(local.cloudCalls, 0, "本地加载和回听必须零云调用");
   const playbackA = local.page.audios.find((audio) => audio.src === "wxfile://saved.mp3");
+  assert.equal(playbackA.loop, false, "打卡详情中的录音仍应单次播放");
   assert.deepEqual(playbackA.events, ["play"]);
   tree = local.page.render();
   assert.equal(textOf(byClass(tree, "shared-recording__play")), "▶播放本次跟读", "原生 onPlay 未到时不能提前显示停止按钮");

@@ -428,6 +428,7 @@ async function testBookPlaybackLifecycle() {
   let tree = page.render();
   byClass(tree, "audio-hotspot").props.onClick();
   const firstModelAudio = page.audios.at(-1);
+  assert.equal(firstModelAudio.loop, true, "教材示范音频应启用原生单段循环，播完继续播放当前音源");
   firstModelAudio.currentTime = 3.5;
   firstModelAudio.duration = 12;
   firstModelAudio.trigger("TimeUpdate");
@@ -633,6 +634,7 @@ async function testBookPlaybackLifecycle() {
   tree = page.render();
   elements(tree).find((node) => node.type === "Button" && textOf(node) === "回听录音").props.onClick();
   const recordingA = page.audios.find((audio) => audio.src === "/tmp/recording.mp3");
+  assert.equal(recordingA.loop, false, "教材单段循环不能改变录音回听的单次播放行为");
   tree = page.render();
   assert.ok(elements(tree).some((node) => node.type === "Button" && textOf(node) === "停止回听"), "A 原生 onPlay 后应显示停止按钮");
   elements(tree).find((node) => node.type === "Button" && textOf(node) === "停止回听").props.onClick();
@@ -664,7 +666,8 @@ async function testBookPlaybackLifecycle() {
   tree = page.render();
   assert.equal(recording.events.filter((event) => event === "stop").length, previousStops, "打开目录不能停止录音回听");
   await elements(tree).find((node) => node.type?.name === "PracticeDirectory").props.onSelect(audioPages[2].imageIndex);
-  assert.ok(recording.events.includes("destroy"), "换训练应释放旧录音回听会话");
+  assert.equal(recording.events.includes("destroy"), false, "教材翻页应保留当前录音回听会话");
+  assert.ok(elements(page.render()).some((node) => node.type === "Button" && textOf(node) === "停止回听"), "翻页后应继续显示当前录音的停止回听按钮");
 
   tree = page.render();
   byClass(tree, "audio-hotspot").props.onClick();
