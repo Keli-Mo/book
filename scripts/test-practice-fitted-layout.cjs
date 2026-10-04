@@ -5,8 +5,18 @@ const { createPage, byClass, elements, textOf } = require("./test-practice-book-
 
 const natural = { width: 600, height: 900 };
 const routes = [
-  { name: "普通教材", file: "src/pages/Practice/Practice.tsx", params: { bookId: "22", page: "9" } },
-  { name: "Think", file: "src/pages/ThinkBookReader/ThinkBookReader.tsx", params: { bookId: "28", page: "12" } },
+  {
+    name: "普通教材",
+    file: "src/pages/Practice/Practice.tsx",
+    params: { bookId: "22", page: "9" },
+    stableCanvas: { width: 1588, height: 2245 },
+  },
+  {
+    name: "Think",
+    file: "src/pages/ThinkBookReader/ThinkBookReader.tsx",
+    params: { bookId: "28", page: "12" },
+    stableCanvas: { width: 1040, height: 1411 },
+  },
 ];
 const modes = [
   { name: "手机竖屏", isPad: false, orientation: "portrait", windowWidth: 360, windowHeight: 780, slot: { width: 360, height: 100 } },
@@ -23,6 +33,7 @@ const layoutFor = (mode) => ({
 });
 const render = (page) => { page.render(); page.render(); return page.render(); };
 const settle = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
+const stableCanvasByPage = new WeakMap();
 
 function fixture(route, mode, { deferred = false, confirmSwitch = true } = {}) {
   let profile = layoutFor(mode);
@@ -58,6 +69,7 @@ function fixture(route, mode, { deferred = false, confirmSwitch = true } = {}) {
       },
     },
   });
+  stableCanvasByPage.set(page, route.stableCanvas);
   render(page);
   return {
     page, slot, measurements, selectors, previews,
@@ -76,30 +88,71 @@ const imageContainer = (tree, className, imageUrl) => elements(tree).find((node)
 const activeBookPage = (tree) => imageContainer(tree, "practice-book-page", byClass(tree, "practice-book-page__image")?.props.src);
 const activeBookScroll = (tree) => imageContainer(tree, "practice-book-scroll", byClass(tree, "practice-book-page__image")?.props.src);
 
+const fitToBounds = (bounds, imageNatural) => {
+  const scale = Math.min(bounds.width / imageNatural.width, bounds.height / imageNatural.height);
+  return { width: imageNatural.width * scale, height: imageNatural.height * scale };
+};
+
+const assertCloseSize = (actual, expected, message) => {
+  assert.ok(Math.abs(actual.width - expected.width) <= 1,
+    `${message}：宽度 ${actual.width}，期望 ${expected.width}`);
+  assert.ok(Math.abs(actual.height - expected.height) <= 1,
+    `${message}：高度 ${actual.height}，期望 ${expected.height}`);
+};
+
 function assertImageSize(page, slot, mode, message = "教材尺寸", imageNatural = natural) {
   const tree = render(page);
   const scrollable = mode.orientation === "landscape";
   const outerStyle = byClass(tree, "practice-book-viewport")?.props.style;
+  const outerSize = {
+    width: Number.parseFloat(outerStyle?.width),
+    height: Number.parseFloat(outerStyle?.height),
+  };
+  const bookPage = activeBookPage(tree);
+  const hotspotLayer = byClass(bookPage, "practice-book-page__hotspots--fitted");
+  const pageStyle = scrollable ? bookPage?.props.style : hotspotLayer?.props.style;
+  const pageSize = {
+    width: Number.parseFloat(pageStyle?.width),
+    height: Number.parseFloat(pageStyle?.height),
+  };
   if (scrollable) {
-    assert.equal(Number.parseFloat(outerStyle?.width), slot.width, "Pad 与横屏外层保持固定书区宽度");
-    assert.equal(Number.parseFloat(outerStyle?.height), slot.height, "Pad 与横屏外层保持固定书区高度");
+    assertCloseSize(outerSize, slot, "Pad 与横屏外层保持固定书区");
+    const expectedPage = {
+      width: slot.width,
+      height: slot.width * imageNatural.height / imageNatural.width,
+    };
+    assertCloseSize(pageSize, expectedPage, message);
+  } else {
+    const stableCanvas = stableCanvasByPage.get(page);
+    assert.ok(stableCanvas, "每本教材都必须提供本书统一的竖屏固定画布");
+    const expectedOuter = mode.isPad
+      ? { width: slot.width, height: slot.height }
+      : { width: slot.width, height: Math.round(slot.width * stableCanvas.height / stableCanvas.width) };
+    assertCloseSize(outerSize, expectedOuter, `${message}外层固定画布`);
+    assertCloseSize(pageSize, fitToBounds(expectedOuter, imageNatural), `${message}真实页图`);
+    assert.ok(pageSize.width <= expectedOuter.width && pageSize.height <= expectedOuter.height,
+      "真实页图必须完整放入固定画布");
+    assert.equal(byClass(tree, "practice-book-page__image").props.mode, "aspectFit",
+      "竖屏图片以真实比例放入固定画布");
+    assert.ok(hasClass(byClass(tree, "practice-book-slide"), "practice-book-slide--stable-canvas"),
+      "所有教材竖屏都使用稳定画布");
+    assert.ok(hotspotLayer, "热点层必须位于按真实比例缩放的页图内");
+    assert.equal(
+      elements(hotspotLayer).filter((node) => hasClass(node, "audio-hotspot")).length,
+      elements(tree).filter((node) => hasClass(node, "audio-hotspot")).length,
+      "所有音频热点都应与当前真实页图同处一个容器",
+    );
+    if (mode.isPad) {
+      assert.ok(pageSize.width === expectedOuter.width || pageSize.height === expectedOuter.height,
+        "Pad 竖屏页图应直接利用完整 bookBounds，至少贴合一条边");
+    }
   }
-  const style = scrollable ? activeBookPage(tree)?.props.style : outerStyle;
-  assert.ok(style, "教材必须有明确图面尺寸");
-  const width = Number.parseFloat(style.width);
-  const height = Number.parseFloat(style.height);
-  const scale = mode.isPad && !scrollable
-    ? Math.min(slot.width / imageNatural.width, slot.height / imageNatural.height)
-    : slot.width / imageNatural.width;
-  assert.ok(Math.abs(width - imageNatural.width * scale) <= 1, `${message}：宽度 ${width}，期望 ${imageNatural.width * scale}`);
-  assert.ok(Math.abs(height - imageNatural.height * scale) <= 1, `${message}：高度 ${height}，期望 ${imageNatural.height * scale}`);
-  assert.ok(Math.abs(width - height * imageNatural.width / imageNatural.height) <= 1, `${message}必须保持原图比例`);
+  assert.ok(Math.abs(pageSize.width - pageSize.height * imageNatural.width / imageNatural.height) <= 1,
+    `${message}必须保持原图比例`);
   if (mode.isPad && !scrollable) {
-    assert.ok(width <= slot.width && height <= slot.height, "Pad 竖屏整页不能超出阅读区");
-    assert.equal(byClass(tree, "practice-book-page__image").props.mode, "aspectFit", "保持统一显示模式，等比定框后图像与热点共用相同尺寸");
     assert.equal(byClass(tree, "practice-book-scroll-hint"), undefined);
   }
-  return { width, height, outerStyle };
+  return { outerSize, pageSize, outerStyle };
 }
 
 function assertControls(page, mode) {

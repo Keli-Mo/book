@@ -44,6 +44,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
   return loaded.exports;
 };
 const { buildBookPracticeBundle, buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
+const { readBookImageSize, readBookStableCanvasSize } = load("src/features/listeningPractice/bookImageSizes.ts");
 const { requestRecorderAction, resolveRecorderCallback } = load("src/features/listeningPractice/recordingStateMachine.ts");
 const livePages = new Set();
 
@@ -144,6 +145,23 @@ const createPage = (file, params, options = {}) => {
     },
     openSetting: async () => ({ authSetting: { "scope.record": true } }),
     authorize: async () => {},
+    getImageInfo({ src, success }) {
+      const bookId = String(params.bookId || "");
+      const page = buildFullBookPracticeBundle(bookId)?.practices.find((practice) => practice.imageUrl === src);
+      const size = page
+        ? readBookImageSize(bookId, page.imageIndex) ?? readBookStableCanvasSize(bookId)
+        : readBookStableCanvasSize(bookId);
+      if (size) success?.(size);
+    },
+    createSelectorQuery() {
+      let callback;
+      const query = {
+        select() { return query; },
+        boundingClientRect(next) { callback = next; return query; },
+        exec() { callback?.({ width: 374, height: 560 }); return query; },
+      };
+      return query;
+    },
     createInnerAudioContext() {
       const handlers = {};
       const audio = {

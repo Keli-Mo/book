@@ -107,6 +107,14 @@
     inset: 0;
     z-index: 2;
     pointer-events: none;
+
+    &--fitted {
+      top: 50%;
+      right: auto;
+      bottom: auto;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
   }
 }
 
@@ -131,7 +139,7 @@
   max-width: 100%;
 }
 
-// 手机竖屏图片用 widthFix 按自身比例撑高，框不固定。
+// 尺寸表外的兼容页面仍用 widthFix 按自身比例撑高。
 .practice-page:not(.practice-page--fitted) {
   .practice-book-page__image,
   .practice-book-page__neighbor {

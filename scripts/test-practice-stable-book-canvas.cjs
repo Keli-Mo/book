@@ -41,6 +41,7 @@ const activeBookPage = (tree) => {
     elements(node).some((child) => child === activeImage),
   );
 };
+const activeImageFrame = (tree) => byClass(activeBookPage(tree), "practice-book-page__hotspots--fitted");
 const sizeOf = (node) => ({
   width: Number.parseFloat(node?.props?.style?.width),
   height: Number.parseFloat(node?.props?.style?.height),
@@ -184,8 +185,10 @@ test("Think 1 学生书首帧使用固定画布，尺寸返回后热点位于真
     assert.equal(waitingImage.props.mode, "aspectFit");
     assert.equal(waitingImage.props.style?.height, "100%",
       "Think 1 固定画布图片也必须有确定高度");
-    assert.equal(byClass(waiting, "practice-book-page__hotspots"), undefined,
-      "真实图面尺寸返回前不能把热点放在固定画布上");
+    const registeredFrame = activeImageFrame(waiting);
+    assert.ok(registeredFrame, "逐页登记尺寸应在图片回调前先建立真实图面热点层");
+    assert.ok(sizeOf(registeredFrame).width > 0 && sizeOf(registeredFrame).height > 0,
+      "登记尺寸建立的真实图面必须可定位");
 
     measurements.splice(0).forEach((deliver) => deliver());
     const measured = render(page);
@@ -197,14 +200,13 @@ test("Think 1 学生书首帧使用固定画布，尺寸返回后热点位于真
     requests[0].success(TALL_PAGE);
     const loaded = render(page);
     const viewport = sizeOf(byClass(loaded, "practice-book-viewport"));
-    const imagePage = activeBookPage(loaded);
-    const imageSize = sizeOf(imagePage);
+    const hotspotLayer = activeImageFrame(loaded);
+    const imageSize = sizeOf(hotspotLayer);
     assert.deepEqual(viewport, waitingViewport, "图片尺寸返回后外层画布不能变化");
     assert.ok(imageSize.width < viewport.width, "偏长页面应等比缩小并产生少量左右留白");
     assert.ok(Math.abs(imageSize.height - viewport.height) <= 1, "偏长页面应完整占满画布高度");
     assert.ok(Math.abs(imageSize.width / imageSize.height - TALL_PAGE.width / TALL_PAGE.height) < 0.001,
       "页面必须保持原图比例");
-    const hotspotLayer = byClass(imagePage, "practice-book-page__hotspots");
     assert.ok(hotspotLayer, "热点层应放在真实图面容器内");
     assert.equal(elements(hotspotLayer).filter((node) => hasClass(node, "audio-hotspot")).length, 2,
       "真实异常页的两个音频热点都应保留");
@@ -220,9 +222,8 @@ test("Think 1 学生书第 24 页音频按钮移入题号左侧留白区", () =>
   const { page } = fixture("26", () => STANDARD_PAGE, "24");
   try {
     const tree = render(page);
-    const imagePage = activeBookPage(tree);
-    const imageSize = sizeOf(imagePage);
-    const hotspotLayer = byClass(imagePage, "practice-book-page__hotspots");
+    const hotspotLayer = activeImageFrame(tree);
+    const imageSize = sizeOf(hotspotLayer);
     const hotspots = elements(hotspotLayer).filter((node) => hasClass(node, "audio-hotspot"));
     assert.equal(hotspots.length, 2, "第 24 页的 2.07 和 2.08 应各保留一个按钮");
 
@@ -251,9 +252,9 @@ test("Think 1 学生书其他页面统一左移 22px", () => {
     const { page } = fixture("26", () => STANDARD_PAGE, scenario.pageIndex);
     try {
       const tree = render(page);
-      const imagePage = activeBookPage(tree);
-      const imageSize = sizeOf(imagePage);
-      const hotspots = elements(byClass(imagePage, "practice-book-page__hotspots"))
+      const hotspotLayer = activeImageFrame(tree);
+      const imageSize = sizeOf(hotspotLayer);
+      const hotspots = elements(hotspotLayer)
         .filter((node) => hasClass(node, "audio-hotspot"));
       assert.equal(hotspots.length, scenario.hotspotCount);
       for (const hotspot of hotspots) {
@@ -273,9 +274,9 @@ test("未参与本次调整的 Think 2 音频按钮保留原有 8px 左移", () 
   const { page } = fixture("28", () => STANDARD_PAGE, "5");
   try {
     const tree = render(page);
-    const imagePage = activeBookPage(tree);
-    const imageSize = sizeOf(byClass(tree, "practice-book-viewport"));
-    const hotspots = elements(byClass(imagePage, "practice-book-page__hotspots"))
+    const hotspotLayer = activeImageFrame(tree);
+    const imageSize = sizeOf(hotspotLayer);
+    const hotspots = elements(hotspotLayer)
       .filter((node) => hasClass(node, "audio-hotspot"));
     assert.equal(hotspots.length, 3);
     const renderedLeft = Number.parseFloat(hotspots[0].props.style.left);
@@ -303,7 +304,7 @@ test("Think 1 学生书 Pad 首帧和测量后始终占满同一阅读区", () =
     const measured = render(page);
     assert.deepEqual(sizeOf(byClass(measured, "practice-book-viewport")), PAD_SLOT,
       "Pad 测量后外层仍与阅读区一致");
-    const imageSize = sizeOf(activeBookPage(measured));
+    const imageSize = sizeOf(activeImageFrame(measured));
     assert.ok(imageSize.width < PAD_SLOT.width && imageSize.height <= PAD_SLOT.height,
       "真实偏长页面应完整居中在 Pad 阅读区内");
     assert.ok(Math.abs(imageSize.width / imageSize.height - TALL_PAGE.width / TALL_PAGE.height) < 0.001);
@@ -326,14 +327,15 @@ test("Think 1 学生书翻到不同比例页面时外层画布不跳动", async 
   }
 });
 
-test("未参与试点的 Think 2 学生书仍按当前图片比例定框", () => {
+test("Think 2 学生书也使用本书统一固定画布", () => {
   const { page } = fixture("28", () => TALL_PAGE);
   try {
     const tree = render(page);
     const viewport = sizeOf(byClass(tree, "practice-book-viewport"));
     assert.equal(viewport.width, SLOT.width);
-    assert.equal(viewport.height, Math.round(SLOT.width * TALL_PAGE.height / TALL_PAGE.width));
-    assert.equal(hasClass(byClass(tree, "practice-book-slide"), "practice-book-slide--stable-canvas"), false);
+    assert.equal(viewport.height, Math.round(SLOT.width * STANDARD_PAGE.height / STANDARD_PAGE.width));
+    assert.equal(hasClass(byClass(tree, "practice-book-slide"), "practice-book-slide--stable-canvas"), true);
+    assert.equal(byClass(tree, "practice-book-page__image").props.mode, "aspectFit");
   } finally {
     page.unload();
     page.dispose();
@@ -357,8 +359,9 @@ for (const [bookId, canonical] of Object.entries({
       assert.equal(waitingImage.props.mode, "aspectFit");
       assert.equal(waitingImage.props.style?.height, "100%",
         "固定画布的 aspectFit 图片必须有确定高度，不能被手机竖屏的 height:auto 覆盖");
-      assert.equal(byClass(render(page), "practice-book-page__hotspots"), undefined,
-        "真实图面尺寸返回前不能绘制热点层");
+      const registeredFrame = byClass(render(page), "practice-book-page__hotspots--fitted");
+      assert.ok(registeredFrame, "OD6 应用核验尺寸在图片回调前建立真实图面层");
+      assert.ok(sizeOf(registeredFrame).width > 0 && sizeOf(registeredFrame).height > 0);
       measurements.splice(0).forEach((deliver) => deliver());
       const measured = sizeOf(byClass(render(page), "practice-book-viewport"));
       assert.equal(measured.width, SLOT.width);

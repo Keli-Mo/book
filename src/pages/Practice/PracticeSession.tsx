@@ -14,7 +14,10 @@ import {
   type BookPracticeBundle,
   type ListeningPractice,
 } from "@/features/listeningPractice/bookPractice";
-import { readBookImageSize } from "@/features/listeningPractice/bookImageSizes";
+import {
+  readBookImageSize,
+  readBookStableCanvasSize,
+} from "@/features/listeningPractice/bookImageSizes";
 import { clampHotspotCenter, fitImageToBounds, fitImageToWidth } from "@/features/listeningPractice/hotspotLayout";
 import {
   isPracticeSwiperTouchChange,
@@ -100,12 +103,6 @@ const getRecorderTimeoutOperation = (error: unknown) => {
 
 type NaturalImageSize = { width: number; height: number };
 const naturalImageSizeCache = new Map<string, NaturalImageSize>();
-// 固定画布在原图尺寸返回前预留书页比例，避免相邻页加载时外层跳动。
-const STABLE_PORTRAIT_CANVAS_BY_BOOK_ID: Readonly<Record<string, NaturalImageSize>> = {
-  "26": { width: 1040, height: 1411 },
-  "30": { width: 1536, height: 1987 },
-  "31": { width: 1536, height: 1984 },
-};
 const DEFAULT_THINK_HOTSPOT_LEFT_SHIFT_PX = 8;
 const THINK_HOTSPOT_LEFT_SHIFT_PX_BY_BOOK_ID: Readonly<Record<string, number>> = {
   "26": 22,
@@ -130,10 +127,9 @@ function PracticeControls({ fitted, children }: { fitted: boolean; children: Rea
   ) : <View className='practice-workspace__controls'>{children}</View>;
 }
 
-function PracticeBookPage({ scrollable, active, fitToImage, imageSize, onScroll, children }: {
+function PracticeBookPage({ scrollable, active, imageSize, onScroll, children }: {
   scrollable: boolean;
   active: boolean;
-  fitToImage: boolean;
   imageSize: NaturalImageSize | null;
   onScroll?: ScrollViewProps["onScroll"];
   children: ReactNode;
@@ -141,7 +137,7 @@ function PracticeBookPage({ scrollable, active, fitToImage, imageSize, onScroll,
   const page = (
     <View
       className='practice-book-page'
-      style={(scrollable || fitToImage) && imageSize
+      style={scrollable && imageSize
         ? { width: `${imageSize.width}px`, height: `${imageSize.height}px` }
         : undefined}
     >
@@ -370,7 +366,8 @@ export function PracticeSession({
   const naturalImageSize = loadedImage?.imageUrl === practice.imageUrl
     ? loadedImage.size
     : naturalImageSizeCache.get(practice.imageUrl);
-  const knownImageSize = readBookImageSize(bundle.book.id, practice.imageIndex);
+  const bookStableCanvasNaturalSize = readBookStableCanvasSize(bundle.book.id);
+  const knownImageSize = readBookImageSize(bundle.book.id, practice.imageIndex) ?? bookStableCanvasNaturalSize;
   const resolvedImageSize = naturalImageSize ?? knownImageSize;
   const phoneColumnWidth = bookBounds.width > 0
     ? bookBounds.width
@@ -379,33 +376,33 @@ export function PracticeSession({
       : 0;
   const stablePortraitCanvasNaturalSize = isLandscapeLayout
     ? null
-    : STABLE_PORTRAIT_CANVAS_BY_BOOK_ID[bundle.book.id] ?? null;
+    : bookStableCanvasNaturalSize;
   const stablePortraitCanvasSize = useMemo(
     () => stablePortraitCanvasNaturalSize
       ? isPadPortraitLayout
-        ? fitImageToBounds(bookBounds, stablePortraitCanvasNaturalSize)
+        ? bookBounds
         : fitImageToWidth(bookBounds.width, stablePortraitCanvasNaturalSize)
       : null,
     [bookBounds, isPadPortraitLayout, stablePortraitCanvasNaturalSize],
   );
   const fittedBookSize = useMemo(
-    () => naturalImageSize
+    () => resolvedImageSize
       ? stablePortraitCanvasSize
-        ? fitImageToBounds(stablePortraitCanvasSize, naturalImageSize)
+        ? fitImageToBounds(stablePortraitCanvasSize, resolvedImageSize)
         : isPadPortraitLayout
-          ? fitImageToBounds(bookBounds, naturalImageSize)
-          : fitImageToWidth(isFittedLayout ? bookBounds.width : phoneColumnWidth, naturalImageSize)
+          ? fitImageToBounds(bookBounds, resolvedImageSize)
+          : fitImageToWidth(isFittedLayout ? bookBounds.width : phoneColumnWidth, resolvedImageSize)
       : null,
     [
       bookBounds,
       isFittedLayout,
       isPadPortraitLayout,
       phoneColumnWidth,
-      naturalImageSize,
+      resolvedImageSize,
       stablePortraitCanvasSize,
     ],
   );
-  // 热点使用实际施加在图面上的尺寸，不再反复读取由录音区挤压后的高度。
+  // 热点优先使用登记尺寸首帧定位，真实图片尺寸返回后再校正。
   const imageSize = fittedBookSize ?? { width: 0, height: 0 };
 
   useEffect(() => {
@@ -1847,9 +1844,8 @@ export function PracticeSession({
     recordingState === "recording" || recordingState === "paused"
       ? recordingElapsedMs
       : recordingDurationMs;
-  // 新页尺寸未返回时保留上一页的比例，避免翻页途中清空视口宽高。
-  // 这里只稳定外框；热点仍使用当前图片确认后的 fittedBookSize。
-  const viewportNaturalSize = resolvedImageSize ?? loadedImage?.size;
+  // 外框使用本书稳定比例；真实页图和热点在固定外框内等比居中。
+  const viewportNaturalSize = resolvedImageSize;
   const hasMeasuredBookBounds = bookBounds.width > 0 && bookBounds.height > 0;
   const bookViewportSize = isLandscapeLayout
     ? bookBounds
@@ -2017,7 +2013,6 @@ export function PracticeSession({
                     <PracticeBookPage
                       scrollable={isLandscapeLayout && retainedSlideIndexes.has(index)}
                       active={index === practiceIndex}
-                      fitToImage={Boolean(stablePortraitCanvasNaturalSize) && index === practiceIndex}
                       imageSize={index === practiceIndex ? fittedBookSize : null}
                       onScroll={index === practiceIndex ? (event) => {
                         if (event.detail.scrollTop > 0 && index === practiceContextRef.current.practiceIndex) {
@@ -2055,7 +2050,16 @@ export function PracticeSession({
                         />
                       ) : null}
                       {index === practiceIndex && (!stablePortraitCanvasNaturalSize || fittedBookSize) ? (
-                        <View className='practice-book-page__hotspots'>
+                        <View
+                          className={`practice-book-page__hotspots${
+                            stablePortraitCanvasNaturalSize && fittedBookSize
+                              ? " practice-book-page__hotspots--fitted"
+                              : ""
+                          }`}
+                          style={stablePortraitCanvasNaturalSize && fittedBookSize
+                            ? { width: `${fittedBookSize.width}px`, height: `${fittedBookSize.height}px` }
+                            : undefined}
+                        >
                           {clampedHotspots.map((hotspot, hotspotIndex) => {
                             const isActiveModelTrack = playingTrackId === hotspot.id ||
                               activeModelTrack?.url === hotspot.url;

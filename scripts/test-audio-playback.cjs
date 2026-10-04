@@ -415,6 +415,26 @@ console.log("音频播放测试通过：首次停止保护、离页停止与分�
 
 const { createPage, elements, textOf, byClass, buildBookPracticeBundle } = require("./test-practice-book-route.cjs");
 
+const loadedBookImageFixture = {
+  getImageInfo({ success }) {
+    success?.({ width: 1588, height: 2245 });
+  },
+  createSelectorQuery() {
+    let callback;
+    const query = {
+      select() { return query; },
+      boundingClientRect(next) { callback = next; return query; },
+      exec() { callback?.({ width: 374, height: 560 }); },
+    };
+    return query;
+  },
+};
+const renderAfterBookImageLoaded = async (page) => {
+  page.render();
+  for (let index = 0; index < 6; index += 1) await Promise.resolve();
+  return page.render();
+};
+
 async function testBookPlaybackLifecycle() {
   const audioPages = buildBookPracticeBundle("22").practices;
   const practiceToasts = [];
@@ -423,9 +443,10 @@ async function testBookPlaybackLifecycle() {
     { bookId: "22", practice: "0" },
     {
       showToast: ({ title }) => practiceToasts.push(title),
+      taroOverrides: loadedBookImageFixture,
     },
   );
-  let tree = page.render();
+  let tree = await renderAfterBookImageLoaded(page);
   byClass(tree, "audio-hotspot").props.onClick();
   const firstModelAudio = page.audios.at(-1);
   assert.equal(firstModelAudio.loop, true, "教材示范音频应启用原生单段循环，播完继续播放当前音源");
@@ -587,9 +608,12 @@ async function testBookPlaybackLifecycle() {
   const conservativeDevicePage = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "22", practice: "0" },
-    { canIUse: (schema) => schema !== "InnerAudioContext.playbackRate" },
+    {
+      canIUse: (schema) => schema !== "InnerAudioContext.playbackRate",
+      taroOverrides: loadedBookImageFixture,
+    },
   );
-  let conservativeDeviceTree = conservativeDevicePage.render();
+  let conservativeDeviceTree = await renderAfterBookImageLoaded(conservativeDevicePage);
   byClass(conservativeDeviceTree, "audio-hotspot").props.onClick();
   conservativeDeviceTree = conservativeDevicePage.render();
   const conservativeRateTrigger = byClass(conservativeDeviceTree, "practice-model-player__rate");
@@ -709,16 +733,17 @@ async function testSameUrlPlaybackAcrossPages() {
   const page = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "7", page: String(firstPage.imageIndex) },
+    { taroOverrides: loadedBookImageFixture },
   );
   try {
-    let tree = page.render();
+    let tree = await renderAfterBookImageLoaded(page);
     byClass(tree, "audio-hotspot").props.onClick();
     const sharedAudio = page.audios.at(-1);
     sharedAudio.currentTime = 6.25;
     sharedAudio.duration = 18;
     sharedAudio.trigger("TimeUpdate");
 
-    tree = page.render();
+    tree = await renderAfterBookImageLoaded(page);
     const progressBeforeSwipe = textOf(byClass(tree, "practice-header__progress"));
     await elements(tree).find((node) => node.type === "Swiper").props.onChange({
       detail: { current: secondPage.imageIndex, source: "touch" },
@@ -729,7 +754,7 @@ async function testSameUrlPlaybackAcrossPages() {
     await elements(tree).find((node) => node.type === "Swiper").props.onAnimationFinish({
       detail: { current: secondPage.imageIndex, source: "touch" },
     });
-    tree = page.render();
+    tree = await renderAfterBookImageLoaded(page);
     assert.notEqual(textOf(byClass(tree, "practice-header__progress")), progressBeforeSwipe,
       "共用音频跨页测试必须真正进入后一页");
     let sharedHotspot = byClass(tree, "audio-hotspot");

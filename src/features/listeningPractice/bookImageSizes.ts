@@ -32,13 +32,52 @@ export const BOOK_IMAGE_SIZES: Record<string, string> = {
   "29": "1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411;1040,1411",
 };
 
-export function readBookImageSize(bookId: string, imageIndex: number): { width: number; height: number } | null {
+type BookImageSize = { width: number; height: number };
+
+// OD6 页图尚未写入上面的逐页尺寸表，先用已核验的全书统一尺寸补齐同一接口。
+const BOOK_STABLE_CANVAS_FALLBACKS: Readonly<Record<string, BookImageSize>> = {
+  "30": { width: 1536, height: 1987 },
+  "31": { width: 1536, height: 1984 },
+};
+
+const stableCanvasSizeCache = new Map<string, BookImageSize | null>();
+
+const parseImageSize = (encodedPair: string | undefined): BookImageSize | null => {
+  if (!encodedPair) return null;
+  const [width, height] = encodedPair.split(",").map(Number);
+  if (!width || !height) return null;
+  return { width, height };
+};
+
+export function readBookImageSize(bookId: string, imageIndex: number): BookImageSize | null {
   const encoded = BOOK_IMAGE_SIZES[bookId];
   if (!encoded || imageIndex < 0) return null;
   const parts = encoded.split(";");
-  const pair = parts[imageIndex];
-  if (!pair) return null;
-  const [width, height] = pair.split(",").map(Number);
-  if (!width || !height) return null;
-  return { width, height };
+  return parseImageSize(parts[imageIndex]);
+}
+
+/**
+ * 用本书页图高宽比的 P90 作为稳定画布。
+ * 这样可容纳常见的较高版式，同时忽略少量封面、半宽页和异常长页。
+ */
+export function readBookStableCanvasSize(bookId: string): BookImageSize | null {
+  const fallback = BOOK_STABLE_CANVAS_FALLBACKS[bookId];
+  if (fallback) return fallback;
+  if (stableCanvasSizeCache.has(bookId)) return stableCanvasSizeCache.get(bookId) ?? null;
+
+  const encoded = BOOK_IMAGE_SIZES[bookId];
+  if (!encoded) {
+    stableCanvasSizeCache.set(bookId, null);
+    return null;
+  }
+
+  const sizes = encoded
+    .split(";")
+    .map(parseImageSize)
+    .filter((size): size is BookImageSize => size !== null)
+    .sort((left, right) => left.height / left.width - right.height / right.width);
+  const percentileIndex = Math.max(0, Math.ceil(sizes.length * 0.9) - 1);
+  const stableSize = sizes[percentileIndex] ?? null;
+  stableCanvasSizeCache.set(bookId, stableSize);
+  return stableSize;
 }

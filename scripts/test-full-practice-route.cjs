@@ -62,12 +62,10 @@ async function run() {
       assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), `跟读训练 ${practice.imageIndex + 1} / ${concatImages[bookId].length}`);
       const hotspots = elements(tree).filter((node) => String(node.props?.className || "").split(" ").includes("audio-hotspot"));
       assert.equal(hotspots.length, practice.tracks.length);
-      if (bookId === "30") {
-        assert.equal(Number.parseFloat(hotspots[0].props.style.left), Number.parseFloat(practice.tracks[0].left));
-        assert.equal(Number.parseFloat(hotspots[0].props.style.top), Number.parseFloat(practice.tracks[0].top));
-      } else {
-        assert.deepEqual(hotspots[0].props.style, { left: practice.tracks[0].left, top: practice.tracks[0].top });
-      }
+      const actualLeft = Number.parseFloat(hotspots[0].props.style.left);
+      const actualTop = Number.parseFloat(hotspots[0].props.style.top);
+      assert.ok(Math.abs(actualLeft - Number.parseFloat(practice.tracks[0].left)) <= 1, "固定画布只允许边缘热点做触控安全位移");
+      assert.ok(Math.abs(actualTop - Number.parseFloat(practice.tracks[0].top)) <= 1, "固定画布只允许边缘热点做触控安全位移");
       hotspots[0].props.onClick();
       assert.equal(oldPage.audios.at(-1).src, practice.tracks[0].url, "补全页面不改变原点读坐标和音源");
       oldPage.dispose();

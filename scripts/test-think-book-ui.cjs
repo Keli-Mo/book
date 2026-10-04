@@ -13,9 +13,29 @@ const { buildBookPracticeBundle } = load("src/features/listeningPractice/bookPra
 const readerFile = "src/pages/ThinkBookReader/ThinkBookReader.tsx";
 const livePages = [];
 const settle = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+const loadedBookImageFixture = {
+  getImageInfo({ success }) {
+    success?.({ width: 1040, height: 1411 });
+  },
+  createSelectorQuery() {
+    let callback;
+    const query = {
+      select() { return query; },
+      boundingClientRect(next) { callback = next; return query; },
+      exec() { callback?.({ width: 374, height: 560 }); },
+    };
+    return query;
+  },
+};
 
 const openReader = (bookId, imageIndex, options) => {
-  const page = createPage(readerFile, { bookId, page: String(imageIndex) }, options);
+  const page = createPage(readerFile, { bookId, page: String(imageIndex) }, {
+    ...options,
+    taroOverrides: {
+      ...loadedBookImageFixture,
+      ...options?.taroOverrides,
+    },
+  });
   livePages.push(page);
   return page;
 };

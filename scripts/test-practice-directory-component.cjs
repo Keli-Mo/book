@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { createPage, byClass, elements, textOf, load } = require("./test-practice-book-route.cjs");
 const { buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
+const { readBookImageSize } = load("src/features/listeningPractice/bookImageSizes.ts");
 const { buildPracticeDirectoryGroups } = load("src/features/listeningPractice/practiceDirectory.ts");
 
 const routes = [
@@ -26,10 +27,27 @@ function fixture(route) {
   const groupIndex = groups.findIndex((group) => group.items.some((item) => item.practiceIndex === currentIndex));
   assert.ok(groupIndex > 0, "测试必须从非第一章进入，避免首章掩盖定位错误");
   const nextTicks = [];
+  const practicesByImageUrl = new Map(bundle.practices.map((practice) => [practice.imageUrl, practice]));
   let confirmSelection = false;
   const page = createPage(route.file, route.params, {
     showModal: async () => ({ confirm: confirmSelection }),
-    taroOverrides: { nextTick(callback) { nextTicks.push(callback); } },
+    taroOverrides: {
+      nextTick(callback) { nextTicks.push(callback); },
+      getImageInfo({ src, success }) {
+        const imageIndex = practicesByImageUrl.get(src)?.imageIndex;
+        const size = readBookImageSize(route.params.bookId, imageIndex);
+        if (size) success(size);
+      },
+      createSelectorQuery() {
+        let callback;
+        const query = {
+          select() { return query; },
+          boundingClientRect(next) { callback = next; return query; },
+          exec() { callback?.({ width: 374, height: 560 }); return query; },
+        };
+        return query;
+      },
+    },
   });
   const flush = () => {
     let tree = render(page);

@@ -4,13 +4,24 @@ const test = require("node:test");
 const { createPage, byClass, elements, textOf } = require("./test-practice-book-route.cjs");
 
 const routes = [
-  { name: "普通训练", file: "src/pages/Practice/Practice.tsx", params: { bookId: "22", practice: "0" } },
-  { name: "Think", file: "src/pages/ThinkBookReader/ThinkBookReader.tsx", params: { bookId: "28", page: "12" } },
+  {
+    name: "普通训练",
+    file: "src/pages/Practice/Practice.tsx",
+    params: { bookId: "22", practice: "0" },
+    stableCanvas: { width: 1588, height: 2245 },
+  },
+  {
+    name: "Think",
+    file: "src/pages/ThinkBookReader/ThinkBookReader.tsx",
+    params: { bookId: "28", page: "12" },
+    stableCanvas: { width: 1040, height: 1411 },
+  },
 ];
 const settle = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
 const natural = { width: 600, height: 900 };
 const renderSettled = (page) => { page.render(); page.render(); return page.render(); };
 const button = (tree, label) => elements(tree).find((node) => node.type === "Button" && textOf(node) === label);
+const stableCanvasByPage = new WeakMap();
 
 function fixture(route, { deferMeasurements = false } = {}) {
   const slot = { width: 360, height: 720 };
@@ -43,14 +54,56 @@ function fixture(route, { deferMeasurements = false } = {}) {
       },
     },
   });
+  stableCanvasByPage.set(page, route.stableCanvas);
   renderSettled(page);
   return { page, slot, measurements };
 }
 
-const viewport = (page) => {
-  const node = byClass(renderSettled(page), "practice-book-viewport");
-  assert.ok(node, "教材必须有可测量的图面");
-  return node.props.style;
+const hasClass = (node, name) => node.props?.className?.split(/\s+/).includes(name);
+const styleSize = (node) => ({
+  width: Number.parseFloat(node?.props?.style?.width),
+  height: Number.parseFloat(node?.props?.style?.height),
+});
+const fitToBounds = (bounds, imageNatural) => {
+  const scale = Math.min(bounds.width / imageNatural.width, bounds.height / imageNatural.height);
+  return { width: imageNatural.width * scale, height: imageNatural.height * scale };
+};
+const assertCloseSize = (actual, expected, message) => {
+  assert.ok(Math.abs(actual.width - expected.width) <= 1,
+    `${message}：宽度 ${actual.width}，期望 ${expected.width}`);
+  assert.ok(Math.abs(actual.height - expected.height) <= 1,
+    `${message}：高度 ${actual.height}，期望 ${expected.height}`);
+};
+const portraitFrame = (page, expectedWidth, message = "教材") => {
+  const tree = renderSettled(page);
+  const viewport = byClass(tree, "practice-book-viewport");
+  assert.ok(viewport, "教材必须有可测量的固定画布");
+  const stableCanvas = stableCanvasByPage.get(page);
+  assert.ok(stableCanvas, "每本教材都必须提供本书统一的竖屏固定画布");
+  const expectedOuter = {
+    width: expectedWidth,
+    height: Math.round(expectedWidth * stableCanvas.height / stableCanvas.width),
+  };
+  assertCloseSize(styleSize(viewport), expectedOuter, `${message}外层固定画布`);
+
+  const activeImage = byClass(tree, "practice-book-page__image");
+  const bookPage = elements(tree).find((node) =>
+    hasClass(node, "practice-book-page") && elements(node).some((child) => child === activeImage),
+  );
+  assert.ok(bookPage, "当前真实页图必须位于固定画布内");
+  const hotspotLayer = byClass(bookPage, "practice-book-page__hotspots--fitted");
+  assert.ok(hotspotLayer, "热点层必须与真实页图同处一个容器");
+  const expectedPage = fitToBounds(expectedOuter, natural);
+  assertCloseSize(styleSize(hotspotLayer), expectedPage, `${message}真实页图`);
+  assert.equal(activeImage.props.mode, "aspectFit", "真实页图按原比例放入固定画布");
+  assert.ok(hasClass(byClass(tree, "practice-book-slide"), "practice-book-slide--stable-canvas"),
+    "所有教材竖屏都使用稳定画布");
+  assert.equal(
+    elements(hotspotLayer).filter((node) => hasClass(node, "audio-hotspot")).length,
+    elements(tree).filter((node) => hasClass(node, "audio-hotspot")).length,
+    "音频热点不能落在固定画布或相邻页上",
+  );
+  return { outerStyle: viewport.props.style, outerSize: styleSize(viewport), pageSize: styleSize(hotspotLayer) };
 };
 const measureAgain = (page) => {
   byClass(page.render(), "practice-book-page__image").props.onLoad({ detail: natural });
@@ -73,15 +126,16 @@ for (const route of routes) {
     const { page, slot, measurements } = fixture(route, { deferMeasurements: true });
     try {
       measurements.shift()();
-      assert.deepEqual(viewport(page), { width: "360px", height: "540px" });
+      const initial = portraitFrame(page, 360);
       measureAgain(page);
       const oldMeasurement = measurements.shift();
       slot.width = 640;
       measureAgain(page);
       measurements.shift()();
-      assert.deepEqual(viewport(page), { width: "640px", height: "960px" });
+      const latest = portraitFrame(page, 640);
       oldMeasurement();
-      assert.deepEqual(viewport(page), { width: "640px", height: "960px" }, "旧测宽回调不得覆盖更新后的列宽");
+      assert.deepEqual(portraitFrame(page, 640), latest, "旧测宽回调不得覆盖更新后的列宽");
+      assert.notDeepEqual(latest.outerStyle, initial.outerStyle, "新列宽必须重新计算本书固定画布");
       assert.equal(measurements.length, 0, "尺寸变化不应再次触发测量循环");
     } finally {
       page.unload();
@@ -93,7 +147,7 @@ for (const route of routes) {
     const { page, slot, measurements } = fixture(route, { deferMeasurements: true });
     try {
       measurements.shift()();
-      assert.deepEqual(viewport(page), { width: "360px", height: "540px" });
+      portraitFrame(page, 360);
       slot.width = 640;
       measureAgain(page);
       const pendingMeasurement = measurements.shift();
@@ -134,20 +188,21 @@ for (const route of routes) {
   test(`${route.name}：录音和可用高度变化不缩小教材，宽度变化保持固有比例`, async () => {
     const { page, slot } = fixture(route);
     try {
-      const initial = { ...viewport(page) };
-      assert.deepEqual(initial, { width: "360px", height: "540px" });
+      const initial = portraitFrame(page, 360);
       slot.height = 220;
       await begin(page);
       measureAgain(page);
-      assert.deepEqual(viewport(page), initial, "开始录音后书图区变矮，教材仍应保持原宽高");
+      assert.deepEqual(portraitFrame(page, 360), initial, "开始录音后书图区变矮，教材仍应保持原宽高");
       byClass(page.render(), "record-button--pause").props.onClick();
       page.recorderHandlers.Pause();
-      assert.deepEqual(viewport(page), initial, "暂停录音不能改变教材尺寸");
+      assert.deepEqual(portraitFrame(page, 360), initial, "暂停录音不能改变教材尺寸");
       await finish(page);
-      assert.deepEqual(viewport(page), initial, "录音完成后的按钮和提示不能挤小教材");
+      assert.deepEqual(portraitFrame(page, 360), initial, "录音完成后的按钮和提示不能挤小教材");
       slot.width = 300;
       measureAgain(page);
-      assert.deepEqual(viewport(page), { width: "300px", height: "450px" }, "书图区宽度改变后应按固有比例重新计算高度");
+      const resized = portraitFrame(page, 300);
+      assert.notDeepEqual(resized.outerStyle, initial.outerStyle,
+        "书图区宽度改变后应按本书固定画布比例重新计算高度");
     } finally {
       page.unload();
       page.dispose();
