@@ -41,6 +41,7 @@
   &__progress-row {
     display: flex;
     min-width: 0;
+    min-height: 44PX;
     align-items: center;
     justify-content: space-between;
     margin-top: 4rpx;
@@ -288,6 +289,16 @@
       border-left: 9PX solid #ffffff;
     }
 
+    &--buffering {
+      width: 14PX;
+      height: 14PX;
+      border: 2PX solid rgba(255, 255, 255, 0.42);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: practice-model-player-spin 0.8s linear infinite;
+      box-sizing: border-box;
+    }
+
     &--pause::before,
     &--pause::after {
       content: "";
@@ -377,6 +388,10 @@
       color: #ffffff;
     }
   }
+}
+
+@keyframes practice-model-player-spin {
+  to { transform: rotate(360deg); }
 }
 
 .practice-header__progress-row--audio-active .practice-header__directory {

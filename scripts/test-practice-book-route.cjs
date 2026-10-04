@@ -172,7 +172,7 @@ const createPage = (file, params, options = {}) => {
         paused: true,
         playbackRate: 1,
       };
-      for (const event of ["Play", "Pause", "Ended", "Stop", "Error", "TimeUpdate"]) audio[`on${event}`] = (callback) => { handlers[event] = callback; };
+      for (const event of ["Canplay", "Play", "Pause", "Ended", "Stop", "Error", "TimeUpdate", "Waiting"]) audio[`on${event}`] = (callback) => { handlers[event] = callback; };
       audio.play = () => {
         audio.paused = false;
         audio.events.push("play");

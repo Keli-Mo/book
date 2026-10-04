@@ -19,18 +19,22 @@ interface TrackAudio {
   pause: () => void;
   seek: (seconds: number) => void;
   destroy: () => void;
+  onCanplay?: (callback: () => void) => void;
   onEnded: (callback: () => void) => void;
   onError: (callback: (error: TrackAudioError) => void) => void;
   onPause: (callback: () => void) => void;
   onPlay: (callback: () => void) => void;
   onStop: (callback: () => void) => void;
   onTimeUpdate: (callback: () => void) => void;
+  onWaiting?: (callback: () => void) => void;
 }
 
 interface TrackAudioController {
   toggle: (trackId: string, url: string) => void;
   seek: (seconds: number) => boolean;
   setPlaybackRate: (rate: number) => void;
+  handleInterruptionBegin: () => boolean;
+  handleInterruptionEnd: () => boolean;
   stop: () => boolean;
   dispose: () => boolean;
 }
@@ -40,9 +44,11 @@ interface AudioStopController {
 }
 
 interface TrackAudioHooks {
+  onCanplay?: (willResume: boolean) => void;
   onPlay?: () => void;
   onPause?: () => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
+  onWaiting?: () => void;
 }
 
 interface TrackAudioControllerOptions {
@@ -75,10 +81,13 @@ export const createTrackAudioController = (
 ): TrackAudioController => {
   let generation = 0;
   let playbackRate = 1;
+  let interruptionActive = false;
   let activeSession: {
     audio: TrackAudio;
     generation: number;
     trackId: string;
+    wantsToPlay: boolean;
+    waiting: boolean;
   } | null = null;
 
   const isCurrentSession = (sessionGeneration: number) =>
@@ -102,7 +111,13 @@ export const createTrackAudioController = (
     const audio = createAudio();
     const sessionGeneration = generation + 1;
     generation = sessionGeneration;
-    activeSession = { audio, generation: sessionGeneration, trackId };
+    activeSession = {
+      audio,
+      generation: sessionGeneration,
+      trackId,
+      wantsToPlay: true,
+      waiting: false,
+    };
     audio.loop = options.loop ?? false;
     if (playbackRate !== 1) audio.playbackRate = playbackRate;
 
@@ -113,19 +128,50 @@ export const createTrackAudioController = (
       onTrackChange(null);
     };
 
-    audio.onEnded(finishCurrentSession);
+    audio.onEnded(() => {
+      // 原生 loop 会自行回到开头；部分客户端仍会派发 Ended，不能把循环会话误判为结束。
+      if (options.loop) return;
+      finishCurrentSession();
+    });
     audio.onStop(finishCurrentSession);
     audio.onPlay(() => {
-      if (!isCurrentSession(sessionGeneration)) return;
+      if (!isCurrentSession(sessionGeneration) || !activeSession) return;
+      if (!activeSession.wantsToPlay || interruptionActive) {
+        audio.pause();
+        return;
+      }
+      activeSession.waiting = false;
       hooks.onPlay?.();
     });
     audio.onPause(() => {
-      if (!isCurrentSession(sessionGeneration)) return;
+      if (!isCurrentSession(sessionGeneration) || !activeSession) return;
+      // 某些真机会在恢复播放之后才补发中断期间的 Pause。
+      // 原生实例仍在播放时，该迟到事件不能覆盖新的播放态。
+      if (activeSession.wantsToPlay && !interruptionActive && !audio.paused) return;
+      // 没有系统中断事件却发生真实暂停时，也要把播放意图同步回来，
+      // 这样下一次点击会恢复播放，而不是再次执行 pause。
+      if (!interruptionActive && audio.paused) {
+        activeSession.wantsToPlay = false;
+        activeSession.waiting = false;
+      }
       hooks.onPause?.();
     });
     audio.onTimeUpdate(() => {
       if (!isCurrentSession(sessionGeneration)) return;
       hooks.onTimeUpdate?.(audio.currentTime, audio.duration);
+    });
+    audio.onWaiting?.(() => {
+      if (!isCurrentSession(sessionGeneration) || !activeSession?.wantsToPlay || interruptionActive) return;
+      activeSession.waiting = true;
+      hooks.onWaiting?.();
+    });
+    audio.onCanplay?.(() => {
+      if (!isCurrentSession(sessionGeneration) || !activeSession) return;
+      const wasWaiting = activeSession.waiting;
+      const shouldResume = wasWaiting && activeSession.wantsToPlay && !interruptionActive;
+      activeSession.waiting = false;
+      if (wasWaiting) hooks.onCanplay?.(shouldResume);
+      if (shouldResume) audio.play();
     });
     audio.onError((error) => {
       if (!isCurrentSession(sessionGeneration)) return;
@@ -138,15 +184,21 @@ export const createTrackAudioController = (
     audio.src = url;
     if (!isCurrentSession(sessionGeneration)) return;
     onTrackChange(trackId);
-    audio.play();
+    if (!interruptionActive) audio.play();
   };
 
   return {
     toggle(trackId, url) {
       if (activeSession?.trackId === trackId) {
         if (options.sameTrackAction === "pause") {
-          if (activeSession.audio.paused) activeSession.audio.play();
-          else activeSession.audio.pause();
+          if (activeSession.wantsToPlay) {
+            activeSession.wantsToPlay = false;
+            activeSession.waiting = false;
+            activeSession.audio.pause();
+          } else {
+            activeSession.wantsToPlay = true;
+            if (!interruptionActive) activeSession.audio.play();
+          }
         } else {
           releaseActiveSession(true);
         }
@@ -172,6 +224,22 @@ export const createTrackAudioController = (
       if (!Number.isFinite(rate)) return;
       playbackRate = Math.min(2, Math.max(0.5, rate));
       if (activeSession) activeSession.audio.playbackRate = playbackRate;
+    },
+
+    handleInterruptionBegin() {
+      interruptionActive = true;
+      if (!activeSession) return false;
+      const wasPlaying = activeSession.wantsToPlay;
+      return wasPlaying;
+    },
+
+    handleInterruptionEnd() {
+      if (!interruptionActive) return false;
+      interruptionActive = false;
+      if (!activeSession) return false;
+      if (!activeSession.wantsToPlay) return false;
+      activeSession.audio.play();
+      return true;
     },
 
     stop() {

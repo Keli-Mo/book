@@ -89,6 +89,15 @@ const RECORDER_ACQUIRE_RETRY_MS = 300;
 const HIDDEN_RECORDER_STOP_RETRY_MS = 120;
 const HIDDEN_RECORDER_STOP_MAX_ATTEMPTS = 3;
 
+const setPlaybackScreenAwake = (keepScreenOn: boolean) => {
+  if (typeof Taro.setKeepScreenOn !== "function") return;
+  try {
+    void Taro.setKeepScreenOn({ keepScreenOn }).catch(() => {});
+  } catch {
+    // 常亮能力异常不能阻断音频播放本身。
+  }
+};
+
 const recorderOperationError = (reason: string, error?: unknown) =>
   error || new Error(reason === "busy" ? "录音设备正在收尾，请稍后再试" : "当前录音操作暂不可用");
 
@@ -184,7 +193,7 @@ export function PracticeSession({
   });
   const [isDirectoryOpen, setIsDirectoryOpen] = useState(false);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
-  const [modelPlaybackState, setModelPlaybackState] = useState<"idle" | "playing" | "paused">("idle");
+  const [modelPlaybackState, setModelPlaybackState] = useState<"idle" | "playing" | "paused" | "buffering">("idle");
   const [modelPlaybackCurrentTime, setModelPlaybackCurrentTime] = useState(0);
   const [modelPlaybackDuration, setModelPlaybackDuration] = useState(0);
   const [modelSeekPreview, setModelSeekPreview] = useState<number | null>(null);
@@ -616,9 +625,10 @@ export function PracticeSession({
     const modelAudioController = createTrackAudioController(
       () => Taro.createInnerAudioContext(),
       (trackId) => {
+        if (trackId === null) setPlaybackScreenAwake(false);
         if (mountedRef.current && !pageHiddenRef.current) {
           setPlayingTrackId(trackId);
-          setModelPlaybackState(trackId ? "playing" : "idle");
+          setModelPlaybackState(trackId ? "buffering" : "idle");
           setModelPlaybackCurrentTime(0);
           setModelPlaybackDuration(0);
           setModelSeekPreview(null);
@@ -634,13 +644,28 @@ export function PracticeSession({
       },
       {
         onPlay: () => {
+          setPlaybackScreenAwake(true);
           if (mountedRef.current && !pageHiddenRef.current) {
             setModelPlaybackState("playing");
           }
         },
         onPause: () => {
+          setPlaybackScreenAwake(false);
           if (mountedRef.current && !pageHiddenRef.current) {
             setModelPlaybackState("paused");
+          }
+        },
+        onWaiting: () => {
+          setPlaybackScreenAwake(true);
+          if (mountedRef.current && !pageHiddenRef.current) {
+            setModelPlaybackState("buffering");
+          }
+        },
+        onCanplay: (willResume) => {
+          if (!willResume) return;
+          setPlaybackScreenAwake(true);
+          if (mountedRef.current && !pageHiddenRef.current) {
+            setModelPlaybackState("playing");
           }
         },
         onTimeUpdate: (currentTime, duration) => {
@@ -657,6 +682,7 @@ export function PracticeSession({
     const recordingAudioController = createTrackAudioController(
       () => Taro.createInnerAudioContext(),
       (trackId) => {
+        if (trackId === null) setPlaybackScreenAwake(false);
         if (trackId === null && mountedRef.current && !pageHiddenRef.current) {
           setIsPlayingRecording(false);
         }
@@ -670,6 +696,7 @@ export function PracticeSession({
       },
       {
         onPlay: () => {
+          setPlaybackScreenAwake(true);
           if (mountedRef.current && !pageHiddenRef.current) {
             setIsPlayingRecording(true);
           }
@@ -678,10 +705,33 @@ export function PracticeSession({
     );
     recordingAudioRef.current = recordingAudioController;
 
+    const onAudioInterruptionBegin = () => {
+      const modelWasPlaying = modelAudioController.handleInterruptionBegin();
+      const recordingWasPlaying = recordingAudioController.handleInterruptionBegin();
+      if (modelWasPlaying || recordingWasPlaying) setPlaybackScreenAwake(false);
+    };
+    const onAudioInterruptionEnd = () => {
+      modelAudioController.handleInterruptionEnd();
+      recordingAudioController.handleInterruptionEnd();
+    };
+    if (typeof Taro.onAudioInterruptionBegin === "function") {
+      Taro.onAudioInterruptionBegin(onAudioInterruptionBegin);
+    }
+    if (typeof Taro.onAudioInterruptionEnd === "function") {
+      Taro.onAudioInterruptionEnd(onAudioInterruptionEnd);
+    }
+
     return () => {
+      if (typeof Taro.offAudioInterruptionBegin === "function") {
+        Taro.offAudioInterruptionBegin(onAudioInterruptionBegin);
+      }
+      if (typeof Taro.offAudioInterruptionEnd === "function") {
+        Taro.offAudioInterruptionEnd(onAudioInterruptionEnd);
+      }
       // 卸载只释放会话，不再向即将卸载的页面写播放状态。
       modelAudioController.dispose();
       recordingAudioController.dispose();
+      setPlaybackScreenAwake(false);
       modelAudioControllerRef.current = null;
       recordingAudioRef.current = null;
     };
@@ -1910,12 +1960,18 @@ export function PracticeSession({
               <View className='practice-model-player' catchMove>
                 <Button
                   className='practice-model-player__toggle device-touch-target'
-                  aria-label={modelPlaybackState === "paused" ? "继续播放示范音频" : "暂停示范音频"}
+                  aria-label={modelPlaybackState === "buffering"
+                    ? "示范音频缓冲中，点击暂停"
+                    : modelPlaybackState === "paused"
+                      ? "继续播放示范音频"
+                      : "暂停示范音频"}
                   onClick={toggleModelPlayback}
                 >
                   <View
                     className={`practice-model-player__play-icon practice-model-player__play-icon--${
-                      modelPlaybackState === "paused" ? "play" : "pause"
+                      modelPlaybackState === "buffering"
+                        ? "buffering"
+                        : modelPlaybackState === "paused" ? "play" : "pause"
                     }`}
                   />
                 </Button>
@@ -1927,10 +1983,10 @@ export function PracticeSession({
                     step={1}
                     value={modelProgressValue}
                     disabled={modelPlaybackDuration <= 0}
-                    activeColor='#2f896c'
-                    backgroundColor='#dce8e3'
-                    blockColor='#2f896c'
-                    blockSize={14}
+                    activeColor='#14563f'
+                    backgroundColor='#718f84'
+                    blockColor='#14563f'
+                    blockSize={20}
                     onChanging={handleModelSeekChanging}
                     onChange={handleModelSeekChange}
                   />
@@ -2064,7 +2120,7 @@ export function PracticeSession({
                             const isActiveModelTrack = playingTrackId === hotspot.id ||
                               activeModelTrack?.url === hotspot.url;
                             const isPlayingModelTrack = isActiveModelTrack &&
-                              modelPlaybackState === "playing";
+                              (modelPlaybackState === "playing" || modelPlaybackState === "buffering");
                             return (
                               <View
                                 key={hotspot.id}

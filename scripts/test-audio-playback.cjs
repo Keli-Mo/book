@@ -86,12 +86,14 @@ const createFakeTrackAudio = ({ eventsOnDestroy = [] } = {}) => {
   let source = "";
   const events = [];
   const listeners = {
+    canplay: [],
     ended: [],
     error: [],
     pause: [],
     play: [],
     stop: [],
     timeUpdate: [],
+    waiting: [],
   };
 
   const audio = {
@@ -124,18 +126,22 @@ const createFakeTrackAudio = ({ eventsOnDestroy = [] } = {}) => {
         callbacks.forEach((listener) => listener(event === "error" ? { errCode: 2, errMsg: "destroy" } : undefined));
       }
     },
+    onCanplay: (listener) => listeners.canplay.push(listener),
     onEnded: (listener) => listeners.ended.push(listener),
     onError: (listener) => listeners.error.push(listener),
     onPause: (listener) => listeners.pause.push(listener),
     onPlay: (listener) => listeners.play.push(listener),
     onStop: (listener) => listeners.stop.push(listener),
     onTimeUpdate: (listener) => listeners.timeUpdate.push(listener),
+    onWaiting: (listener) => listeners.waiting.push(listener),
+    emitCanplay: () => listeners.canplay.forEach((listener) => listener()),
     emitEnded: () => listeners.ended.forEach((listener) => listener()),
     emitError: () => listeners.error.forEach((listener) => listener({ errCode: 1, errMsg: "old" })),
     emitPause: () => listeners.pause.forEach((listener) => listener()),
     emitPlay: () => listeners.play.forEach((listener) => listener()),
     emitStop: () => listeners.stop.forEach((listener) => listener()),
     emitTimeUpdate: () => listeners.timeUpdate.forEach((listener) => listener()),
+    emitWaiting: () => listeners.waiting.forEach((listener) => listener()),
     events,
   };
   return audio;
@@ -147,6 +153,7 @@ const playbackErrors = [];
 const playbackStarts = [];
 const playbackPauses = [];
 const playbackTimes = [];
+const playbackBufferingEvents = [];
 const trackController = createTrackAudioController(
   () => {
     const audio = createFakeTrackAudio();
@@ -159,6 +166,8 @@ const trackController = createTrackAudioController(
     onPlay: () => playbackStarts.push("play"),
     onPause: () => playbackPauses.push("pause"),
     onTimeUpdate: (currentTime, duration) => playbackTimes.push([currentTime, duration]),
+    onWaiting: () => playbackBufferingEvents.push("waiting"),
+    onCanplay: () => playbackBufferingEvents.push("canplay"),
   },
   { sameTrackAction: "pause" },
 );
@@ -199,6 +208,27 @@ assert.deepEqual(
   ["src:audio-a.mp3", "play", "pause", "play"],
   "暂停后再次点击应在原实例调用 play 继续",
 );
+const pauseCountBeforeLateNativePause = playbackPauses.length;
+trackAudios[0].emitPause();
+assert.equal(
+  playbackPauses.length,
+  pauseCountBeforeLateNativePause,
+  "恢复播放后迟到的原生 Pause 不能覆盖当前播放态",
+);
+trackAudios[0].paused = true;
+trackAudios[0].emitPause();
+assert.equal(
+  playbackPauses.length,
+  pauseCountBeforeLateNativePause + 1,
+  "原生实例确实停止时必须同步真实暂停态",
+);
+const playCountBeforeRecoveringNativePause = trackAudios[0].events.filter((event) => event === "play").length;
+trackController.toggle("track-a", "audio-a.mp3");
+assert.equal(
+  trackAudios[0].events.filter((event) => event === "play").length,
+  playCountBeforeRecoveringNativePause + 1,
+  "真实原生暂停后再次点击应恢复原会话",
+);
 
 assert.equal(typeof trackController.seek, "function", "示范音频控制器应提供可拖动进度条使用的 seek");
 trackController.seek(4.5);
@@ -212,7 +242,7 @@ assert.equal(trackAudios[0].playbackRate, 1.25, "1.25× 应立即应用到正在
 trackController.toggle("track-b", "audio-b.mp3");
 assert.deepEqual(
   trackAudios[0].events,
-  ["src:audio-a.mp3", "play", "pause", "play", "seek:4.5", "destroy"],
+  ["src:audio-a.mp3", "play", "pause", "play", "play", "seek:4.5", "destroy"],
   "切换音轨时应先销毁旧播放会话",
 );
 assert.deepEqual(
@@ -245,9 +275,168 @@ trackAudios[1].emitTimeUpdate();
 assert.deepEqual(playbackStarts, ["play", "play"]);
 assert.deepEqual(playbackTimes, [[1.25, 8.75], [2.5, 12]]);
 
+trackAudios[1].emitWaiting();
+assert.deepEqual(
+  playbackBufferingEvents,
+  ["waiting"],
+  "当前音轨数据不足时应通知页面进入缓冲态",
+);
+trackAudios[1].emitCanplay();
+assert.deepEqual(
+  playbackBufferingEvents,
+  ["waiting", "canplay"],
+  "缓冲恢复后应通知页面退出缓冲态",
+);
+assert.equal(
+  trackAudios[1].events.at(-1),
+  "play",
+  "仍有播放意图时，音频恢复可播后应主动续播",
+);
+trackAudios[1].emitWaiting();
+trackController.toggle("track-b", "audio-b.mp3");
+const playCountAfterUserPause = trackAudios[1].events.filter((event) => event === "play").length;
+trackAudios[1].emitCanplay();
+assert.equal(
+  trackAudios[1].events.filter((event) => event === "play").length,
+  playCountAfterUserPause,
+  "用户在缓冲期间主动暂停后，迟到的 Canplay 不能擅自恢复播放",
+);
+const playbackStartCountAfterUserPause = playbackStarts.length;
+trackAudios[1].paused = false;
+trackAudios[1].emitPlay();
+assert.equal(
+  playbackStarts.length,
+  playbackStartCountAfterUserPause,
+  "用户取消播放后迟到的原生 Play 事件不能把页面重新切回播放态",
+);
+assert.equal(trackAudios[1].events.at(-1), "pause", "迟到的原生 Play 应立即被当前暂停意图纠正");
+
 trackAudios[1].emitEnded();
 assert.equal(shownTrackIds.at(-1), null, "当前音轨结束后应恢复未播放状态");
 assert.equal(trackAudios[1].events.at(-1), "destroy", "结束后应释放音频实例");
+
+const loopingAudios = [];
+const loopingTrackIds = [];
+const loopingController = createTrackAudioController(
+  () => {
+    const audio = createFakeTrackAudio();
+    loopingAudios.push(audio);
+    return audio;
+  },
+  (trackId) => loopingTrackIds.push(trackId),
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+loopingController.toggle("looping-track", "looping.mp3");
+loopingAudios[0].emitEnded();
+assert.equal(
+  loopingTrackIds.at(-1),
+  "looping-track",
+  "原生循环音轨发出 Ended 时不能清空当前播放会话",
+);
+assert.equal(
+  loopingAudios[0].events.includes("destroy"),
+  false,
+  "原生循环音轨发出 Ended 时不能销毁仍需循环的实例",
+);
+loopingController.dispose();
+
+const interruptedAudios = [];
+const interruptedController = createTrackAudioController(
+  () => {
+    const audio = createFakeTrackAudio();
+    interruptedAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause" },
+);
+interruptedController.toggle("interrupted-track", "interrupted.mp3");
+assert.equal(
+  typeof interruptedController.handleInterruptionBegin,
+  "function",
+  "音频控制器应能记录系统音频中断开始",
+);
+assert.equal(
+  typeof interruptedController.handleInterruptionEnd,
+  "function",
+  "音频控制器应能在系统音频中断结束后恢复播放",
+);
+interruptedController.handleInterruptionBegin();
+interruptedAudios[0].paused = true;
+interruptedAudios[0].emitPause();
+interruptedController.handleInterruptionEnd();
+assert.equal(
+  interruptedAudios[0].events.at(-1),
+  "play",
+  "系统音频中断结束后应恢复中断前仍有播放意图的会话",
+);
+interruptedController.toggle("interrupted-track", "interrupted.mp3");
+const playCountBeforePausedInterruption = interruptedAudios[0].events.filter((event) => event === "play").length;
+interruptedController.handleInterruptionBegin();
+interruptedController.toggle("interrupted-track", "interrupted.mp3");
+assert.equal(
+  interruptedAudios[0].events.filter((event) => event === "play").length,
+  playCountBeforePausedInterruption,
+  "系统中断尚未结束时，用户请求继续只能记录播放意图，不能提前调用 play",
+);
+interruptedController.handleInterruptionEnd();
+assert.equal(
+  interruptedAudios[0].events.filter((event) => event === "play").length,
+  playCountBeforePausedInterruption + 1,
+  "暂停会话在系统中断期间请求继续后，应等中断结束再播放",
+);
+interruptedController.handleInterruptionBegin();
+interruptedController.toggle("interrupted-track", "interrupted.mp3");
+const playCountAfterCancellation = interruptedAudios[0].events.filter((event) => event === "play").length;
+interruptedController.handleInterruptionEnd();
+assert.equal(
+  interruptedAudios[0].events.filter((event) => event === "play").length,
+  playCountAfterCancellation,
+  "用户在系统中断期间主动取消播放后，中断结束不能再次复活音频",
+);
+interruptedController.dispose();
+
+const deferredInterruptionAudios = [];
+const deferredInterruptionController = createTrackAudioController(
+  () => {
+    const audio = createFakeTrackAudio();
+    deferredInterruptionAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause" },
+);
+deferredInterruptionController.handleInterruptionBegin();
+deferredInterruptionController.toggle("started-during-interruption", "deferred.mp3");
+assert.deepEqual(
+  deferredInterruptionAudios[0].events,
+  ["src:deferred.mp3"],
+  "系统音频中断期间新建的会话只能装载音源，不能提前调用必然失败的 play",
+);
+deferredInterruptionController.toggle("switched-during-interruption", "switched.mp3");
+assert.deepEqual(
+  deferredInterruptionAudios[0].events,
+  ["src:deferred.mp3", "destroy"],
+  "系统中断期间切换音轨应释放旧会话",
+);
+assert.deepEqual(
+  deferredInterruptionAudios[1].events,
+  ["src:switched.mp3"],
+  "系统中断期间切换到的新音轨仍应等待中断结束",
+);
+deferredInterruptionController.handleInterruptionEnd();
+assert.equal(
+  deferredInterruptionAudios[1].events.at(-1),
+  "play",
+  "系统音频中断结束后应只播放中断期间最后选中的会话",
+);
+deferredInterruptionController.dispose();
 
 const hooklessAudios = [];
 const hooklessTrackIds = [];
@@ -434,6 +623,20 @@ const renderAfterBookImageLoaded = async (page) => {
   for (let index = 0; index < 6; index += 1) await Promise.resolve();
   return page.render();
 };
+const relativeLuminance = (hexColor) => {
+  const channels = String(hexColor).match(/[0-9a-f]{2}/gi)?.map((channel) => parseInt(channel, 16) / 255) || [];
+  if (channels.length !== 3) return Number.NaN;
+  const linear = channels.map((channel) => channel <= 0.03928
+    ? channel / 12.92
+    : ((channel + 0.055) / 1.055) ** 2.4);
+  return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+};
+const contrastRatio = (first, second) => {
+  const firstLuminance = relativeLuminance(first);
+  const secondLuminance = relativeLuminance(second);
+  return (Math.max(firstLuminance, secondLuminance) + 0.05) /
+    (Math.min(firstLuminance, secondLuminance) + 0.05);
+};
 
 async function testBookPlaybackLifecycle() {
   const audioPages = buildBookPracticeBundle("22").practices;
@@ -472,6 +675,11 @@ async function testBookPlaybackLifecycle() {
   assert.equal(modelProgress?.type, "Slider", "示范播放器应使用可拖动的 Slider 进度条");
   assert.equal(modelProgress.props.value, 3.5, "进度条应显示 currentTime");
   assert.equal(modelProgress.props.max, 12, "进度条上限应使用音频 duration");
+  assert.ok(
+    contrastRatio(modelProgress.props.backgroundColor, "#e7f3ee") >= 3,
+    "未播放进度轨道与播放器底色至少应达到 3:1 对比度，真机上不能融进背景",
+  );
+  assert.ok(modelProgress.props.blockSize >= 18, "进度滑块触点不能继续使用接近最小值的 14PX");
 
   let modelToggle = byClass(tree, "practice-model-player__toggle");
   assert.doesNotMatch(textOf(modelToggle), /暂停|继续|播放/, "播放控制按钮可见内容应只使用图标");
@@ -590,6 +798,14 @@ async function testBookPlaybackLifecycle() {
     practiceStyles,
     /\.practice-header__progress-row--audio-active\s+\.practice-header__directory\s*\{[^}]*margin-left:\s*auto\s*;/i,
     "播放器变薄后目录入口仍应保持在行尾",
+  );
+  const baseProgressRowStyle = practiceStyles.match(
+    /\.practice-header\s*\{[\s\S]*?&__progress-row\s*\{([\s\S]*?)&--audio-active/,
+  )?.[1] || "";
+  assert.match(
+    baseProgressRowStyle,
+    /min-height:\s*44PX\s*;/i,
+    "播放前后的进度行应显式保留同一 44PX 高度，不能依赖目录按钮间接撑高导致书页跳动",
   );
   const rateMenuStyle = practiceStyles.match(
     /(?:&__rate-menu|\.practice-model-player__rate-menu)\s*\{([\s\S]*?)\n\s*\}/,
@@ -783,6 +999,166 @@ async function testSameUrlPlaybackAcrossPages() {
   }
 }
 
+async function testPlaybackScreenAwakeLifecycle() {
+  const keepScreenOnCalls = [];
+  let interruptionBegin;
+  let interruptionEnd;
+  let removedInterruptionBegin;
+  let removedInterruptionEnd;
+  let disposed = false;
+  const page = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      taroOverrides: {
+        ...loadedBookImageFixture,
+        setKeepScreenOn: async ({ keepScreenOn }) => {
+          keepScreenOnCalls.push(keepScreenOn);
+        },
+        onAudioInterruptionBegin: (callback) => { interruptionBegin = callback; },
+        onAudioInterruptionEnd: (callback) => { interruptionEnd = callback; },
+        offAudioInterruptionBegin: (callback) => { removedInterruptionBegin = callback; },
+        offAudioInterruptionEnd: (callback) => { removedInterruptionEnd = callback; },
+      },
+    },
+  );
+  try {
+    let tree = await renderAfterBookImageLoaded(page);
+    assert.equal(typeof interruptionBegin, "function", "训练页应监听系统音频中断开始事件");
+    assert.equal(typeof interruptionEnd, "function", "训练页应监听系统音频中断结束事件");
+    byClass(tree, "audio-hotspot").props.onClick();
+    await Promise.resolve();
+    assert.equal(
+      keepScreenOnCalls.at(-1),
+      true,
+      "示范音频开始播放时应保持屏幕常亮，避免锁屏触发页面隐藏并销毁音频",
+    );
+
+    const modelAudio = page.audios.at(-1);
+    modelAudio.trigger("Waiting");
+    tree = page.render();
+    assert.match(
+      String(byClass(tree, "practice-model-player__toggle").props["aria-label"] || ""),
+      /缓冲/,
+      "远程音频数据不足时播放器应明确显示缓冲态，不能继续假装正在播放",
+    );
+    assert.match(
+      byClass(tree, "practice-model-player__play-icon").props.className,
+      /practice-model-player__play-icon--buffering/,
+      "缓冲时播放按钮应显示现有控件内的加载图标",
+    );
+    assert.equal(keepScreenOnCalls.at(-1), true, "短暂缓冲期间仍应保持屏幕常亮");
+    modelAudio.trigger("Canplay");
+    tree = page.render();
+    assert.match(
+      String(byClass(tree, "practice-model-player__toggle").props["aria-label"] || ""),
+      /暂停/,
+      "缓冲恢复并收到原生 Play 后应回到播放态",
+    );
+
+    byClass(tree, "practice-model-player__toggle").props.onClick();
+    await Promise.resolve();
+    assert.equal(keepScreenOnCalls.at(-1), false, "用户暂停示范音频后应释放常亮");
+
+    tree = page.render();
+    byClass(tree, "practice-model-player__toggle").props.onClick();
+    await Promise.resolve();
+    assert.equal(keepScreenOnCalls.at(-1), true, "用户继续播放后应重新保持屏幕常亮");
+
+    const playCountBeforeInterruption = modelAudio.events.filter((event) => event === "play").length;
+    interruptionBegin();
+    modelAudio.paused = true;
+    modelAudio.trigger("Pause");
+    await Promise.resolve();
+    assert.equal(keepScreenOnCalls.at(-1), false, "系统音频中断开始后应释放屏幕常亮");
+    interruptionEnd();
+    await Promise.resolve();
+    assert.equal(
+      modelAudio.events.filter((event) => event === "play").length,
+      playCountBeforeInterruption + 1,
+      "页面仍可见时，系统音频中断结束后应恢复原播放会话",
+    );
+    assert.equal(keepScreenOnCalls.at(-1), true, "系统中断恢复后的原生 Play 应重新保持屏幕常亮");
+    modelAudio.trigger("Pause");
+    await Promise.resolve();
+    tree = page.render();
+    assert.equal(keepScreenOnCalls.at(-1), true, "恢复后迟到的 Pause 不能再次关闭屏幕常亮");
+    assert.match(
+      String(byClass(tree, "practice-model-player__toggle").props["aria-label"] || ""),
+      /暂停/,
+      "恢复后迟到的 Pause 不能把界面覆盖成暂停态",
+    );
+
+    interruptionBegin();
+    page.hide();
+    await Promise.resolve();
+    assert.equal(keepScreenOnCalls.at(-1), false, "页面隐藏并停止播放时应释放屏幕常亮");
+    const playCountAfterHide = modelAudio.events.filter((event) => event === "play").length;
+    interruptionEnd();
+    assert.equal(
+      modelAudio.events.filter((event) => event === "play").length,
+      playCountAfterHide,
+      "页面隐藏并释放会话后，迟到的系统中断结束事件不能复活音频",
+    );
+
+    page.dispose();
+    disposed = true;
+    assert.equal(removedInterruptionBegin, interruptionBegin, "卸载时应移除同一个系统中断开始监听函数");
+    assert.equal(removedInterruptionEnd, interruptionEnd, "卸载时应移除同一个系统中断结束监听函数");
+  } finally {
+    if (!disposed) page.dispose();
+  }
+}
+
+async function testBufferingRecoveryWithoutRepeatedPlayEvent() {
+  const page = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      deferAudioPlay: true,
+      taroOverrides: loadedBookImageFixture,
+    },
+  );
+  try {
+    let tree = await renderAfterBookImageLoaded(page);
+    byClass(tree, "audio-hotspot").props.onClick();
+    tree = page.render();
+    assert.match(
+      String(byClass(tree, "practice-model-player__toggle").props["aria-label"] || ""),
+      /缓冲/,
+      "音源已经选中但尚未收到原生 Play 时应显示缓冲态",
+    );
+
+    const modelAudio = page.audios.at(-1);
+    modelAudio.trigger("Play");
+    modelAudio.trigger("Waiting");
+    tree = page.render();
+    assert.match(
+      String(byClass(tree, "practice-model-player__toggle").props["aria-label"] || ""),
+      /缓冲/,
+      "原生 Waiting 后应进入缓冲态",
+    );
+
+    const playCountBeforeCanplay = modelAudio.events.filter((event) => event === "play").length;
+    modelAudio.trigger("Canplay");
+    tree = page.render();
+    assert.equal(
+      modelAudio.events.filter((event) => event === "play").length,
+      playCountBeforeCanplay + 1,
+      "缓冲恢复时控制器应主动请求续播",
+    );
+    assert.match(
+      String(byClass(tree, "practice-model-player__toggle").props["aria-label"] || ""),
+      /暂停/,
+      "系统未重复派发 Play 时，Canplay 也应让界面退出缓冲态",
+    );
+  } finally {
+    page.dispose();
+  }
+}
+
 testBookPlaybackLifecycle()
   .then(testSameUrlPlaybackAcrossPages)
+  .then(testBufferingRecoveryWithoutRepeatedPlayEvent)
+  .then(testPlaybackScreenAwakeLifecycle)
   .catch((error) => { console.error(error); process.exitCode = 1; });
