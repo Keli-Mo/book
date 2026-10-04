@@ -216,6 +216,7 @@ export function PracticeSession({
   const [isPlayingRecording, setIsPlayingRecording] = useState(false);
   const [pendingCheckIn, setPendingCheckIn] = useState<PendingCheckIn | null>(null);
   const [isSavingRecording, setIsSavingRecording] = useState(false);
+  const [isDeletingRecording, setIsDeletingRecording] = useState(false);
   const [pendingRestoreRefresh, setPendingRestoreRefresh] = useState(0);
   const [bookBounds, setBookBounds] = useState({ width: 0, height: 0 });
   const [bookScrollHintDismissed, setBookScrollHintDismissed] = useState(false);
@@ -247,6 +248,7 @@ export function PracticeSession({
   const pendingCheckInRef = useRef<PendingCheckIn | null>(null);
   const recordingPlaybackSnapshotRef = useRef<Pick<PendingCheckIn, "requestId" | "localPath" | "contentSha1"> | null>(null);
   const completionInFlightRef = useRef(false);
+  const deletingRecordingRef = useRef(false);
   const bookSwiperCurrentRef = useRef(practiceIndex);
   const bookMeasurementSeqRef = useRef(0);
   bookSwiperCurrentRef.current = bookSwiperCurrent;
@@ -260,6 +262,7 @@ export function PracticeSession({
   const practiceSwitchAttemptRef = useRef(0);
   const practiceSwitchInFlightRef = useRef(false);
   const pendingRestoreAttemptRef = useRef(0);
+  const pendingRestoreSuppressedRef = useRef(false);
   const replacementPendingIdsRef = useRef(new Set<string>());
   const teardownAwaitingStopRef = useRef(false);
   const timedOutStopRef = useRef<{
@@ -456,6 +459,7 @@ export function PracticeSession({
       recordingStartAttemptRef.current === expected.attemptId &&
       !practiceSwitchInFlightRef.current &&
       !completionInFlightRef.current &&
+      !deletingRecordingRef.current &&
       currentPractice.practice.id === expected.practiceId &&
       currentPractice.practiceIndex === expected.practiceIndex &&
       getRecorderCoordinator().getPhase() === "idle" &&
@@ -1038,6 +1042,7 @@ export function PracticeSession({
   ]);
 
   useEffect(() => {
+    if (pendingRestoreSuppressedRef.current) return undefined;
     if (
       recordingState !== "idle" &&
       recordingState !== "unsupported" &&
@@ -1313,6 +1318,7 @@ export function PracticeSession({
 
   const confirmLeaveRef = useRef<() => Promise<boolean>>(async () => true);
   confirmLeaveRef.current = async () => {
+    if (deletingRecordingRef.current) return false;
     const state = recordingMachineRef.current.state;
     if (getPracticeSwitchPolicy(state) !== "confirm-discard") return true;
     const confirmation = await Taro.showModal({
@@ -1358,6 +1364,7 @@ export function PracticeSession({
     }
     if (options?.preserveRecording) {
       const nextPractice = bundle.practices[nextIndex];
+      pendingRestoreSuppressedRef.current = false;
       practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
       setBookScrollHintDismissed(true);
       setBookSwiperCurrent(nextIndex);
@@ -1426,6 +1433,7 @@ export function PracticeSession({
     const nextPractice = bundle.practices[nextIndex];
     // 同步提交上下文后再 setState，切页提交后的迟到录音不能趁下一次 render 前挂到新训练。
     pendingRestoreAttemptRef.current += 1;
+    pendingRestoreSuppressedRef.current = false;
     practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
     setBookScrollHintDismissed(true);
     setBookSwiperCurrent(nextIndex);
@@ -1448,6 +1456,10 @@ export function PracticeSession({
     nextIndex: number,
     options?: { animate?: boolean; fromSwiper?: boolean },
   ) => {
+    if (deletingRecordingRef.current) {
+      if (options?.fromSwiper) restoreBookSwiper(practiceContextRef.current.practiceIndex);
+      return;
+    }
     if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= bundle.practices.length) {
       if (options?.fromSwiper) restoreBookSwiper(practiceContextRef.current.practiceIndex);
       return;
@@ -1628,6 +1640,7 @@ export function PracticeSession({
     recordingStartAttemptRef.current += 1;
     timedOutStopRef.current = null;
     discardedRecordingRef.current = null;
+    pendingRestoreSuppressedRef.current = false;
     const previousPending = pendingCheckInRef.current;
     if (previousPending) {
       replacementPendingIdsRef.current.add(previousPending.requestId);
@@ -1658,7 +1671,7 @@ export function PracticeSession({
 
   const playRecording = () => {
     const controller = recordingAudioRef.current;
-    if (!controller || !tempRecordingPath || savingRecordingRef.current) return;
+    if (!controller || !tempRecordingPath || savingRecordingRef.current || deletingRecordingRef.current) return;
 
     modelAudioControllerRef.current?.stop();
     setPlayingTrackId(null);
@@ -1670,7 +1683,7 @@ export function PracticeSession({
 
   const retrySaveRecording = async () => {
     const pending = pendingCheckInRef.current;
-    if (!pending || pending.recoverable || savingRecordingRef.current || completionInFlightRef.current || practiceSwitchInFlightRef.current || pageHiddenRef.current || recordingMachineRef.current.state !== "recorded") return;
+    if (!pending || pending.recoverable || savingRecordingRef.current || deletingRecordingRef.current || completionInFlightRef.current || practiceSwitchInFlightRef.current || pageHiddenRef.current || recordingMachineRef.current.state !== "recorded") return;
     // 用户选择救回本段后，之前尚在等待权限的重录手势永久失效。
     recordingStartAttemptRef.current += 1;
     savingRecordingRef.current = true;
@@ -1697,6 +1710,62 @@ export function PracticeSession({
     }
   };
 
+  const deleteRecording = async () => {
+    const pending = pendingCheckInRef.current;
+    if (
+      !pending || !mountedRef.current || pageHiddenRef.current ||
+      savingRecordingRef.current || deletingRecordingRef.current ||
+      completionInFlightRef.current || practiceSwitchInFlightRef.current ||
+      recordingMachineRef.current.state !== "recorded"
+    ) return;
+
+    // 从确认框开始互斥，并使较早的重录权限请求和草稿恢复作废。
+    deletingRecordingRef.current = true;
+    setIsDeletingRecording(true);
+    recordingStartAttemptRef.current += 1;
+    const restoreAttempt = ++pendingRestoreAttemptRef.current;
+    try {
+      const confirmation = await Taro.showModal({
+        title: "删除录音？",
+        content: "删除当前录音后无法恢复，是否继续？",
+        confirmText: "删除",
+        confirmColor: "#d85b3f",
+      });
+      if (
+        !confirmation.confirm || !mountedRef.current || pageHiddenRef.current ||
+        pendingRestoreAttemptRef.current !== restoreAttempt ||
+        pendingCheckInRef.current?.requestId !== pending.requestId ||
+        recordingMachineRef.current.state !== "recorded"
+      ) return;
+
+      recordingAudioRef.current?.stop();
+      const removed = await getPendingCheckInStore().remove(pending.requestId);
+      if (!removed) {
+        if (mountedRef.current && !pageHiddenRef.current) {
+          Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
+        }
+        return;
+      }
+      replacementPendingIdsRef.current.delete(pending.requestId);
+      if (!mountedRef.current || pendingCheckInRef.current?.requestId !== pending.requestId) return;
+      pendingRestoreAttemptRef.current += 1;
+      // 明确删除后保持空白录音状态；重新录音或切页才恢复原有草稿恢复逻辑。
+      pendingRestoreSuppressedRef.current = true;
+      applyPendingCheckIn(null);
+      clearRecordingView();
+      applyRecordingMachine(resetRecordingMachine(recordingMachineRef.current));
+      if (!pageHiddenRef.current) Taro.showToast({ title: "录音已删除", icon: "success" });
+    } catch (error) {
+      logRecordingDiagnostic("delete.practice.failed", { requestId: pending.requestId, error });
+      if (mountedRef.current && !pageHiddenRef.current) {
+        Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
+      }
+    } finally {
+      deletingRecordingRef.current = false;
+      if (mountedRef.current) setIsDeletingRecording(false);
+    }
+  };
+
   const submitCheckIn = async () => {
     const pending = pendingCheckInRef.current;
     if (
@@ -1704,6 +1773,7 @@ export function PracticeSession({
       savingRecordingRef.current ||
       pageHiddenRef.current ||
       completionInFlightRef.current ||
+      deletingRecordingRef.current ||
       practiceSwitchInFlightRef.current ||
       recordingState !== "recorded"
     ) return;
@@ -1782,8 +1852,18 @@ export function PracticeSession({
     Math.max(0, shownModelPlaybackTime),
   );
   const retryRecordingButton = recordingState === "recorded" && !isSavingRecording && pendingCheckIn ? (
-    <Button className='practice-recorder__retry device-touch-target' onClick={startRecording}>
+    <Button className='practice-recorder__retry device-touch-target' disabled={isDeletingRecording} onClick={startRecording}>
       重新录制
+    </Button>
+  ) : null;
+  const deleteRecordingButton = recordingState === "recorded" && !isSavingRecording && pendingCheckIn ? (
+    <Button
+      className='practice-recorder__retry practice-recorder__delete device-touch-target'
+      disabled={isDeletingRecording}
+      loading={isDeletingRecording}
+      onClick={deleteRecording}
+    >
+      删除录音
     </Button>
   ) : null;
 
@@ -1989,6 +2069,7 @@ export function PracticeSession({
                 <Text className='practice-recorder__title'>我的跟读</Text>
                 <View className='practice-recorder__heading-actions'>
                   {!isLandscapeLayout && retryRecordingButton}
+                  {!isLandscapeLayout && deleteRecordingButton}
                   <Text className='practice-recorder__time'>
                     {shownDuration > 0 ? formatDuration(shownDuration) : "最长 5:00"}
                   </Text>
@@ -2118,23 +2199,26 @@ export function PracticeSession({
                   {!isSavingRecording && pendingCheckIn && (
                     <>
                       {!pendingCheckIn.recoverable && (
-                        <Button className='record-actions__secondary device-touch-target' onClick={retrySaveRecording}>重试保存</Button>
+                        <Button className='record-actions__secondary device-touch-target' disabled={isDeletingRecording} onClick={retrySaveRecording}>重试保存</Button>
                       )}
                       <View className='record-actions device-actions'>
                         <Button
                           className='record-actions__secondary device-touch-target'
+                          disabled={isDeletingRecording}
                           onClick={playRecording}
                         >
                           {isPlayingRecording ? "停止回听" : "回听录音"}
                         </Button>
                         <Button
                           className='check-in-button device-touch-target'
+                          disabled={isDeletingRecording}
                           onClick={submitCheckIn}
                         >
                           完成练习
                         </Button>
                       </View>
                       {isLandscapeLayout && retryRecordingButton}
+                      {isLandscapeLayout && deleteRecordingButton}
                     </>
                   )}
                 </>

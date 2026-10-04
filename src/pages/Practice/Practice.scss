@@ -404,6 +404,8 @@
     white-space: nowrap;
 
     &::after { border: 0; }
+
+    &.practice-recorder__delete { color: #bd503b; }
   }
 }
 

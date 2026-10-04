@@ -1097,41 +1097,41 @@ async function testRoutes() {
     );
   }
 
-  const delayedPendingRemoval = deferred();
+  let pageTurnRemovalCalls = 0;
   const switchingRemovalPage = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "22", practice: "0" },
     {
       pendingItems: [oldPending],
-      pendingRemove: () => delayedPendingRemoval.promise,
+      pendingRemove: async () => {
+        pageTurnRemovalCalls += 1;
+        return true;
+      },
     },
   );
   let switchingRemovalTree = switchingRemovalPage.render();
   switchingRemovalTree = switchingRemovalPage.render();
   await settle();
   switchingRemovalTree = switchingRemovalPage.render();
-  const switchingAttempt = byClass(
+  await byClass(
     switchingRemovalTree,
     "practice-navigation__button--primary",
   ).props.onClick();
-  await settle();
   switchingRemovalTree = switchingRemovalPage.render();
+  assert.equal(pageTurnRemovalCalls, 0, "翻页应保留当前录音，不得删除旧 pending");
+  assert.match(
+    textOf(byClass(switchingRemovalTree, "practice-header__progress")),
+    progress22(1),
+    "翻页应直接落到目标训练",
+  );
   const recordingDuringSwitch = elements(switchingRemovalTree).find(
     (node) => node.type === "Button" && textOf(node) === "重新录制",
   );
   await recordingDuringSwitch.props.onClick();
   assert.equal(
     switchingRemovalPage.recorderActions.length,
-    0,
-    "旧 pending 删除未完成时不得同时启动麦克风",
-  );
-  delayedPendingRemoval.resolve(true);
-  await switchingAttempt;
-  switchingRemovalTree = switchingRemovalPage.render();
-  assert.match(
-    textOf(byClass(switchingRemovalTree, "practice-header__progress")),
-    progress22(1),
-    "删除完成后切页事务应继续落到目标训练",
+    1,
+    "翻页保留录音后仍可在目标训练重新录制",
   );
 
   const delayedRemovalBeforeSubmit = deferred();
@@ -1512,12 +1512,15 @@ async function testRoutes() {
   await byClass(leavingTree, "record-button").props.onClick();
   leavingPage.recorderHandlers.Start();
   await byClass(leavingTree, "check-in-navigation__home").props.onClick();
+  await settle();
   assert.equal(leavingPage.navigationMethods.at(-1), "reLaunch", "活动录音点击房子必须离开到首页");
   assert.equal(leavingPage.navigations.at(-1), "/pages/Home/Home");
+  assert.equal(leavingPage.recorderActions.at(-1).action, "stop", "确认离开后应先停止活动录音");
+  const actionsBeforeHide = leavingPage.recorderActions.length;
   leavingPage.hide();
-  assert.equal(leavingPage.recorderActions.at(-1).action, "pause", "页面隐藏应优先暂停录音");
+  assert.equal(leavingPage.recorderActions.length, actionsBeforeHide, "已进入停止流程时页面隐藏不得重复暂停或停止");
   leavingPage.unload();
-  assert.equal(leavingPage.recorderActions.at(-1).action, "stop", "页面真正卸载前必须收口录音");
+  assert.equal(leavingPage.recorderActions.at(-1).action, "stop", "页面真正卸载前必须维持停止收口");
   assert.equal(leavingPage.recorderReleaseCalls.length, 1, "卸载时必须立即把 owner 交还给全局协调器");
   assert.equal(
     typeof leavingPage.recorderReleaseCalls[0]?.terminalSink,
