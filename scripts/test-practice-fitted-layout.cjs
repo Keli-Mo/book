@@ -299,10 +299,18 @@ for (const route of routes) {
       assertImageSize(page, slot, modes[1]);
       const swiper = byClass(tree, "practice-book-swiper");
       const beforeSwipe = swiper.props.current;
+      const progressBeforeSwipe = progress(page);
       swiper.props.onChange({ detail: { current: beforeSwipe + 1, source: "touch" } });
+      await settle();
+      assert.equal(progress(page), progressBeforeSwipe, "手势动画结束前应保留当前业务页和录音状态");
+      assert.deepEqual(page.recorderActions, recorderActions, "手势动画过程中不能停止或重启录音");
+      await byClass(render(page), "practice-book-swiper").props.onAnimationFinish({
+        detail: { current: beforeSwipe + 1, source: "touch" },
+      });
       await settle();
       const turned = render(page);
       assert.equal(byClass(turned, "practice-book-swiper").props.current, beforeSwipe + 1, "滑动翻页应进入下一页");
+      assert.notEqual(progress(page), progressBeforeSwipe, "动画结束后应提交下一训练页");
       assert.deepEqual(page.recorderActions, recorderActions);
     } finally { cleanup(page); }
   });

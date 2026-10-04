@@ -49,7 +49,16 @@ function fixture(route, mode, deferred = false) {
 }
 
 async function swipe(page, current) {
-  byClass(render(page), "practice-book-swiper").props.onChange({ detail: { current, source: "touch" } });
+  const before = render(page);
+  const originalSrc = byClass(before, "practice-book-page__image").props.src;
+  byClass(before, "practice-book-swiper").props.onChange({ detail: { current, source: "touch" } });
+  await settle();
+  const animating = render(page);
+  assert.equal(byClass(animating, "practice-book-page__image").props.src, originalSrc,
+    "手势动画完成前应保留当前业务页，避免重排正在滑动的图面");
+  await byClass(animating, "practice-book-swiper").props.onAnimationFinish({
+    detail: { current, source: "touch" },
+  });
   await settle();
   return render(page);
 }

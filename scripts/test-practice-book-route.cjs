@@ -484,6 +484,158 @@ async function testRoutes() {
     /requestPracticeSwitch\(nextIndex, \{ animate: false \}\)/,
     "目录点选必须瞬时切页，不能走翻页滑动",
   );
+
+  const touchTransitionBundle = buildFullBookPracticeBundle("21");
+  const touchTransitionPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "21", page: "3" },
+  );
+  let touchTransitionTree = touchTransitionPage.render();
+  touchTransitionTree = touchTransitionPage.render();
+  let touchTransitionSwiper = elements(touchTransitionTree).find((node) => node.type === "Swiper");
+  assert.equal(
+    typeof touchTransitionSwiper.props.onAnimationFinish,
+    "function",
+    "手势翻页必须等原生动画结束后再提交训练页",
+  );
+  touchTransitionSwiper.props.onChange({ detail: { current: 4, source: "touch" } });
+  touchTransitionTree = touchTransitionPage.render();
+  touchTransitionSwiper = elements(touchTransitionTree).find((node) => node.type === "Swiper");
+  assert.equal(touchTransitionSwiper.props.current, 4, "onChange 后应立即同步原生 Swiper 的受控页码");
+  assert.equal(
+    byClass(touchTransitionTree, "practice-book-page__image").props.src,
+    touchTransitionBundle.practices[3].imageUrl,
+    "原生动画尚未结束时必须保留旧页几何和热点，避免旧页边缘消失后重新出现",
+  );
+  assert.match(
+    textOf(byClass(touchTransitionTree, "practice-header__progress")),
+    /4 \/ \d+/,
+    "原生动画尚未结束时页码不得提前跳到目标页",
+  );
+  await touchTransitionSwiper.props.onAnimationFinish({
+    detail: { current: 4, source: "" },
+  });
+  touchTransitionTree = touchTransitionPage.render();
+  assert.equal(
+    byClass(touchTransitionTree, "practice-book-page__image").props.src,
+    touchTransitionBundle.practices[3].imageUrl,
+    "非触摸 animationfinish 不能冒充当前手势的动画完成事件",
+  );
+  await touchTransitionSwiper.props.onAnimationFinish({
+    detail: { current: 4, source: "touch" },
+  });
+  await settle();
+  touchTransitionTree = touchTransitionPage.render();
+  assert.equal(
+    byClass(touchTransitionTree, "practice-book-page__image").props.src,
+    touchTransitionBundle.practices[4].imageUrl,
+    "原生动画结束后应一次性提交目标训练页",
+  );
+  assert.match(
+    textOf(byClass(touchTransitionTree, "practice-header__progress")),
+    /5 \/ \d+/,
+    "原生动画结束后页码应与目标书页一致",
+  );
+  touchTransitionPage.dispose();
+
+  const interruptedTouchTimers = createFakeTimers();
+  const interruptedTouchPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "21", page: "3" },
+    {
+      setTimeout: interruptedTouchTimers.setTimeout,
+      clearTimeout: interruptedTouchTimers.clearTimeout,
+    },
+  );
+  let interruptedTouchTree = interruptedTouchPage.render();
+  interruptedTouchTree = interruptedTouchPage.render();
+  byClass(interruptedTouchTree, "practice-book-swiper").props.onChange({
+    detail: { current: 4, source: "touch" },
+  });
+  interruptedTouchTree = interruptedTouchPage.render();
+  const interruptedDirectory = elements(interruptedTouchTree).find(
+    (node) => node.type?.name === "PracticeDirectory",
+  );
+  await interruptedDirectory.props.onSelect(3);
+  await settle();
+  interruptedTouchTree = interruptedTouchPage.render();
+  assert.equal(
+    byClass(interruptedTouchTree, "practice-book-swiper").props.current,
+    3,
+    "手势动画中从目录选择当前业务页时必须把受控 Swiper 恢复到当前页",
+  );
+  await byClass(interruptedTouchTree, "practice-book-swiper").props.onAnimationFinish({
+    detail: { current: 4, source: "touch" },
+  });
+  interruptedTouchTree = interruptedTouchPage.render();
+  assert.equal(
+    byClass(interruptedTouchTree, "practice-book-page__image").props.src,
+    touchTransitionBundle.practices[3].imageUrl,
+    "被目录取消的迟到手势完成事件不得再提交目标页",
+  );
+  interruptedTouchPage.dispose();
+
+  const buttonTransitionTimers = createFakeTimers();
+  const buttonTransitionPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "21", page: "3" },
+    {
+      setTimeout: buttonTransitionTimers.setTimeout,
+      clearTimeout: buttonTransitionTimers.clearTimeout,
+    },
+  );
+  let buttonTransitionTree = buttonTransitionPage.render();
+  buttonTransitionTree = buttonTransitionPage.render();
+  const buttonTransition = byClass(
+    buttonTransitionTree,
+    "practice-navigation__button--primary",
+  ).props.onClick();
+  buttonTransitionTree = buttonTransitionPage.render();
+  assert.equal(
+    byClass(buttonTransitionTree, "practice-book-swiper").props.duration,
+    0,
+    "底部按钮切页必须瞬时换图，不能重现两页横向交叠",
+  );
+  await buttonTransition;
+  await settle();
+  buttonTransitionTree = buttonTransitionPage.render();
+  assert.equal(
+    byClass(buttonTransitionTree, "practice-book-page__image").props.src,
+    touchTransitionBundle.practices[4].imageUrl,
+    "底部按钮应直接提交目标训练页",
+  );
+  assert.equal(
+    byClass(buttonTransitionTree, "practice-book-swiper").props.duration,
+    0,
+    "瞬时切页状态必须至少保留一个渲染周期，不能在同一微任务恢复动画",
+  );
+  buttonTransitionTimers.advance(40);
+  const secondButtonTransition = byClass(
+    buttonTransitionTree,
+    "practice-navigation__button--primary",
+  ).props.onClick();
+  await secondButtonTransition;
+  await settle();
+  buttonTransitionTree = buttonTransitionPage.render();
+  assert.equal(
+    byClass(buttonTransitionTree, "practice-book-page__image").props.src,
+    touchTransitionBundle.practices[5].imageUrl,
+    "连续按钮切页应提交第二个目标页",
+  );
+  buttonTransitionTimers.advance(10);
+  assert.equal(
+    byClass(buttonTransitionPage.render(), "practice-book-swiper").props.duration,
+    0,
+    "第一次切页的旧定时器不能把第二次瞬时切页提前恢复为动画",
+  );
+  buttonTransitionTimers.advance(40);
+  assert.equal(
+    byClass(buttonTransitionPage.render(), "practice-book-swiper").props.duration,
+    300,
+    "瞬时切页完成后应恢复手势动画时长",
+  );
+  buttonTransitionPage.dispose();
+
   assert.equal(fs.existsSync(path.join(projectRoot, "src/features/listeningPractice/book3Practice.ts")), false, "固定 CASA 死文件应在替换引用后删除");
   for (const bookId of ["3", "22", "25"]) {
     const bundle = buildFullBookPracticeBundle(bookId);
@@ -517,7 +669,8 @@ async function testRoutes() {
       assert.ok(bookSwiper(), "课文区域应使用原生 Swiper 翻页");
       assert.equal(typeof bookSwiper().props.onChange, "function", "Swiper 应把手指翻页交给训练切换");
       const swipeBook = async (nextIndex) => {
-        await bookSwiper().props.onChange({ detail: { current: nextIndex, source: "touch" } });
+        bookSwiper().props.onChange({ detail: { current: nextIndex, source: "touch" } });
+        await bookSwiper().props.onAnimationFinish({ detail: { current: nextIndex, source: "touch" } });
       };
       if (index === 0) {
         await swipeBook(-1);

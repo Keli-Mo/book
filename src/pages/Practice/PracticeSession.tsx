@@ -250,6 +250,8 @@ export function PracticeSession({
   const completionInFlightRef = useRef(false);
   const deletingRecordingRef = useRef(false);
   const bookSwiperCurrentRef = useRef(practiceIndex);
+  const pendingSwiperPracticeIndexRef = useRef<number | null>(null);
+  const bookSwiperDurationRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bookMeasurementSeqRef = useRef(0);
   bookSwiperCurrentRef.current = bookSwiperCurrent;
   const recorderUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -278,6 +280,13 @@ export function PracticeSession({
   const applyRecordingMachine = useCallback((next: RecordingMachine) => {
     recordingMachineRef.current = next;
     if (mountedRef.current) setRecordingMachine(next);
+  }, []);
+
+  useEffect(() => () => {
+    if (bookSwiperDurationRestoreTimerRef.current !== null) {
+      clearTimeout(bookSwiperDurationRestoreTimerRef.current);
+      bookSwiperDurationRestoreTimerRef.current = null;
+    }
   }, []);
 
   const applyPendingCheckIn = useCallback((next: PendingCheckIn | null) => {
@@ -1444,18 +1453,31 @@ export function PracticeSession({
     onPracticeChange?.(nextIndex);
   };
 
-  const restoreBookSwiper = (index: number) => {
-    setBookSwiperDuration(0);
-    setBookSwiperCurrent(index);
-    setTimeout(() => {
+  const scheduleBookSwiperAnimationRestore = () => {
+    if (bookSwiperDurationRestoreTimerRef.current !== null) {
+      clearTimeout(bookSwiperDurationRestoreTimerRef.current);
+    }
+    bookSwiperDurationRestoreTimerRef.current = setTimeout(() => {
+      bookSwiperDurationRestoreTimerRef.current = null;
       if (mountedRef.current) setBookSwiperDuration(PAGE_TURN_DURATION_MS);
     }, 50);
+  };
+
+  const restoreBookSwiper = (index: number) => {
+    pendingSwiperPracticeIndexRef.current = null;
+    setBookSwiperDuration(0);
+    setBookSwiperCurrent(index);
+    scheduleBookSwiperAnimationRestore();
   };
 
   const requestPracticeSwitch = async (
     nextIndex: number,
     options?: { animate?: boolean; fromSwiper?: boolean },
   ) => {
+    const fromSwiper = options?.fromSwiper === true;
+    if (!fromSwiper && pendingSwiperPracticeIndexRef.current !== null) {
+      restoreBookSwiper(practiceContextRef.current.practiceIndex);
+    }
     if (deletingRecordingRef.current) {
       if (options?.fromSwiper) restoreBookSwiper(practiceContextRef.current.practiceIndex);
       return;
@@ -1472,7 +1494,6 @@ export function PracticeSession({
     }
     setIsModelRateMenuOpen(false);
     const animate = options?.animate !== false && !options?.fromSwiper;
-    const fromSwiper = options?.fromSwiper === true;
     // 训练切换意图出现后，旧训练尚在等待权限的 continuation 永远不得启动录音。
     recordingStartAttemptRef.current += 1;
 
@@ -1529,8 +1550,8 @@ export function PracticeSession({
         revertSwiper();
         return;
       }
-      if (!animate && mountedRef.current) {
-        setBookSwiperDuration(PAGE_TURN_DURATION_MS);
+      if (!fromSwiper && !animate && mountedRef.current) {
+        scheduleBookSwiperAnimationRestore();
       }
     } finally {
       // 同一时刻只允许一个切页事务；文件删除真正收口后才重新开放录音和提交。
@@ -1541,8 +1562,18 @@ export function PracticeSession({
 
   const handleBookSwiperChange = (event: { detail: { current: number; source: string } }) => {
     if (!isPracticeSwiperTouchChange(event.detail)) return;
+    pendingSwiperPracticeIndexRef.current = event.detail.current;
     setBookSwiperCurrent(event.detail.current);
-    void requestPracticeSwitch(event.detail.current, { fromSwiper: true });
+  };
+
+  const handleBookSwiperAnimationFinish = async (event: {
+    detail: { current: number; source?: string };
+  }) => {
+    if (!isPracticeSwiperTouchChange(event.detail)) return;
+    const nextIndex = pendingSwiperPracticeIndexRef.current;
+    if (nextIndex === null || event.detail.current !== nextIndex) return;
+    pendingSwiperPracticeIndexRef.current = null;
+    await requestPracticeSwitch(nextIndex, { fromSwiper: true });
   };
 
   const openPracticeDirectory = () => {
@@ -1976,6 +2007,7 @@ export function PracticeSession({
                   isSavingRecording
                 }
                 onChange={handleBookSwiperChange}
+                onAnimationFinish={handleBookSwiperAnimationFinish}
               >
                 {bundle.practices.map((item, index) => (
                   <SwiperItem
@@ -2231,7 +2263,7 @@ export function PracticeSession({
                   practiceIndex === 0 ? "practice-navigation__button--disabled" : ""
                 }`}
                 onClick={() =>
-                  practiceIndex > 0 && requestPracticeSwitch(practiceIndex - 1)
+                  practiceIndex > 0 && requestPracticeSwitch(practiceIndex - 1, { animate: false })
                 }
               >
                 <Text>上一页</Text>
@@ -2244,7 +2276,7 @@ export function PracticeSession({
                 }`}
                 onClick={() =>
                   practiceIndex < bundle.practices.length - 1 &&
-                  requestPracticeSwitch(practiceIndex + 1)
+                  requestPracticeSwitch(practiceIndex + 1, { animate: false })
                 }
               >
                 <Text>下一页</Text>

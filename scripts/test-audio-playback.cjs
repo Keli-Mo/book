@@ -624,9 +624,19 @@ async function testBookPlaybackLifecycle() {
     "目录换页不能暂停示范音频",
   );
   tree = page.render();
+  const progressBeforeSwipe = textOf(byClass(tree, "practice-header__progress"));
   await elements(tree).find((node) => node.type === "Swiper").props.onChange({
     detail: { current: 2, source: "touch" },
   });
+  tree = page.render();
+  assert.equal(textOf(byClass(tree, "practice-header__progress")), progressBeforeSwipe,
+    "手势动画完成前不得提前提交当前训练页");
+  assert.equal(firstModelAudio.paused, false, "手势动画过程中示范音频应继续播放");
+  await elements(tree).find((node) => node.type === "Swiper").props.onAnimationFinish({
+    detail: { current: 2, source: "touch" },
+  });
+  assert.notEqual(textOf(byClass(page.render(), "practice-header__progress")), progressBeforeSwipe,
+    "手势动画结束后应真正提交目标训练页");
   assert.equal(firstModelAudio.events.includes("destroy"), false, "手势翻页后示范音频必须继续播放");
   assert.equal(firstModelAudio.paused, false, "手势翻页不能暂停示范音频");
   tree = page.render();
@@ -709,10 +719,19 @@ async function testSameUrlPlaybackAcrossPages() {
     sharedAudio.trigger("TimeUpdate");
 
     tree = page.render();
+    const progressBeforeSwipe = textOf(byClass(tree, "practice-header__progress"));
     await elements(tree).find((node) => node.type === "Swiper").props.onChange({
       detail: { current: secondPage.imageIndex, source: "touch" },
     });
     tree = page.render();
+    assert.equal(textOf(byClass(tree, "practice-header__progress")), progressBeforeSwipe,
+      "共用音频跨页时也应等待手势动画结束再提交业务页");
+    await elements(tree).find((node) => node.type === "Swiper").props.onAnimationFinish({
+      detail: { current: secondPage.imageIndex, source: "touch" },
+    });
+    tree = page.render();
+    assert.notEqual(textOf(byClass(tree, "practice-header__progress")), progressBeforeSwipe,
+      "共用音频跨页测试必须真正进入后一页");
     let sharedHotspot = byClass(tree, "audio-hotspot");
     assert.match(
       sharedHotspot.props.className,

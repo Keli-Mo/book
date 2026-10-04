@@ -156,8 +156,17 @@ function od6Fixture(bookId, getImageSize, initialPage = "0", {
 
 async function swipeForward(page) {
   const tree = render(page);
+  const originalSrc = byClass(tree, "practice-book-page__image").props.src;
   const swiper = byClass(tree, "practice-book-swiper");
-  swiper.props.onChange({ detail: { current: swiper.props.current + 1, source: "touch" } });
+  const current = swiper.props.current + 1;
+  swiper.props.onChange({ detail: { current, source: "touch" } });
+  await settle();
+  const animating = render(page);
+  assert.equal(byClass(animating, "practice-book-page__image").props.src, originalSrc,
+    "手势动画未完成时不能提前更换业务页图面");
+  await byClass(animating, "practice-book-swiper").props.onAnimationFinish({
+    detail: { current, source: "touch" },
+  });
   await settle();
   return render(page);
 }
