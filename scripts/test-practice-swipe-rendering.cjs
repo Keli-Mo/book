@@ -8,8 +8,12 @@ const routes = [
   { name: "Think", file: "src/pages/ThinkBookReader/ThinkBookReader.tsx", params: { bookId: "28", page: "12" } },
 ];
 const modes = [
-  { name: "手机竖屏", isPad: false, windowWidth: 390, windowHeight: 844, slot: { width: 374, height: 560 } },
-  { name: "Pad 竖屏", isPad: true, windowWidth: 820, windowHeight: 1180, slot: { width: 760, height: 830 } },
+  { name: "手机竖屏", isPad: false, orientation: "portrait", windowWidth: 390, windowHeight: 844, slot: { width: 374, height: 560 } },
+  { name: "Pad 竖屏", isPad: true, orientation: "portrait", windowWidth: 820, windowHeight: 1180, slot: { width: 760, height: 830 } },
+];
+const landscapeModes = [
+  { name: "手机横屏", isPad: false, orientation: "landscape", windowWidth: 844, windowHeight: 390, slot: { width: 500, height: 230 } },
+  { name: "Pad 横屏", isPad: true, orientation: "landscape", windowWidth: 1180, windowHeight: 820, slot: { width: 700, height: 500 } },
 ];
 const natural = { width: 600, height: 900 };
 const render = (page) => { page.render(); page.render(); return page.render(); };
@@ -33,8 +37,11 @@ function fixture(route, mode, deferred = false) {
   const page = createPage(route.file, route.params, {
     overrides: {
       "@/hooks/useDeviceLayout": { useDeviceLayout: () => ({
-        ...mode, orientation: "portrait", isSplit: false,
-        contentMaxWidth: mode.isPad ? 820 : null, statusBarHeight: 20, safeAreaBottom: 0,
+        ...mode,
+        isSplit: mode.isPad && mode.orientation === "landscape",
+        contentMaxWidth: mode.isPad ? (mode.orientation === "landscape" ? 1280 : 820) : null,
+        statusBarHeight: 20,
+        safeAreaBottom: 0,
       }) },
     },
     taroOverrides: {
@@ -182,6 +189,31 @@ for (const route of routes) {
         );
         assert.deepEqual(sizeOf(activeImageFrame(afterStaleCallback)), currentImageSize,
           "已切走旧页的 getImageInfo 回调不得覆盖当前图面尺寸");
+      } finally { cleanup(page); }
+    });
+  }
+
+  for (const mode of landscapeModes) {
+    test(`${route.name}：${mode.name}预载邻页成为当前页时保持容器几何`, async () => {
+      const { page } = fixture(route, mode);
+      try {
+        let tree = render(page);
+        for (const image of images(tree)) image.props.onLoad({ detail: natural });
+        tree = render(page);
+        const swiper = byClass(tree, "practice-book-swiper");
+        const current = swiper.props.current;
+        const slides = elements(swiper).filter((node) => hasClass(node, "practice-book-slide"));
+        const target = images(slides[current + 1])[0];
+        assert.ok(target, "横屏目标邻页应在滑动前挂载");
+        const targetSrc = target.props.src;
+        const beforeStyle = bookPageByUrl(tree, targetSrc).props.style;
+        assert.ok(Number.parseFloat(beforeStyle?.width) > 0 && Number.parseFloat(beforeStyle?.height) > 0,
+          "横屏邻页预载时就应取得按宽显示的明确尺寸");
+
+        const next = await swipe(page, current + 1);
+        assert.equal(byClass(next, "practice-book-page__image").props.src, targetSrc);
+        assert.deepEqual(bookPageByUrl(next, targetSrc).props.style, beforeStyle,
+          "横屏邻页成为当前页时容器几何不能改变，避免动画结束帧重排闪烁");
       } finally { cleanup(page); }
     });
   }

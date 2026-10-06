@@ -605,9 +605,17 @@ check("手机竖屏教材按宽度定尺寸，各布局按实际图面对齐热�
 check("横屏和 iPad 仅在局部 fitted 阅读区限制高度", () => {
   assert.ok(ruleWith(practice.styles, [".practice-screen--fitted"], { height: "100vh", "min-height": "0" }));
   const fitted = ".practice-page.practice-page--fitted";
+  const padPortrait = ".practice-page.practice-page--fitted.device-layout--pad:not(.practice-page--landscape)";
   assert.ok(ruleWith(practice.styles, [fitted, ".practice-page__content"], { flex: "1", "min-height": "0" }));
   assert.ok(ruleWith(practice.styles, [fitted, ".practice-workspace__book"], { flex: "1", "min-height": "0" }));
   assert.ok(ruleWith(practice.styles, [fitted, ".practice-workspace__controls"], { height: "224PX" }));
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-workspace__controls"], {
+      height: "152PX",
+      flex: "0 0 152PX",
+    }),
+    "iPad 竖屏应只保留紧凑控制区，把底部空白释放给完整书页",
+  );
   assert.ok(matchingRules(practice.styles, [".practice-page--landscape", ".practice-workspace"]).some(rule =>
     has(rule, "display", "grid") && values(rule, "grid-template-columns").some(value => compact(value) === "minmax(0,1fr)180PX")));
   const controls = byClass(practice.contentAst, "practice-workspace__controls", "ScrollView")[0];

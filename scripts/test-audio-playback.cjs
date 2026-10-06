@@ -794,10 +794,17 @@ async function testBookPlaybackLifecycle() {
     "按钮应使用透明边框把可见背景压薄至 38PX");
   assert.match(modelPlayerControlStyle, /background-clip:\s*padding-box\s*;/i,
     "按钮背景只能绘制在 38PX 可见区域内");
-  assert.match(
+  const headerActionsStyle = practiceStyles.match(
+    /&__actions\s*\{([^}]*)\}/,
+  )?.[1] || "";
+  assert.match(headerActionsStyle, /display:\s*flex\s*;/i, "放大查看与目录应组成固定操作组");
+  assert.match(headerActionsStyle, /flex:\s*none\s*;/i, "右侧操作组不能被播放器压缩");
+  assert.match(headerActionsStyle, /margin-left:\s*auto\s*;/i, "右侧操作组应始终锚定在行尾");
+  assert.match(headerActionsStyle, /gap:\s*0\s*;/i, "放大查看应紧靠目录");
+  assert.doesNotMatch(
     practiceStyles,
     /\.practice-header__progress-row--audio-active\s+\.practice-header__directory\s*\{[^}]*margin-left:\s*auto\s*;/i,
-    "播放器变薄后目录入口仍应保持在行尾",
+    "音频出现后不能再给目录单独分配自动边距，否则会拆开放大查看与目录",
   );
   const baseProgressRowStyle = practiceStyles.match(
     /\.practice-header\s*\{[\s\S]*?&__progress-row\s*\{([\s\S]*?)&--audio-active/,
@@ -938,8 +945,8 @@ async function testBookPlaybackLifecycle() {
 
 async function testSameUrlPlaybackAcrossPages() {
   const audioPages = buildBookPracticeBundle("7").practices;
-  const firstPage = audioPages.find((practice) => practice.pageNumber === 61);
-  const secondPage = audioPages.find((practice) => practice.pageNumber === 62);
+  const firstPage = audioPages.find((entry) => entry.pageNumber === 61);
+  const secondPage = audioPages.find((entry) => entry.pageNumber === 62);
   const firstTrack = firstPage?.tracks[0];
   const secondTrack = secondPage?.tracks[0];
   assert.ok(firstPage && secondPage && firstTrack && secondTrack, "教材 7 应保留跨页共用音频的真实回归样本");

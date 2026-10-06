@@ -289,7 +289,7 @@ test("未参与本次调整的 Think 2 音频按钮保留原有 8px 左移", () 
   }
 });
 
-test("Think 1 学生书 Pad 首帧和测量后保持固定阅读区并按宽显示", () => {
+test("Think 1 学生书 Pad 首帧和测量后始终占满同一阅读区", () => {
   const { page, measurements } = fixture("26", () => TALL_PAGE, "95", {
     layout: PAD,
     slot: PAD_SLOT,
@@ -305,11 +305,8 @@ test("Think 1 学生书 Pad 首帧和测量后保持固定阅读区并按宽显�
     assert.deepEqual(sizeOf(byClass(measured, "practice-book-viewport")), PAD_SLOT,
       "Pad 测量后外层仍与阅读区一致");
     const imageSize = sizeOf(activeImageFrame(measured));
-    assert.ok(Math.abs(imageSize.width - PAD_SLOT.width) <= 1 && imageSize.height > PAD_SLOT.height,
-      "真实偏长页面应占满 Pad 阅读区宽度并在固定外框内滚动");
-    const scroll = byClass(measured, "practice-book-scroll");
-    assert.equal(scroll?.type, "ScrollView");
-    assert.equal(scroll.props.scrollY, true);
+    assert.ok(imageSize.width < PAD_SLOT.width && imageSize.height <= PAD_SLOT.height,
+      "真实偏长页面应完整居中在 Pad 阅读区内");
     assert.ok(Math.abs(imageSize.width / imageSize.height - TALL_PAGE.width / TALL_PAGE.height) < 0.001);
   } finally {
     page.unload();

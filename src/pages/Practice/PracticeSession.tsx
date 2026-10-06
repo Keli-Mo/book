@@ -183,7 +183,6 @@ export function PracticeSession({
   const isLandscapeLayout = layout.orientation === "landscape";
   const isPadPortraitLayout = layout.isPad && !isLandscapeLayout;
   const isFittedLayout = layout.isPad || isLandscapeLayout;
-  const isBookPageScrollable = isLandscapeLayout || isPadPortraitLayout;
   const directoryGroups = useMemo(
     () => buildPracticeDirectoryGroups(bundle.practices),
     [bundle]
@@ -395,23 +394,18 @@ export function PracticeSession({
       : null,
     [bookBounds, isPadPortraitLayout, stablePortraitCanvasNaturalSize],
   );
-  const fittedBookSize = useMemo(() => {
-    if (!resolvedImageSize) return null;
-    if (isBookPageScrollable) {
-      return fitImageToWidth(bookBounds.width, resolvedImageSize);
-    }
-    if (stablePortraitCanvasSize) {
-      return fitImageToBounds(stablePortraitCanvasSize, resolvedImageSize);
-    }
-    return fitImageToWidth(
-      isFittedLayout ? bookBounds.width : phoneColumnWidth,
-      resolvedImageSize,
-    );
-  },
+  const fittedBookSize = useMemo(
+    () => resolvedImageSize
+      ? stablePortraitCanvasSize
+        ? fitImageToBounds(stablePortraitCanvasSize, resolvedImageSize)
+        : isPadPortraitLayout
+          ? fitImageToBounds(bookBounds, resolvedImageSize)
+          : fitImageToWidth(isFittedLayout ? bookBounds.width : phoneColumnWidth, resolvedImageSize)
+      : null,
     [
       bookBounds,
       isFittedLayout,
-      isBookPageScrollable,
+      isPadPortraitLayout,
       phoneColumnWidth,
       resolvedImageSize,
       stablePortraitCanvasSize,
@@ -2027,20 +2021,22 @@ export function PracticeSession({
                 )}
               </View>
             )}
-            {isFittedLayout && !isLandscapeLayout && (
+            <View className='practice-header__actions'>
+              {isFittedLayout && !isLandscapeLayout && (
+                <Text
+                  className='practice-book-expand device-touch-target'
+                  onClick={() => Taro.previewImage({ current: practice.imageUrl, urls: [practice.imageUrl] })}
+                >
+                  放大查看
+                </Text>
+              )}
               <Text
-                className='practice-book-expand device-touch-target'
-                onClick={() => Taro.previewImage({ current: practice.imageUrl, urls: [practice.imageUrl] })}
+                className='practice-header__directory device-touch-target'
+                onClick={openPracticeDirectory}
               >
-                放大查看
+                目录
               </Text>
-            )}
-            <Text
-              className='practice-header__directory device-touch-target'
-              onClick={openPracticeDirectory}
-            >
-              目录
-            </Text>
+            </View>
           </View>
         </View>
 
@@ -2072,9 +2068,7 @@ export function PracticeSession({
                   const retainedNaturalSize = naturalImageSizeCache.get(item.imageUrl) ??
                     readBookImageSize(bundle.book.id, item.imageIndex) ??
                     bookStableCanvasNaturalSize;
-                  const retainedImageSize = isSlideRetained &&
-                    isBookPageScrollable &&
-                    retainedNaturalSize
+                  const retainedImageSize = isSlideRetained && isLandscapeLayout && retainedNaturalSize
                     ? fitImageToWidth(bookBounds.width, retainedNaturalSize)
                     : null;
                   const slideImageSize = index === practiceIndex
@@ -2086,7 +2080,7 @@ export function PracticeSession({
                       className={`practice-book-slide${stablePortraitCanvasNaturalSize ? " practice-book-slide--stable-canvas" : ""}`}
                     >
                       <PracticeBookPage
-                        scrollable={isBookPageScrollable && isSlideRetained}
+                        scrollable={isLandscapeLayout && isSlideRetained}
                         active={index === practiceIndex}
                         imageSize={slideImageSize}
                         onScroll={index === practiceIndex ? (event) => {
@@ -2095,46 +2089,46 @@ export function PracticeSession({
                           }
                         } : undefined}
                       >
-                      {isSlideRetained ? (
-                        <Image
-                          className={
-                            index === practiceIndex
-                              ? "practice-book-page__image"
-                              : "practice-book-page__neighbor"
-                          }
-                          src={item.imageUrl}
-                          style={stablePortraitCanvasNaturalSize && !isBookPageScrollable ? { height: "100%" } : undefined}
-                          mode={
-                            isBookPageScrollable || (!isFittedLayout && !stablePortraitCanvasNaturalSize)
-                              ? "widthFix"
-                              : "aspectFit"
-                          }
-                          webp
-                          onLoad={(event) => {
-                            const size = readNaturalImageSize(event.detail);
-                            if (size) {
-                              naturalImageSizeCache.set(item.imageUrl, size);
-                              if (index === practiceContextRef.current.practiceIndex) {
-                                setLoadedImage({ imageUrl: item.imageUrl, size });
+                        {isSlideRetained ? (
+                          <Image
+                            className={
+                              index === practiceIndex
+                                ? "practice-book-page__image"
+                                : "practice-book-page__neighbor"
+                            }
+                            src={item.imageUrl}
+                            style={stablePortraitCanvasNaturalSize && !isLandscapeLayout ? { height: "100%" } : undefined}
+                            mode={
+                              isLandscapeLayout || (!isFittedLayout && !stablePortraitCanvasNaturalSize)
+                                ? "widthFix"
+                                : "aspectFit"
+                            }
+                            webp
+                            onLoad={(event) => {
+                              const size = readNaturalImageSize(event.detail);
+                              if (size) {
+                                naturalImageSizeCache.set(item.imageUrl, size);
+                                if (index === practiceContextRef.current.practiceIndex) {
+                                  setLoadedImage({ imageUrl: item.imageUrl, size });
+                                }
                               }
-                            }
-                            if (index === practiceContextRef.current.practiceIndex) {
-                              measureBookImage();
-                            }
-                          }}
-                        />
-                      ) : null}
-                      {index === practiceIndex && (!stablePortraitCanvasNaturalSize || fittedBookSize) ? (
-                        <View
-                          className={`practice-book-page__hotspots${
-                            stablePortraitCanvasNaturalSize && fittedBookSize
-                              ? " practice-book-page__hotspots--fitted"
-                              : ""
-                          }`}
-                          style={stablePortraitCanvasNaturalSize && fittedBookSize
-                            ? { width: `${fittedBookSize.width}px`, height: `${fittedBookSize.height}px` }
-                            : undefined}
-                        >
+                              if (index === practiceContextRef.current.practiceIndex) {
+                                measureBookImage();
+                              }
+                            }}
+                          />
+                        ) : null}
+                        {index === practiceIndex && (!stablePortraitCanvasNaturalSize || fittedBookSize) ? (
+                          <View
+                            className={`practice-book-page__hotspots${
+                              stablePortraitCanvasNaturalSize && fittedBookSize
+                                ? " practice-book-page__hotspots--fitted"
+                                : ""
+                            }`}
+                            style={stablePortraitCanvasNaturalSize && fittedBookSize
+                              ? { width: `${fittedBookSize.width}px`, height: `${fittedBookSize.height}px` }
+                              : undefined}
+                          >
                           {clampedHotspots.map((hotspot, hotspotIndex) => {
                             const isActiveModelTrack = playingTrackId === hotspot.id ||
                               activeModelTrack?.url === hotspot.url;
@@ -2162,14 +2156,14 @@ export function PracticeSession({
                               </View>
                             );
                           })}
-                        </View>
-                      ) : null}
+                          </View>
+                        ) : null}
                       </PracticeBookPage>
                     </SwiperItem>
                   );
                 })}
               </Swiper>
-              {isBookPageScrollable && !bookScrollHintDismissed && fittedBookSize && fittedBookSize.height > bookBounds.height && (
+              {isLandscapeLayout && !bookScrollHintDismissed && fittedBookSize && fittedBookSize.height > bookBounds.height && (
                 <Text className='practice-book-scroll-hint'>上下滑动阅读</Text>
               )}
             </View>

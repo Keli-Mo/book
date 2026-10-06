@@ -102,7 +102,7 @@ const assertCloseSize = (actual, expected, message) => {
 
 function assertImageSize(page, slot, mode, message = "教材尺寸", imageNatural = natural) {
   const tree = render(page);
-  const scrollable = mode.isPad || mode.orientation === "landscape";
+  const scrollable = mode.orientation === "landscape";
   const outerStyle = byClass(tree, "practice-book-viewport")?.props.style;
   const outerSize = {
     width: Number.parseFloat(outerStyle?.width),
@@ -149,6 +149,9 @@ function assertImageSize(page, slot, mode, message = "教材尺寸", imageNatura
   }
   assert.ok(Math.abs(pageSize.width - pageSize.height * imageNatural.width / imageNatural.height) <= 1,
     `${message}必须保持原图比例`);
+  if (mode.isPad && !scrollable) {
+    assert.equal(byClass(tree, "practice-book-scroll-hint"), undefined);
+  }
   return { outerSize, pageSize, outerStyle };
 }
 
@@ -162,13 +165,20 @@ function assertControls(page, mode) {
   assert.equal(Boolean(byClass(tree, "practice-page--fitted")), fitted);
   assert.equal(Boolean(byClass(tree, "practice-page--landscape")), mode.orientation === "landscape");
   assert.equal(Boolean(byClass(tree, "practice-book-expand")), mode.isPad && mode.orientation === "portrait");
+  const headerActions = byClass(tree, "practice-header__actions");
+  const directory = byClass(tree, "practice-header__directory");
+  assert.ok(headerActions && elements(headerActions).includes(directory), "目录应固定在标题右侧操作组内");
+  const expand = byClass(tree, "practice-book-expand");
+  if (expand) {
+    assert.ok(elements(headerActions).includes(expand), "放大查看应与目录保持在同一个右侧操作组");
+  }
   const scroll = activeBookScroll(tree);
-  if (mode.isPad || mode.orientation === "landscape") {
-    assert.equal(scroll?.type, "ScrollView", "Pad 与横屏书页使用原生纵向滚动");
+  if (mode.orientation === "landscape") {
+    assert.equal(scroll?.type, "ScrollView", "横屏书页使用原生纵向滚动");
     assert.equal(scroll.props.scrollY, true);
     assert.equal(scroll.props.scrollTop, undefined, "当前页允许原生滚动，不持续覆盖用户阅读位置");
   } else {
-    assert.equal(byClass(tree, "practice-book-scroll"), undefined, "手机竖屏不增加书内滚动容器");
+    assert.equal(byClass(tree, "practice-book-scroll"), undefined, "竖屏不增加书内滚动容器");
   }
 }
 
@@ -201,12 +211,12 @@ const progress = (page) => {
 };
 
 for (const route of routes) {
-  test(`${route.name}：Pad 竖屏长页、宽页及翻页都按书区宽度放大并可上下滚动`, async () => {
+  test(`${route.name}：Pad 竖屏长页、宽页及翻页均完整显示，无需上下滚动`, async () => {
     const { page, slot } = fixture(route, modes[2]);
     try {
       for (const size of [{ width: 600, height: 1500 }, { width: 1200, height: 600 }]) {
         byClass(render(page), "practice-book-page__image").props.onLoad({ detail: size });
-        assertImageSize(page, slot, modes[2], "不同纵横比按宽显示", size);
+        assertImageSize(page, slot, modes[2], "不同纵横比整页显示", size);
         assertControls(page, modes[2]);
       }
       await byClass(render(page), "practice-navigation__button--primary").props.onClick();
@@ -216,19 +226,17 @@ for (const route of routes) {
     } finally { cleanup(page); }
   });
 
-  for (const mode of [modes[1], modes[2], modes[3]]) {
-    test(`${route.name}：${mode.name}仅为已保留的教材图片创建原生滚动容器`, () => {
-      const { page } = fixture(route, mode);
-      try {
-        const nodes = elements(render(page));
-        const scrolls = nodes.filter((node) => hasClass(node, "practice-book-scroll"));
-        const images = nodes.filter((node) => node.type === "Image" &&
-          (hasClass(node, "practice-book-page__image") || hasClass(node, "practice-book-page__neighbor")));
-        assert.ok(images.length > 0 && images.length <= 24);
-        assert.equal(scrolls.length, images.length, "不为整本书数百个尚未加载的页创建空 ScrollView");
-      } finally { cleanup(page); }
-    });
-  }
+  test(`${route.name}：横屏仅为已保留的教材图片创建原生滚动容器`, () => {
+    const { page } = fixture(route, modes[1]);
+    try {
+      const nodes = elements(render(page));
+      const scrolls = nodes.filter((node) => hasClass(node, "practice-book-scroll"));
+      const images = nodes.filter((node) => node.type === "Image" &&
+        (hasClass(node, "practice-book-page__image") || hasClass(node, "practice-book-page__neighbor")));
+      assert.ok(images.length > 0 && images.length <= 24);
+      assert.equal(scrolls.length, images.length, "不为整本书数百个尚未加载的页创建空 ScrollView");
+    } finally { cleanup(page); }
+  });
 
   test(`${route.name}：横屏使用固定视口与按宽显示的书内纵向滚动`, () => {
     const { page, slot } = fixture(route, modes[1]);
@@ -276,10 +284,12 @@ for (const route of routes) {
         const bookPage = activeBookPage(tree);
         const scroll = activeBookScroll(tree);
         assertImageSize(page, slot, mode);
-        if (mode.isPad || mode.orientation === "landscape") {
+        if (mode.orientation === "landscape") {
           assert.equal(scroll.type, "ScrollView");
           assert.equal(scroll.props.scrollY, true);
           assert.ok(elements(scroll).includes(bookPage), "整张教材页面在同一个原生滚动容器里");
+        } else {
+          assert.equal(scroll, undefined, "Pad 竖屏整页显示无需纵向滚动");
         }
         const image = byClass(bookPage, "practice-book-page__image");
         assert.ok(image, "实际教材图片随页面滚动");
@@ -298,7 +308,7 @@ for (const route of routes) {
     });
   }
 
-  for (const mode of [modes[1], modes[2], modes[3]]) {
+  for (const mode of [modes[1], modes[3]]) {
     test(`${route.name}：${mode.name}成功翻页及返回时保留已加载图片的滚动节点，离开页归零`, async () => {
       const { page, slot } = fixture(route, mode);
       try {
