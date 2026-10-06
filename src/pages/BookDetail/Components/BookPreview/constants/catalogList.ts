@@ -587,6 +587,9 @@ export const catalogLists = {
 
 
     "9": [
+        { name: "Map of the units", page: 4 },
+        { name: "Introduction", page: 6 },
+        { name: "A2 Key for Schools content and overview", page: 7 },
         // Unit 1
         {
             name: "Unit 1: Hi, how are you?",
@@ -597,6 +600,8 @@ export const catalogLists = {
             name: "Unit 2: We're going home",
             page: 14
         },
+        { name: "Vocabulary and grammar review 1", page: 20 },
+        { name: "Vocabulary and grammar review 2", page: 21 },
         // Unit 3
         {
             name: "Unit 3: Dinner time",
@@ -607,6 +612,8 @@ export const catalogLists = {
             name: "Unit 4: I'm shopping!",
             page: 28
         },
+        { name: "Vocabulary and grammar review 3", page: 34 },
+        { name: "Vocabulary and grammar review 4", page: 35 },
         // Unit 5
         {
             name: "Unit 5: It's my favourite sport!",
@@ -617,6 +624,8 @@ export const catalogLists = {
             name: "Unit 6: Have you got any homework?",
             page: 42
         },
+        { name: "Vocabulary and grammar review 5", page: 48 },
+        { name: "Vocabulary and grammar review 6", page: 49 },
         // Unit 7
         {
             name: "Unit 7: Let's go to the museum",
@@ -627,6 +636,8 @@ export const catalogLists = {
             name: "Unit 8: Did you get my message?",
             page: 56
         },
+        { name: "Vocabulary and grammar review 7", page: 62 },
+        { name: "Vocabulary and grammar review 8", page: 63 },
         // Unit 9
         {
             name: "Unit 9: I love that film!",
@@ -637,6 +648,8 @@ export const catalogLists = {
             name: "Unit 10: It's going to be sunny",
             page: 70
         },
+        { name: "Vocabulary and grammar review 9", page: 76 },
+        { name: "Vocabulary and grammar review 10", page: 77 },
         // Unit 11
         {
             name: "Unit 11: I like to keep fit",
@@ -647,6 +660,8 @@ export const catalogLists = {
             name: "Unit 12: Have you ever been on a plane?",
             page: 84
         },
+        { name: "Vocabulary and grammar review 11", page: 90 },
+        { name: "Vocabulary and grammar review 12", page: 91 },
         // Unit 13
         {
             name: "Unit 13: What's your hobby?",
@@ -657,6 +672,8 @@ export const catalogLists = {
             name: "Unit 14: Keep in touch!",
             page: 98
         },
+        { name: "Vocabulary and grammar review 13", page: 104 },
+        { name: "Vocabulary and grammar review 14", page: 105 },
         {
             name: "Grammar reference",
             page: 106
