@@ -5,6 +5,7 @@ import {
 import { allAudioList } from "@/pages/BookDetail/Components/BookPreview/constants/audioList";
 import { catalogLists } from "@/pages/BookDetail/Components/BookPreview/constants/catalogList";
 import { concatImages } from "@/pages/BookDetail/Components/BookPreview/constants/images";
+import { resolveBookPageLabel } from "@/features/listeningPractice/bookPageLabel";
 
 export const DEFAULT_BOOK_ID = "3";
 
@@ -338,17 +339,20 @@ export const buildFullBookPracticeBundle = (
     original.practices.map((practice) => [practice.imageIndex, practice]),
   );
   const practices = images.map((imageUrl, imageIndex): ListeningPractice => {
-    const audioPractice = originalByImageIndex.get(imageIndex);
-    if (audioPractice) return audioPractice;
-
     // 非数字图片已经过封面白名单校验；Think 的数字 0 同样表示封面。
     const pageNumber = parseImagePageNumber(imageUrl) ?? 0;
+    const pageLabel = resolveBookPageLabel(bookId, imageIndex, pageNumber);
+    const audioPractice = originalByImageIndex.get(imageIndex);
+    if (audioPractice) {
+      return pageLabel ? { ...audioPractice, pageLabel } : audioPractice;
+    }
+
     return {
       id: `${bookId}-page-${pageNumber}`,
       bookId,
       imageIndex,
       pageNumber,
-      ...(pageNumber === 0 ? { pageLabel: "封面" } : {}),
+      ...(pageLabel ? { pageLabel } : {}),
       imageUrl,
       sectionTitle: getSectionTitle(catalog, imageIndex),
       tracks: [],

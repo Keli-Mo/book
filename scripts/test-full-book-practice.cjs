@@ -14,6 +14,21 @@ const expectedCounts = [
 ];
 const sourceBefore = JSON.stringify({ concatImages, allAudioList, catalogLists });
 
+const ketStudentBook = buildFullBookPracticeBundle("9");
+assert.equal(ketStudentBook.practices[0].pageLabel, "封面");
+assert.equal(ketStudentBook.practices[1].pageLabel, "扉页");
+assert.equal(ketStudentBook.practices[2].pageLabel, "空白页");
+assert.equal(ketStudentBook.practices[3].pageLabel, "第 3 页");
+const printedPage7 = ketStudentBook.practices[7];
+assert.equal(printedPage7.pageNumber, 8);
+assert.equal(printedPage7.id, "9-page-8");
+assert.match(printedPage7.imageUrl, /_8\.png(?:\?|$)/);
+assert.equal(printedPage7.pageLabel, "第 7 页");
+const audioPage = ketStudentBook.practices.find((page) => page.tracks.length > 0);
+const silentPage = ketStudentBook.practices.find((page) => page.imageIndex >= 3 && page.tracks.length === 0);
+assert.equal(audioPage.pageLabel, `第 ${audioPage.imageIndex} 页`);
+assert.equal(silentPage.pageLabel, `第 ${silentPage.imageIndex} 页`);
+
 assert.equal(typeof buildFullBookPracticeBundle, "function", "必须提供独立的全页构建器，同时保留旧音频索引模型");
 for (const id of ["missing", "1", "2"]) {
   assert.equal(buildFullBookPracticeBundle(id), null, "未知教材和广告图片不得进入全页训练");
@@ -29,7 +44,7 @@ for (const [bookIndex, book] of BOOKS.entries()) {
   assert.equal(full.practices.length, expectedCounts[bookIndex], `${book.title} 必须包含全部登记图片`);
   assert.deepEqual(full.practices.map((page) => page.imageUrl), images, "全页顺序必须严格对应图片清单");
   assert.deepEqual(full.practices.map((page) => page.imageIndex), images.map((_, index) => index));
-  assert.deepEqual(full.practices.filter((page) => page.tracks.length > 0), original.practices,
+  assert.deepEqual(full.practices.filter((page) => page.tracks.length > 0).map(({ pageLabel, ...page }) => page), original.practices,
     "旧音频页的 ID、页号、章节、音轨及热点坐标必须原样保留");
   assert.equal(JSON.stringify(buildBookPracticeBundle(book.id)), legacySnapshot, "全页构建不得改变旧音频列表或索引");
   assert.equal(new Set(full.practices.map((page) => page.id)).size, images.length, "包括封面在内，页 ID 必须唯一");
