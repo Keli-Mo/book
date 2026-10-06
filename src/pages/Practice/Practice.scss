@@ -1044,7 +1044,7 @@ button[disabled] { opacity: 0.5; }
   }
 }
 
-// iPad 竖屏图面按阅读区宽高等比定框，完整展示整页，不增加书内滚动。
+// iPad 竖屏保留固定阅读区，书页按宽放大并在区域内纵向阅读。
 .practice-page.practice-page--fitted.device-layout--pad:not(.practice-page--landscape) {
   .practice-header {
     padding-bottom: 2PX;
@@ -1060,9 +1060,6 @@ button[disabled] { opacity: 0.5; }
     padding: 6PX 8PX;
     &__heading { min-height: 24PX; }
   }
-  .practice-book-page,
-  .practice-book-page__image,
-  .practice-book-page__neighbor { height: 100%; }
 }
 
 .practice-page.practice-page--fitted.practice-page--landscape {

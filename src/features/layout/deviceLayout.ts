@@ -13,6 +13,7 @@ export type DeviceLayoutInput = {
   statusBarHeight?: number;
   safeArea?: DeviceSafeArea;
   deviceType?: "pad";
+  deviceOrientation?: DeviceOrientation;
 };
 
 export type DeviceLayoutProfile = {
@@ -46,6 +47,10 @@ export const buildDeviceLayoutClassName = (
 const isPositiveFinite = (value: number): boolean =>
   Number.isFinite(value) && value > 0;
 
+// 自定义导航与原生导航切换会让近正方形的 iPad 窗口高度变化几十像素。
+// 此范围内以系统方向为锚，避免只因页面 chrome 不同而切换整套横竖屏布局。
+const PAD_NEAR_SQUARE_TOLERANCE_PX = 96;
+
 const calculateSafeAreaBottom = ({
   safeArea,
   screenHeight,
@@ -78,10 +83,21 @@ export const calculateDeviceLayout = (
     (hasValidScreen && Math.min(input.screenWidth, input.screenHeight) >= 600);
   const hasValidWindow =
     isPositiveFinite(input.windowWidth) && isPositiveFinite(input.windowHeight);
-  const orientation: DeviceOrientation =
+  const windowOrientation: DeviceOrientation =
     hasValidWindow && input.windowWidth > input.windowHeight
       ? "landscape"
       : "portrait";
+  const systemOrientation =
+    input.deviceOrientation === "portrait" || input.deviceOrientation === "landscape"
+      ? input.deviceOrientation
+      : null;
+  const orientation: DeviceOrientation =
+    isPad &&
+    hasValidWindow &&
+    systemOrientation &&
+    Math.abs(input.windowWidth - input.windowHeight) <= PAD_NEAR_SQUARE_TOLERANCE_PX
+      ? systemOrientation
+      : windowOrientation;
   // 双栏必须同时满足 Pad、横屏和两个窗口阈值。
   const isSplit =
     isPad &&

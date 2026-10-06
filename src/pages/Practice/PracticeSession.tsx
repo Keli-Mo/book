@@ -183,6 +183,7 @@ export function PracticeSession({
   const isLandscapeLayout = layout.orientation === "landscape";
   const isPadPortraitLayout = layout.isPad && !isLandscapeLayout;
   const isFittedLayout = layout.isPad || isLandscapeLayout;
+  const isBookPageScrollable = isLandscapeLayout || isPadPortraitLayout;
   const directoryGroups = useMemo(
     () => buildPracticeDirectoryGroups(bundle.practices),
     [bundle]
@@ -394,18 +395,23 @@ export function PracticeSession({
       : null,
     [bookBounds, isPadPortraitLayout, stablePortraitCanvasNaturalSize],
   );
-  const fittedBookSize = useMemo(
-    () => resolvedImageSize
-      ? stablePortraitCanvasSize
-        ? fitImageToBounds(stablePortraitCanvasSize, resolvedImageSize)
-        : isPadPortraitLayout
-          ? fitImageToBounds(bookBounds, resolvedImageSize)
-          : fitImageToWidth(isFittedLayout ? bookBounds.width : phoneColumnWidth, resolvedImageSize)
-      : null,
+  const fittedBookSize = useMemo(() => {
+    if (!resolvedImageSize) return null;
+    if (isBookPageScrollable) {
+      return fitImageToWidth(bookBounds.width, resolvedImageSize);
+    }
+    if (stablePortraitCanvasSize) {
+      return fitImageToBounds(stablePortraitCanvasSize, resolvedImageSize);
+    }
+    return fitImageToWidth(
+      isFittedLayout ? bookBounds.width : phoneColumnWidth,
+      resolvedImageSize,
+    );
+  },
     [
       bookBounds,
       isFittedLayout,
-      isPadPortraitLayout,
+      isBookPageScrollable,
       phoneColumnWidth,
       resolvedImageSize,
       stablePortraitCanvasSize,
@@ -2061,22 +2067,35 @@ export function PracticeSession({
                 onChange={handleBookSwiperChange}
                 onAnimationFinish={handleBookSwiperAnimationFinish}
               >
-                {bundle.practices.map((item, index) => (
-                  <SwiperItem
-                    key={item.id}
-                    className={`practice-book-slide${stablePortraitCanvasNaturalSize ? " practice-book-slide--stable-canvas" : ""}`}
-                  >
-                    <PracticeBookPage
-                      scrollable={isLandscapeLayout && retainedSlideIndexes.has(index)}
-                      active={index === practiceIndex}
-                      imageSize={index === practiceIndex ? fittedBookSize : null}
-                      onScroll={index === practiceIndex ? (event) => {
-                        if (event.detail.scrollTop > 0 && index === practiceContextRef.current.practiceIndex) {
-                          setBookScrollHintDismissed(true);
-                        }
-                      } : undefined}
+                {bundle.practices.map((item, index) => {
+                  const isSlideRetained = retainedSlideIndexes.has(index);
+                  const retainedNaturalSize = naturalImageSizeCache.get(item.imageUrl) ??
+                    readBookImageSize(bundle.book.id, item.imageIndex) ??
+                    bookStableCanvasNaturalSize;
+                  const retainedImageSize = isSlideRetained &&
+                    isBookPageScrollable &&
+                    retainedNaturalSize
+                    ? fitImageToWidth(bookBounds.width, retainedNaturalSize)
+                    : null;
+                  const slideImageSize = index === practiceIndex
+                    ? fittedBookSize
+                    : retainedImageSize;
+                  return (
+                    <SwiperItem
+                      key={item.id}
+                      className={`practice-book-slide${stablePortraitCanvasNaturalSize ? " practice-book-slide--stable-canvas" : ""}`}
                     >
-                      {retainedSlideIndexes.has(index) ? (
+                      <PracticeBookPage
+                        scrollable={isBookPageScrollable && isSlideRetained}
+                        active={index === practiceIndex}
+                        imageSize={slideImageSize}
+                        onScroll={index === practiceIndex ? (event) => {
+                          if (event.detail.scrollTop > 0 && index === practiceContextRef.current.practiceIndex) {
+                            setBookScrollHintDismissed(true);
+                          }
+                        } : undefined}
+                      >
+                      {isSlideRetained ? (
                         <Image
                           className={
                             index === practiceIndex
@@ -2084,9 +2103,9 @@ export function PracticeSession({
                               : "practice-book-page__neighbor"
                           }
                           src={item.imageUrl}
-                          style={stablePortraitCanvasNaturalSize ? { height: "100%" } : undefined}
+                          style={stablePortraitCanvasNaturalSize && !isBookPageScrollable ? { height: "100%" } : undefined}
                           mode={
-                            isLandscapeLayout || (!isFittedLayout && !stablePortraitCanvasNaturalSize)
+                            isBookPageScrollable || (!isFittedLayout && !stablePortraitCanvasNaturalSize)
                               ? "widthFix"
                               : "aspectFit"
                           }
@@ -2145,11 +2164,12 @@ export function PracticeSession({
                           })}
                         </View>
                       ) : null}
-                    </PracticeBookPage>
-                  </SwiperItem>
-                ))}
+                      </PracticeBookPage>
+                    </SwiperItem>
+                  );
+                })}
               </Swiper>
-              {isLandscapeLayout && !bookScrollHintDismissed && fittedBookSize && fittedBookSize.height > bookBounds.height && (
+              {isBookPageScrollable && !bookScrollHintDismissed && fittedBookSize && fittedBookSize.height > bookBounds.height && (
                 <Text className='practice-book-scroll-hint'>上下滑动阅读</Text>
               )}
             </View>

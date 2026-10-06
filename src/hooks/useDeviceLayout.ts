@@ -5,6 +5,7 @@ import {
   calculateDeviceLayout,
   DeviceLayoutInput,
   DeviceLayoutProfile,
+  type DeviceOrientation,
 } from "../features/layout/deviceLayout";
 
 type RuntimeWindowInfo = Taro.getWindowInfo.Result & {
@@ -33,6 +34,7 @@ const toFiniteWindowSize = (value: unknown): number =>
 const buildDeviceLayout = (
   windowInfo: Partial<RuntimeWindowInfo>,
   resizeSize?: ResizeSize,
+  deviceOrientation?: DeviceOrientation,
 ): DeviceLayoutState => {
   const windowWidth = toFiniteWindowSize(
     resizeSize?.windowWidth ?? windowInfo.windowWidth,
@@ -48,6 +50,7 @@ const buildDeviceLayout = (
     statusBarHeight: windowInfo.statusBarHeight,
     safeArea: windowInfo.safeArea,
     deviceType: windowInfo.deviceType === "pad" ? "pad" : undefined,
+    deviceOrientation,
   };
 
   return {
@@ -57,12 +60,29 @@ const buildDeviceLayout = (
   };
 };
 
-const readDeviceLayout = (resizeSize?: ResizeSize): DeviceLayoutState => {
+const readSystemDeviceOrientation = (): DeviceOrientation | undefined => {
   try {
-    return buildDeviceLayout(Taro.getWindowInfo() as RuntimeWindowInfo, resizeSize);
+    if (typeof Taro.getSystemSetting !== "function") return undefined;
+    const orientation = Taro.getSystemSetting().deviceOrientation;
+    return orientation === "portrait" || orientation === "landscape"
+      ? orientation
+      : undefined;
+  } catch (_error) {
+    return undefined;
+  }
+};
+
+const readDeviceLayout = (resizeSize?: ResizeSize): DeviceLayoutState => {
+  const deviceOrientation = readSystemDeviceOrientation();
+  try {
+    return buildDeviceLayout(
+      Taro.getWindowInfo() as RuntimeWindowInfo,
+      resizeSize,
+      deviceOrientation,
+    );
   } catch (_error) {
     // 运行时 API 异常时保守降级，避免布局读取导致页面白屏。
-    return buildDeviceLayout({}, resizeSize);
+    return buildDeviceLayout({}, resizeSize, deviceOrientation);
   }
 };
 

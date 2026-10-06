@@ -240,6 +240,53 @@ const deviceMatrix = [
   ],
 ];
 
+const iPadNearSquareOrientationCases = [
+  [
+    "iPad 近正方形窗口沿用系统竖屏方向，页面导航高度变化不能切成横屏",
+    {
+      windowWidth: 720,
+      windowHeight: 680,
+      screenWidth: 1024,
+      screenHeight: 768,
+      deviceType: "pad",
+      deviceOrientation: "portrait",
+    },
+    "portrait",
+  ],
+  [
+    "iPad 近正方形窗口沿用系统横屏方向",
+    {
+      windowWidth: 680,
+      windowHeight: 720,
+      screenWidth: 1024,
+      screenHeight: 768,
+      deviceType: "pad",
+      deviceOrientation: "landscape",
+    },
+    "landscape",
+  ],
+  [
+    "iPad 明显横屏窗口仍以真实窗口比例为准",
+    {
+      windowWidth: 1024,
+      windowHeight: 768,
+      screenWidth: 1024,
+      screenHeight: 768,
+      deviceType: "pad",
+      deviceOrientation: "portrait",
+    },
+    "landscape",
+  ],
+];
+
+for (const [scenario, input, expectedOrientation] of iPadNearSquareOrientationCases) {
+  assert.equal(
+    calculateDeviceLayout(input).orientation,
+    expectedOrientation,
+    `${scenario}：方向不符合契约`,
+  );
+}
+
 for (const [scenario, input, expected] of deviceMatrix) {
   assertProfile(scenario, input, expected);
 }
@@ -416,7 +463,7 @@ for (const [scenario, input, expected] of invalidDimensionCases) {
   assertProfile(scenario, input, expected);
 }
 
-const createHookHarness = (windowInfoReader) => {
+const createHookHarness = (windowInfoReader, systemSettingReader = () => ({})) => {
   const stateUpdates = [];
   const effects = [];
   const resizeCallbacks = [];
@@ -437,6 +484,7 @@ const createHookHarness = (windowInfoReader) => {
   };
   const taroMock = {
     getWindowInfo: windowInfoReader,
+    getSystemSetting: systemSettingReader,
     onWindowResize(callback) {
       resizeCallbacks.push(callback);
     },
@@ -537,6 +585,33 @@ assert.deepEqual(
   [resizeCallback],
   "cleanup 必须把注册时的同一个回调引用交给 offWindowResize",
 );
+
+let nearSquareSystemOrientation = "portrait";
+const nearSquarePadHarness = createHookHarness(
+  () => ({
+    windowWidth: 720,
+    windowHeight: 680,
+    screenWidth: 1024,
+    screenHeight: 768,
+    deviceType: "pad",
+  }),
+  () => ({ deviceOrientation: nearSquareSystemOrientation }),
+);
+assert.equal(
+  nearSquarePadHarness.returnedState.orientation,
+  "portrait",
+  "Hook 必须把系统方向传给近正方形 iPad 窗口，避免切页高度变化误触发布局旋转",
+);
+nearSquareSystemOrientation = "landscape";
+nearSquarePadHarness.resizeCallbacks[0]({
+  size: { windowWidth: 720, windowHeight: 680 },
+});
+assert.equal(
+  nearSquarePadHarness.stateUpdates.at(-1).orientation,
+  "landscape",
+  "用户真实旋转设备后，近正方形 iPad 窗口仍应跟随新的系统方向",
+);
+nearSquarePadHarness.effects[0].cleanup();
 
 const failedReadHarness = createHookHarness(() => {
   throw new Error("window info unavailable");
