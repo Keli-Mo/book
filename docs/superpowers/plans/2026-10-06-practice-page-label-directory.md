@@ -371,14 +371,16 @@ Expected: FAIL because the group heading currently renders only `group.title`.
 
 ```tsx
 const firstItem = group.items[0];
-const startPageLabel = firstItem?.pageLabel || `第 ${firstItem?.pageNumber} 页`;
+const displayTitle = firstItem
+  ? `${firstItem.pageLabel || `第 ${firstItem.pageNumber} 页`} · ${group.title}`
+  : group.title;
 ```
 
 把标题节点改成：
 
 ```tsx
 <Text className='practice-directory-group__title'>
-  {startPageLabel} · {group.title}
+  {displayTitle}
 </Text>
 ```
 
