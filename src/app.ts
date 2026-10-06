@@ -13,6 +13,10 @@ function App({ children }: PropsWithChildren<any>) {
   useLaunch(() => {
     // 全局配置覆盖示范听音和录音回听，避免 iOS 静音模式下播放无声。
     void Taro.setInnerAudioOption({ obeyMuteSwitch: false }).catch((error) => {
+      const errMsg = typeof error === "object" && error !== null && "errMsg" in error
+        ? String((error as { errMsg?: unknown }).errMsg ?? "")
+        : "";
+      if (errMsg.includes("开发者工具暂不支持此 API")) return;
       console.warn("全局音频配置失败", error);
     });
     // 闸门页会立刻请求云托管，启动时先固定云环境，避免打到开发者工具当前环境。

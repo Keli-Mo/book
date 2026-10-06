@@ -58,3 +58,12 @@ test("音频配置失败被记录且不阻断启动", async () => {
   assert.equal(app.warnings.length, 1, "配置失败必须有诊断日志，不能成为未处理的 Promise 拒绝");
   assert.equal(app.warnings[0][1], error);
 });
+
+test("开发者工具明确不支持全局音频配置时不输出误导性警告", async () => {
+  const app = launchApp({
+    errMsg: "setInnerAudioOption:fail 开发者工具暂不支持此 API 调试，请使用真机进行开发",
+  });
+  await Promise.resolve();
+  assert.equal(app.cloudInitializations, 1);
+  assert.equal(app.warnings.length, 0, "开发者工具能力缺失不应显示成业务故障");
+});

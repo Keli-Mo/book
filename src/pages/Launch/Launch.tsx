@@ -26,13 +26,8 @@ export default function Launch() {
       try {
         const response = await fetchAppEntryMode();
         const url = resolveLaunchUrl(response.mode);
-        console.log("[app-entry] launch", JSON.stringify({ mode: response.mode, url }));
         await Taro.reLaunch({ url });
-      } catch (error) {
-        console.log(
-          "[app-entry] error",
-          error instanceof Error ? error.message : String(error),
-        );
+      } catch {
         await Taro.reLaunch({ url: HOME_FALLBACK_URL });
       }
     })();

@@ -239,8 +239,6 @@ const BookPreview: React.FC<IBookPreviewProps> = ({ id = "1", currentPage, setCu
     }
     // 关闭之前播放的音频
     stopPlayingAudio();
-    // IOS下无法播放音频问题
-    Taro.setInnerAudioOption({ obeyMuteSwitch: false })
     audioContextRef.current.src = url
     audioContextRef.current.playbackRate = playbackRate; // 新增：设置播放速度
     audioContextRef.current.onPlay(() => {
