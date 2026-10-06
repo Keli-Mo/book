@@ -121,6 +121,7 @@ git commit -m "feat: 增加教材真实页标签"
 
 **Files:**
 - Modify: `src/pages/Practice/PracticeSession.tsx:2054-2059`
+- Modify: `src/pages/CheckInDetail/CheckInDetail.tsx:68-103`
 - Test: `scripts/test-full-practice-route.cjs`
 - Test: `scripts/test-practice-book-route.cjs`
 - Test: `scripts/test-check-in-return-navigation.cjs`
@@ -128,6 +129,7 @@ git commit -m "feat: 增加教材真实页标签"
 **Interfaces:**
 - Consumes: Task 1 写入的 `practice.pageLabel`
 - Produces: `.practice-header__progress` 的唯一文案为 `practice.pageLabel || 第 ${practice.pageNumber} 页`
+- Produces: 缺少稳定坐标的旧录音按原音频索引定位后，重新取得全页模型中的同 ID 练习，从而复用同一个 `pageLabel`
 
 - [ ] **Step 1: Replace sequence assertions with true page label assertions**
 
@@ -143,6 +145,23 @@ assert.doesNotMatch(textOf(byClass(tree, "practice-header__progress")), /跟读�
 ```
 
 在 `scripts/test-practice-book-route.cjs` 增加 book `9`、路由 `page=7` 的断言，期望顶部严格等于 `第 7 页`。同步切页/恢复场景的辅助匹配函数，让它根据当前 `practice.pageLabel` 或 `pageNumber` 计算文案。
+
+在 `scripts/test-check-in-return-navigation.cjs` 增加只含旧 `practiceIndex` 的 book `9` 录音记录。使用旧音频列表索引 `0`，断言详情元信息包含 `第 8 页`、不包含 `教材页 9`，并且“我也来跟读”仍跳到全页索引 `page=8`：
+
+```js
+const legacyRecord = {
+  id: "ket-legacy-index", shareToken: "token", bookId: "9", bookTitle: "KET",
+  practiceIndex: 0, sectionTitle: "Unit 1", durationMs: 1800,
+  createdAt: 1, recordingUrl: "record.mp3", isOwner: true,
+};
+const legacyDetail = page("src/pages/CheckInDetail/CheckInDetail.tsx", { id: legacyRecord.id }, { detail: legacyRecord });
+legacyDetail.render(); await settle();
+const legacyTree = legacyDetail.render();
+assert.match(textOf(byClass(legacyTree, "check-in-course-card__meta")), /第 8 页/);
+assert.doesNotMatch(textOf(byClass(legacyTree, "check-in-course-card__meta")), /教材页 9/);
+await byClass(legacyTree, "check-in-actions__practice").props.onClick();
+assert.equal(legacyDetail.navigations.at(-1), "/pages/Practice/Practice?bookId=9&page=8");
+```
 
 - [ ] **Step 2: Run the route tests and verify RED**
 
@@ -168,6 +187,17 @@ Replace the progress contents in `PracticeSession.tsx` with:
 
 Remove the nested `practice-header__progress-prefix` rendering only; keep the existing row, audio player, directory button, and layout classes.
 
+在 `CheckInDetail.tsx` 的旧索引兼容分支中，先按原逻辑从旧音频模型解释 `practiceIndex`，然后用稳定 ID 在已经构建好的全页模型中重取页面：
+
+```ts
+const legacyPractice = buildBookPracticeBundle(values.bookId)?.practices[values.practiceIndex];
+practice = legacyPractice
+  ? bundle.practices.find((candidate) => candidate.id === legacyPractice.id)
+  : undefined;
+```
+
+不要改变旧索引的含义，也不要用同一个数字直接当作全页索引。
+
 - [ ] **Step 4: Run the route tests and verify GREEN**
 
 Run the three commands from Step 2.
@@ -177,7 +207,7 @@ Expected: all three scripts PASS, including direct routes, directory navigation,
 - [ ] **Step 5: Commit Task 2**
 
 ```powershell
-git add -- src/pages/Practice/PracticeSession.tsx scripts/test-full-practice-route.cjs scripts/test-practice-book-route.cjs scripts/test-check-in-return-navigation.cjs
+git add -- src/pages/Practice/PracticeSession.tsx src/pages/CheckInDetail/CheckInDetail.tsx scripts/test-full-practice-route.cjs scripts/test-practice-book-route.cjs scripts/test-check-in-return-navigation.cjs
 git commit -m "feat: 顶部显示教材真实页码"
 ```
 
