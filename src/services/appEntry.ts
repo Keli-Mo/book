@@ -91,10 +91,27 @@ const delay = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
+/** 正式版不走云托管，固定为书架。开发版和体验版才请求入口接口。 */
+export const readMiniProgramEnvVersion = (): string => {
+  try {
+    if (typeof wx === "undefined" || typeof wx.getAccountInfoSync !== "function") return "";
+    const version = wx.getAccountInfoSync()?.miniProgram?.envVersion;
+    return typeof version === "string" ? version : "";
+  } catch {
+    return "";
+  }
+};
+
+export const usesCloudHostingEntry = (envVersion = readMiniProgramEnvVersion()): boolean =>
+  envVersion !== "release";
+
 /**
  * 按微信云托管官方示例调用 GET /api/app-entry。
+ * 线上 release 不调用容器，直接返回 practice。
  */
 export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
+  if (!usesCloudHostingEntry()) return { mode: "practice" };
+
   const cloud = initCloudHosting() as
     | (WxCloud & {
         callContainer?: (options: {

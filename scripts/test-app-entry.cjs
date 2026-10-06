@@ -160,12 +160,60 @@ const load = (file, overrides = {}, cache = new Map()) => {
     new Map(),
   );
   assert.deepEqual(await hosted.fetchAppEntryMode(), { mode: "practice" });
+  assert.equal(calls.length, 1, "未标明版本时仍请求云托管");
   assert.equal(calls[0].path, "/api/app-entry");
   assert.equal(calls[0].method, "GET");
   assert.equal(calls[0].header["X-WX-SERVICE"], "koa-hwx1");
   assert.equal(calls[0].config.env, "prod-d0gxpzolg8a06fa69");
   assert.equal(calls[0].timeout, undefined);
   assert.equal(calls[0].dataType, undefined);
+
+  for (const envVersion of ["develop", "trial"]) {
+    const versionCalls = [];
+    const versioned = load(
+      "src/services/appEntry.ts",
+      {
+        wx: {
+          getAccountInfoSync: () => ({ miniProgram: { envVersion } }),
+          cloud: {
+            callContainer: async (input) => {
+              versionCalls.push(input);
+              return { data: { ok: true, mode: "intro" } };
+            },
+          },
+        },
+      },
+      new Map(),
+    );
+    assert.equal(versioned.usesCloudHostingEntry(), true, `${envVersion} 应走云托管`);
+    assert.deepEqual(await versioned.fetchAppEntryMode(), { mode: "intro" });
+    assert.equal(versionCalls.length, 1, `${envVersion} 应请求入口接口`);
+  }
+
+  const releaseCalls = [];
+  const release = load(
+    "src/services/appEntry.ts",
+    {
+      wx: {
+        getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
+        cloud: {
+          callContainer: async (input) => {
+            releaseCalls.push(input);
+            return { data: { ok: true, mode: "intro" } };
+          },
+        },
+      },
+    },
+    new Map(),
+  );
+  assert.equal(release.usesCloudHostingEntry(), false);
+  assert.deepEqual(await release.fetchAppEntryMode(), { mode: "practice" });
+  assert.equal(releaseCalls.length, 0, "正式版不得调用云托管");
+  assert.equal(
+    release.resolveLaunchUrl("practice"),
+    HOME_FALLBACK_URL,
+    "正式版 practice 应进入书架",
+  );
 
   const appConfig = read("src/app.config.ts");
   assert.match(
