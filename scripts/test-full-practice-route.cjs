@@ -4,7 +4,7 @@ const { createPage, elements, textOf, byClass, load } = require("./test-practice
 
 const { BOOKS } = load("src/features/bookLibrary/bookCatalog.ts");
 const { concatImages } = load("src/pages/BookDetail/Components/BookPreview/constants/images.ts");
-const { buildBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
+const { buildBookPracticeBundle, buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 const {
   clampHotspotCenter,
   resolveHotspotAnchorOffset,
@@ -76,6 +76,7 @@ async function run() {
 
   for (const book of BOOKS) {
     const images = concatImages[book.id];
+    const bundle = buildFullBookPracticeBundle(book.id);
     const page = open(book.id, { page: "0" });
     let tree = page.render();
     assert.equal(imageOf(tree), images[0], `${book.id} 从真实第一页开始，不能跳过无音频页`);
@@ -87,7 +88,8 @@ async function run() {
       page.render();
       tree = page.render();
       assert.equal(imageOf(tree), images[index], `${book.id} 第 ${index + 1} 张可访问`);
-      assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), `跟读训练 ${index + 1} / ${images.length}`);
+      assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), bundle.practices[index].pageLabel || `第 ${bundle.practices[index].pageNumber} 页`);
+      assert.doesNotMatch(textOf(byClass(tree, "practice-header__progress")), /跟读训练|\d+\s*\/\s*\d+/);
     }
     assert.match(byClass(tree, "practice-navigation__button--primary").props.className, /--disabled/);
     page.dispose();
@@ -101,7 +103,8 @@ async function run() {
       oldPage.render();
       const tree = oldPage.render();
       assert.equal(imageOf(tree), practice.imageUrl, "旧链接仍打开原教材页");
-      assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), `跟读训练 ${practice.imageIndex + 1} / ${concatImages[bookId].length}`);
+      assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), buildFullBookPracticeBundle(bookId).practices[practice.imageIndex].pageLabel || `第 ${practice.pageNumber} 页`);
+      assert.doesNotMatch(textOf(byClass(tree, "practice-header__progress")), /跟读训练|\d+\s*\/\s*\d+/);
       const hotspots = elements(tree).filter((node) => String(node.props?.className || "").split(" ").includes("audio-hotspot"));
       assert.equal(hotspots.length, practice.tracks.length);
       const actualLeft = Number.parseFloat(hotspots[0].props.style.left);

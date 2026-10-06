@@ -85,7 +85,10 @@ export default function CheckInDetail() {
           (values.pageNumber !== undefined && values.pageNumber !== null);
         if (!practice && !hasPageIdentity && Number.isSafeInteger(values.practiceIndex) && values.practiceIndex >= 0) {
           // 仅为缺少任何稳定定位信息的旧记录解释旧音频索引，不改写录音上下文。
-          practice = buildBookPracticeBundle(values.bookId)?.practices[values.practiceIndex];
+          const legacyPractice = buildBookPracticeBundle(values.bookId)?.practices[values.practiceIndex];
+          practice = legacyPractice
+            ? bundle.practices.find((candidate) => candidate.id === legacyPractice.id)
+            : undefined;
         }
       }
       if (!practice) return null;

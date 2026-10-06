@@ -2053,8 +2053,7 @@ export function PracticeSession({
           <Text className='practice-header__section'>{isLandscapeLayout ? `· ${practice.sectionTitle}` : practice.sectionTitle}</Text>
           <View className={`practice-header__progress-row${(playingTrackId && activeModelTrack) || hasRecordingPlaybackSession ? " practice-header__progress-row--audio-active" : ""}`}>
             <Text className='practice-header__progress'>
-              {!isLandscapeLayout && <Text className='practice-header__progress-prefix'>跟读训练 </Text>}
-              {practiceIndex + 1} / {bundle.practices.length}
+              {practice.pageLabel || `第 ${practice.pageNumber} 页`}
             </Text>
             {playingTrackId && activeModelTrack && (
               <View className='practice-model-player' catchMove>

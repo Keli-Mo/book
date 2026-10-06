@@ -58,7 +58,8 @@ const page = (...args) => { const result = createPage(...args); pages.push(resul
   const bundle = buildFullBookPracticeBundle("22");
   assert.equal(byClass(tree, "practice-book-page__image").props.src, bundle.practices[4].imageUrl, "返回必须保留翻页后的教材图片");
   assert.equal(textOf(byClass(tree, "practice-header__course")), bundle.book.title);
-  assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), `跟读训练 5 / ${bundle.practices.length}`);
+  assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), bundle.practices[4].pageLabel || `第 ${bundle.practices[4].pageNumber} 页`);
+  assert.doesNotMatch(textOf(byClass(tree, "practice-header__progress")), /跟读训练|\d+\s*\/\s*\d+/);
   assert.equal(byClass(tree, "check-in-button"), undefined, "完成的录音不能被恢复为待完成草稿");
   const startsBefore = practice.recorderActions.filter(({ action }) => action === "start").length;
   await byClass(tree, "record-button").props.onClick();
@@ -78,6 +79,19 @@ const page = (...args) => { const result = createPage(...args); pages.push(resul
       assert.equal(other.navigations.at(-1), "/pages/Practice/Practice?bookId=22&page=4");
     }
   }
+
+  const legacyRecord = {
+    id: "ket-legacy-index", shareToken: "token", bookId: "9", bookTitle: "KET",
+    practiceIndex: 0, sectionTitle: "Unit 1", durationMs: 1800,
+    createdAt: 1, recordingUrl: "record.mp3", isOwner: true,
+  };
+  const legacyDetail = page("src/pages/CheckInDetail/CheckInDetail.tsx", { id: legacyRecord.id }, { detail: legacyRecord });
+  legacyDetail.render(); await settle();
+  const legacyTree = legacyDetail.render();
+  assert.match(textOf(byClass(legacyTree, "check-in-course-card__meta")), /第 8 页/);
+  assert.doesNotMatch(textOf(byClass(legacyTree, "check-in-course-card__meta")), /教材页 9/);
+  await byClass(legacyTree, "check-in-actions__practice").props.onClick();
+  assert.equal(legacyDetail.navigations.at(-1), "/pages/Practice/Practice?bookId=9&page=8");
 
   // Think 的历史记录保留印刷页号；学生书与练习册使用不同的 PDF 图片索引。
   for (const [bookId, pageNumber, imageIndex] of [["26", 13, 13], ["27", 4, 1], ["28", 13, 13], ["29", 5, 2]]) {

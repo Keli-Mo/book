@@ -491,8 +491,8 @@ const createFakeTimers = () => {
 
 async function testRoutes() {
   const firstAudioPageIndex = buildBookPracticeBundle("22").practices[0].imageIndex;
-  const pageCount22 = buildFullBookPracticeBundle("22").practices.length;
-  const progress22 = (offset) => new RegExp(`跟读训练 ${firstAudioPageIndex + offset + 1} / ${pageCount22}`);
+  const pageLabel = (practice) => practice.pageLabel || `第 ${practice.pageNumber} 页`;
+  const progress22 = (offset) => new RegExp(`^${pageLabel(buildFullBookPracticeBundle("22").practices[firstAudioPageIndex + offset])}$`);
   const practiceSessionSource = read("src/pages/Practice/PracticeSession.tsx");
   const practiceSource = `${read("src/pages/Practice/Practice.tsx")}\n${practiceSessionSource}`;
   assert.doesNotMatch(practiceSource, /SAMPLE_BOOK_(?:ID|TITLE|COVER|PRACTICES)|book3Practice/, "Practice 必须移除固定 CASA 模型，改为实际 router 选择教材");
@@ -527,7 +527,7 @@ async function testRoutes() {
   );
   assert.match(
     textOf(byClass(touchTransitionTree, "practice-header__progress")),
-    /4 \/ \d+/,
+    new RegExp(`^${pageLabel(touchTransitionBundle.practices[3])}$`),
     "原生动画尚未结束时页码不得提前跳到目标页",
   );
   await touchTransitionSwiper.props.onAnimationFinish({
@@ -551,7 +551,7 @@ async function testRoutes() {
   );
   assert.match(
     textOf(byClass(touchTransitionTree, "practice-header__progress")),
-    /5 \/ \d+/,
+    new RegExp(`^${pageLabel(touchTransitionBundle.practices[4])}$`),
     "原生动画结束后页码应与目标书页一致",
   );
   touchTransitionPage.dispose();
@@ -654,6 +654,13 @@ async function testRoutes() {
   );
   buttonTransitionPage.dispose();
 
+  const ketPage = createPage("src/pages/Practice/Practice.tsx", { bookId: "9", page: "7" });
+  ketPage.render();
+  const ketTree = ketPage.render();
+  assert.equal(textOf(byClass(ketTree, "practice-header__progress")).trim(), "第 7 页");
+  assert.doesNotMatch(textOf(byClass(ketTree, "practice-header__progress")), /跟读训练|\d+\s*\/\s*\d+/);
+  ketPage.dispose();
+
   assert.equal(fs.existsSync(path.join(projectRoot, "src/features/listeningPractice/book3Practice.ts")), false, "固定 CASA 死文件应在替换引用后删除");
   for (const bookId of ["3", "22", "25"]) {
     const bundle = buildFullBookPracticeBundle(bookId);
@@ -662,7 +669,8 @@ async function testRoutes() {
       let tree = page.render();
       const practice = bundle.practices[index];
       assert.equal(textOf(byClass(tree, "practice-header__course")), bundle.book.title);
-      assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), `跟读训练 ${index + 1} / ${bundle.practices.length}`);
+      assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), pageLabel(practice));
+      assert.doesNotMatch(textOf(byClass(tree, "practice-header__progress")), /跟读训练|\d+\s*\/\s*\d+/);
       assert.equal(byClass(tree, "practice-book-page__image").props.src, practice.imageUrl);
       assert.equal(textOf(byClass(tree, "practice-header__section")), practice.sectionTitle);
       const hotspots = elements(tree).filter((node) => String(node.props?.className || "").split(" ").includes("audio-hotspot"));
@@ -677,7 +685,7 @@ async function testRoutes() {
       await directory.props.onSelect(bundle.practices.length);
       await directory.props.onSelect(-1);
       await directory.props.onSelect(0.5);
-      assert.equal(textOf(byClass(page.render(), "practice-header__progress")).trim(), `跟读训练 ${index + 1} / ${bundle.practices.length}`, "目录越界不能破坏当前训练");
+      assert.equal(textOf(byClass(page.render(), "practice-header__progress")).trim(), pageLabel(practice), "目录越界不能破坏当前训练");
       const navigation = () => elements(page.render()).filter((node) => String(node.props?.className || "").split(" ").includes("practice-navigation__button"));
       const boundaryButton = index === 0 ? 0 : 1;
       assert.match(navigation()[boundaryButton].props.className, /practice-navigation__button--disabled/);
