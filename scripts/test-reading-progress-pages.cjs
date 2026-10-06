@@ -56,7 +56,11 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   assert.equal(byClass(tree, "library-home__heading"), undefined);
   assert.equal(textOf(byClass(tree, "continue-card__title")), bundle.book.title);
   assert.equal(byClass(tree, "continue-card__cover").props.src, bundle.book.cover);
-  assert.equal(textOf(byClass(tree, "continue-card__progress")), `${bundle.practices[4].sectionTitle} · 教材第 ${bundle.practices[4].pageNumber} 页`);
+  assert.equal(
+    textOf(byClass(tree, "continue-card__progress")),
+    `${bundle.practices[4].sectionTitle} · ${bundle.practices[4].pageLabel}`,
+    "首页应优先显示逐本核验的教材印刷页码",
+  );
   assert.equal(textOf(byClass(tree, "continue-card__button")), "继续跟读");
   await byClass(tree, "continue-card__button").props.onClick();
   assert.equal(home.navigations.at(-1), "/pages/Practice/Practice?bookId=22&page=4");

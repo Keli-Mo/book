@@ -249,6 +249,35 @@ test("KET 未核验小标题的页面只显示教材页码", () => {
   } finally { cleanup(context.page); }
 });
 
+test("其他教材：教材目录起始页在页面卡片显示目录标题", () => {
+  const context = fixture({
+    name: "CASA Unit 1 lesson",
+    file: "src/pages/Practice/Practice.tsx",
+    params: { bookId: "3", page: "2" },
+  });
+  try {
+    const tree = context.open();
+    const unitGroup = context.groups.find((group) => group.title === "Unit 1 课文");
+    assert.ok(unitGroup);
+    assert.equal(
+      textOf(byClass(groupNode(tree, unitGroup.id), "practice-directory-group__title")),
+      "Unit 1 课文",
+    );
+    const firstItem = unitGroup.items[0];
+    assert.equal(
+      textOf(byClass(itemNode(tree, firstItem.practiceIndex), "practice-directory-item__page")),
+      "第 1 页 · 课文",
+      "其他教材也应在具体页面卡片显示目录中已核验的标题",
+    );
+    const nextItem = unitGroup.items[1];
+    assert.equal(
+      textOf(byClass(itemNode(tree, nextItem.practiceIndex), "practice-directory-item__page")),
+      "第 2 页",
+      "目录标题只能加在精确起始页，不能复制到组内后续页",
+    );
+  } finally { cleanup(context.page); }
+});
+
 test("关闭再打开还原关闭前的目录滚动位置", () => {
   const context = fixture(routes[0]);
   const { page } = context;

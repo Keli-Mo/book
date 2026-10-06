@@ -6,7 +6,10 @@ import { allAudioList } from "@/pages/BookDetail/Components/BookPreview/constant
 import { catalogLists } from "@/pages/BookDetail/Components/BookPreview/constants/catalogList";
 import { concatImages } from "@/pages/BookDetail/Components/BookPreview/constants/images";
 import { resolveBookPageLabel } from "@/features/listeningPractice/bookPageLabel";
-import { resolveBookPageTitle } from "@/features/listeningPractice/bookPageTitle";
+import {
+  resolveBookPageTitle,
+  resolveCatalogPageTitle,
+} from "@/features/listeningPractice/bookPageTitle";
 import { isBookPageVisible } from "@/features/listeningPractice/bookPageVisibility";
 
 export const DEFAULT_BOOK_ID = "3";
@@ -337,7 +340,10 @@ export const buildFullBookPracticeBundle = (
   if (!original) return null;
 
   const images = concatImages[bookId];
-  const catalog = catalogLists[bookId];
+  const catalog = catalogLists[bookId] as readonly CatalogItem[];
+  const catalogTitleByImageIndex = new Map<number, string>(
+    catalog.map((item) => [item.page, item.name] as const),
+  );
   const originalByImageIndex = new Map(
     original.practices.map((practice) => [practice.imageIndex, practice]),
   );
@@ -345,7 +351,11 @@ export const buildFullBookPracticeBundle = (
     // 非数字图片已经过封面白名单校验；Think 的数字 0 同样表示封面。
     const pageNumber = parseImagePageNumber(imageUrl) ?? 0;
     const pageLabel = resolveBookPageLabel(bookId, imageIndex, pageNumber);
-    const pageTitle = resolveBookPageTitle(bookId, imageIndex);
+    // 逐页人工核验标题优先；其余教材只在目录的精确起始页使用目录标题，
+    // 不把章节标题复制到组内后续页面。
+    const catalogTitle = catalogTitleByImageIndex.get(imageIndex);
+    const pageTitle = resolveBookPageTitle(bookId, imageIndex)
+      ?? (catalogTitle ? resolveCatalogPageTitle(catalogTitle) : undefined);
     const audioPractice = originalByImageIndex.get(imageIndex);
     if (audioPractice) {
       return pageLabel || pageTitle

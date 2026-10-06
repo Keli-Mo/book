@@ -3,6 +3,74 @@
  * 未核验页面返回 undefined，避免把章节标题自动复制到整组页面。
  */
 const VERIFIED_PAGE_TITLES: Readonly<Record<string, Readonly<Record<number, string>>>> = {
+  "11": {
+    4: "Welcome to Our World!",
+  },
+  "12": {
+    3: "Welcome to Our World!",
+  },
+  "13": {
+    6: "Greetings and Introductions",
+  },
+  "14": {
+    2: "Language in Use",
+  },
+  "26": {
+    12: "Having a good time",
+    20: "Spending money",
+    30: "We are what we eat",
+    38: "All in the family",
+    48: "No place like home",
+    56: "Friends forever",
+    66: "Smart life",
+    74: "A question of sport",
+    84: "Wild and wonderful",
+    92: "Out and about",
+    102: "Future bodies",
+    110: "Travel the world",
+  },
+  "27": {
+    7: "Having a good time",
+    15: "Spending money",
+    25: "We are what we eat",
+    33: "All in the family",
+    43: "No place like home",
+    51: "Friends forever",
+    61: "Smart life",
+    69: "A question of sport",
+    79: "Wild and wonderful",
+    87: "Out and about",
+    97: "Future bodies",
+    105: "Travel the world",
+  },
+  "28": {
+    12: "Incredible people",
+    20: "A good education",
+    30: "On the screen",
+    38: "Online life",
+    48: "Music to my ears",
+    56: "No planet B",
+    66: "The future is now",
+    74: "Science and us",
+    84: "Working week",
+    92: "Mind and body",
+    102: "Breaking news",
+    110: "Rules and regulations",
+  },
+  "29": {
+    7: "Incredible people",
+    15: "A good education",
+    25: "On the screen",
+    33: "Online life",
+    43: "Music to my ears",
+    51: "No planet B",
+    61: "The future is now",
+    69: "Science and us",
+    79: "Working week",
+    87: "Mind and body",
+    97: "Breaking news",
+    105: "Rules and regulations",
+  },
   "9": {
     4: "Map of the units",
     6: "Introduction",
@@ -182,3 +250,19 @@ export const resolveBookPageTitle = (
   bookId: string,
   imageIndex: number,
 ): string | undefined => VERIFIED_PAGE_TITLES[bookId]?.[imageIndex];
+
+/**
+ * 教材目录节点可作为该节点起始页的可靠标题来源。
+ * 页面卡片已有章节上下文，因此去掉重复的 `Unit N` 前缀；
+ * 只有 Unit 编号而没有实际标题时不追加内容。
+ */
+export const resolveCatalogPageTitle = (catalogTitle: string): string | undefined => {
+  const title = catalogTitle.trim();
+  if (!title) return undefined;
+  if (/^Unit\s+\d+$/i.test(title)) return undefined;
+
+  const unitMatch = title.match(
+    /^Unit\s+\d+(?:\s*[:：.\-–—]\s*|\s+)(.+)$/i,
+  );
+  return unitMatch?.[1].trim() || title;
+};

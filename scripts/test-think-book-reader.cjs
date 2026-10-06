@@ -76,6 +76,16 @@ const think2StudentContinuationPages = [
   13, 21, 27, 31, 39, 45, 49, 57, 63, 67,
   75, 81, 85, 93, 99, 103, 111, 117,
 ];
+const expectedThinkPageLabel = (bookId, imageIndex) => {
+  if (bookId === "26" || bookId === "28") {
+    if (imageIndex === 0) return "封面";
+    if (imageIndex === 1) return "扉页";
+    if (imageIndex === 2 || imageIndex === 3) return "目录";
+    if (imageIndex >= 4 && imageIndex <= 128) return `第 ${imageIndex} 页`;
+    return "致谢";
+  }
+  return imageIndex === 0 ? "扉页" : `第 ${imageIndex + 3} 页`;
+};
 
 for (const [bookId, pageCount, practiceCount] of [
   ["26", 132, 71],
@@ -117,7 +127,7 @@ for (const [bookId, pageCount, practiceCount] of [
       ? practiceByImageIndex.get(imageIndex - 1) : undefined);
     const section = [...catalogLists[bookId]].reverse().find((item) => item.page <= imageIndex);
     assert.equal(page.imageUrl, concatImages[bookId][imageIndex]);
-    assert.equal(page.pageLabel, page.pageNumber === 0 ? "封面" : `第 ${page.pageNumber} 页`, "封面和实际页号应正确显示");
+    assert.equal(page.pageLabel, expectedThinkPageLabel(bookId, imageIndex), "逐本核验的前置页语义和印刷页号应正确显示");
     assert.equal(page.sectionTitle, section?.name || "课程导入");
     assert.equal(page.practiceIndex, relatedPractice?.index ?? null, "既有续页保留音频关联，其他新增页不冒用前页音频索引");
     assert.deepEqual(page.tracks, indexedPractice?.practice.tracks || []);
@@ -132,7 +142,7 @@ for (const [bookId, pageCount, practiceCount] of [
 const student = buildThinkBookReader("26");
 const workbook = buildThinkBookReader("27");
 assert.equal(student.pages[0].pageLabel, "封面");
-assert.equal(workbook.pages[0].pageLabel, "封面");
+assert.equal(workbook.pages[0].pageLabel, "扉页");
 assert.equal(workbook.pages.find((page) => page.imageIndex === 2).pageLabel, "第 5 页");
 assert.equal(workbook.pages.find((page) => page.imageIndex === 114).pageLabel, "第 117 页");
 assert.equal(student.pages.find((page) => page.imageIndex === 15).tracks.length, 2,
@@ -169,7 +179,7 @@ assert.deepEqual(
 assert.equal(think2Student.pages.length, 132, "Think 2 学生书应包含全部 132 张图片");
 assert.equal(think2Workbook.pages.length, 126, "Think 2 练习册应包含全部 126 张图片");
 assert.equal(think2Student.pages[0].pageLabel, "封面", "Think 2 学生书应从封面开始");
-assert.equal(think2Workbook.pages[0].pageLabel, "封面", "Think 2 练习册应从封面开始");
+assert.equal(think2Workbook.pages[0].pageLabel, "扉页", "Think 2 练习册应从书名扉页开始");
 assert.equal(think2Workbook.pages.find((page) => page.imageIndex === 114).pageLabel, "第 117 页");
 assert.ok(think2Student.pages.some((page) => page.imageIndex === 120),
   "Think 2 学生书后附发音题 p120 必须保留");
@@ -195,7 +205,8 @@ for (const [bookId, expectedCount] of [["26", 132], ["27", 126], ["28", 132], ["
     assert.equal(practice.sectionTitle, page.sectionTitle);
     const original = originalByImageIndex.get(page.imageIndex);
     if (original) {
-      assert.deepEqual(practice, original, "正式音频页应保留原有 ID 和音轨数据");
+      const { pageLabel: _pageLabel, pageTitle: _pageTitle, ...practiceCore } = practice;
+      assert.deepEqual(practiceCore, original, "正式音频页应保留原有 ID 和音轨数据");
     } else {
       assert.deepEqual(practice.tracks, [], "跨页续页应不显示音频图标");
     }
