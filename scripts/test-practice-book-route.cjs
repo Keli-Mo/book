@@ -381,7 +381,7 @@ const createPage = (file, params, options = {}) => {
       __esModule: true,
       default: (props) => ({ type: "Text", props }),
     },
-    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "Slider", "ScrollView", "Swiper", "SwiperItem", "PageMeta"].map((name) => [name, name])),
+    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "Slider", "ScrollView", "Swiper", "SwiperItem", "MovableArea", "MovableView", "PageMeta"].map((name) => [name, name])),
     "@tarojs/taro": { __esModule: true, default: taro, ...taro },
     "@/constant": { sharedImage: "share.png" },
     "@/services/cloudCheckIn": {

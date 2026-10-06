@@ -222,9 +222,13 @@ for (const route of routes) {
       assert.ok(byClass(heading, "practice-recorder__retry"));
       assert.notEqual(retry.props.disabled, true);
       const actions = byClass(tree, "record-actions");
+      assert.equal(textOf(byClass(tree, "practice-recorder__tip")), "已保存录音文件。",
+        "录音成功提示应使用统一文案");
       assert.ok(button(actions, "回听录音"), "回听应位于主操作行");
       assert.ok(button(actions, "完成练习"), "完成应与回听位于同一操作行");
       assert.equal(button(actions, "重新录制"), undefined, "主操作行不应重复放置重录按钮");
+      assert.equal(byClass(tree, "practice-model-player"), undefined,
+        "尚未开始回听时，顶部不应提前占用正常音频播放器位置");
 
       button(actions, "回听录音").props.onClick();
       const playingAudio = page.audios.at(-1);
@@ -232,6 +236,29 @@ for (const route of routes) {
       assert.ok(playingAudio.events.includes("play"));
       tree = page.render();
       assert.ok(button(byClass(tree, "record-actions"), "停止回听"));
+      const progressRow = byClass(tree, "practice-header__progress-row");
+      assert.ok(hasClass(progressRow, "practice-header__progress-row--audio-active"),
+        "录音回听应使用与正常音频相同的顶部播放器布局");
+      const headerPlayer = byClass(progressRow, "practice-model-player");
+      assert.ok(headerPlayer, "录音回听进度应显示在正常音频播放器所在的顶部位置");
+      assert.equal(textOf(byClass(headerPlayer, "practice-model-player__time")), "0:00 / 0:02");
+      playingAudio.currentTime = 1.2;
+      playingAudio.duration = 2.2;
+      playingAudio.trigger("TimeUpdate");
+      tree = page.render();
+      const progress = byClass(byClass(tree, "practice-header__progress-row"), "practice-model-player__progress");
+      assert.equal(progress.props.disabled, false, "开始回听后进度条应可拖动");
+      assert.equal(progress.props.value, 1.2, "回听进度应跟随原生播放时间");
+      assert.equal(textOf(byClass(tree, "practice-model-player__time")), "0:01 / 0:02");
+      progress.props.onChanging({ detail: { value: 2 } });
+      assert.equal(textOf(byClass(page.render(), "practice-model-player__time")), "0:02 / 0:02",
+        "拖动时应即时预览目标时间");
+      assert.equal(byClass(page.render(), "practice-book-swiper").props.disableTouch, true,
+        "拖动录音回听进度时应锁定教材翻页");
+      byClass(page.render(), "practice-model-player__progress").props.onChange({ detail: { value: 1 } });
+      assert.ok(playingAudio.events.includes("seek:1"), "松开进度条后应跳转录音回听位置");
+      assert.equal(byClass(page.render(), "practice-book-swiper").props.disableTouch, false,
+        "松开录音回听进度后应恢复教材翻页");
       await button(byClass(tree, "practice-recorder__heading"), "重新录制").props.onClick();
       assert.ok(playingAudio.events.includes("destroy"), "标题重录应先停止已有录音回听");
       assert.equal(page.recorderActions.filter(({ action }) => action === "start").length, 2);

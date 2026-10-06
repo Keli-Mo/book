@@ -421,17 +421,23 @@
     min-height: 44PX;
     margin: 0;
     padding: 0 10rpx;
-    border: 0;
+    box-sizing: border-box;
+    border: 1PX solid rgba(47, 137, 108, 0.42);
     border-radius: 12rpx;
-    background: transparent;
-    color: #496158;
+    background: rgba(226, 241, 235, 0.72);
+    color: #276c58;
     font-size: 22rpx;
+    font-weight: 600;
     line-height: 1.3;
     white-space: nowrap;
 
     &::after { border: 0; }
 
-    &.practice-recorder__delete { color: #bd503b; }
+    &.practice-recorder__delete {
+      border-color: rgba(189, 80, 59, 0.38);
+      background: rgba(189, 80, 59, 0.08);
+      color: #ad4835;
+    }
   }
 }
 
@@ -581,6 +587,66 @@ button[disabled] { opacity: 0.5; }
     color: #ffffff;
 
     &::after { border: 0; }
+  }
+}
+
+.practice-book-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
+  background: #17231f;
+  color: #ffffff;
+
+  &__toolbar {
+    display: flex;
+    height: 56PX;
+    min-height: 56PX;
+    flex: 0 0 56PX;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16PX;
+    box-sizing: border-box;
+    background: rgba(11, 22, 18, 0.92);
+  }
+
+  &__hint {
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 14PX;
+  }
+
+  &__close {
+    display: flex;
+    min-width: 64PX;
+    height: 44PX;
+    align-items: center;
+    justify-content: center;
+    border-radius: 22PX;
+    background: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    font-size: 15PX;
+    font-weight: 700;
+  }
+
+  &__area {
+    width: 100%;
+    height: 0;
+    min-height: 0;
+    flex: 1 1 0;
+    overflow: hidden;
+  }
+
+  &__canvas,
+  &__image {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 }
 

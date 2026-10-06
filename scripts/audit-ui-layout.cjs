@@ -71,7 +71,7 @@ async function surface(name,state,profile) {
     // 防止场景设置失败却把普通首屏误报成已验证的录音/播放状态。
     if(name==='Practice'&&state==='saved') {
       assert.ok(byClass(tree,'check-in-button'),'已录完场景必须实际显示完成练习按钮');
-      assert.match(html(tree),/已安全保存在本机/,'成功保存场景不能误用保存失败状态');
+      assert.match(html(tree),/已保存录音文件/,'成功保存场景不能误用保存失败状态');
     }
     if(name==='Practice'&&state==='save-failed') assert.match(html(tree),/录音保存失败/,'存储失败场景必须实际显示失败与重试入口');
     if(name==='Practice'&&state==='paused') assert.ok(byClass(tree,'record-button--resume'),'暂停场景必须显示继续录音按钮');

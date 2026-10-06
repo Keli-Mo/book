@@ -1,4 +1,4 @@
-import { Button, Image, PageMeta, ScrollView, Slider, Swiper, SwiperItem, Text, View, type ScrollViewProps } from "@tarojs/components";
+import { Button, Image, MovableArea, MovableView, PageMeta, ScrollView, Slider, Swiper, SwiperItem, Text, View, type ScrollViewProps } from "@tarojs/components";
 import Taro, {
   useDidHide,
   useDidShow,
@@ -116,10 +116,6 @@ const getRecorderTimeoutOperation = (error: unknown) => {
 };
 
 type NaturalImageSize = { width: number; height: number };
-type NativeImagePreviewSession = {
-  didPageHide: boolean;
-  resetTimer: ReturnType<typeof setTimeout> | null;
-};
 const naturalImageSizeCache = new Map<string, NaturalImageSize>();
 
 const readNaturalImageSize = (value: unknown): NaturalImageSize | null => {
@@ -197,6 +193,7 @@ export function PracticeSession({
     practice: initialPractice,
   });
   const [isDirectoryOpen, setIsDirectoryOpen] = useState(false);
+  const [isBookPreviewOpen, setIsBookPreviewOpen] = useState(false);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [modelPlaybackState, setModelPlaybackState] = useState<"idle" | "playing" | "paused" | "buffering">("idle");
   const [modelPlaybackCurrentTime, setModelPlaybackCurrentTime] = useState(0);
@@ -224,6 +221,10 @@ export function PracticeSession({
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [isPlayingRecording, setIsPlayingRecording] = useState(false);
+  const [hasRecordingPlaybackSession, setHasRecordingPlaybackSession] = useState(false);
+  const [recordingPlaybackCurrentTime, setRecordingPlaybackCurrentTime] = useState(0);
+  const [recordingPlaybackDuration, setRecordingPlaybackDuration] = useState(0);
+  const [recordingSeekPreview, setRecordingSeekPreview] = useState<number | null>(null);
   const [pendingCheckIn, setPendingCheckIn] = useState<PendingCheckIn | null>(null);
   const [isSavingRecording, setIsSavingRecording] = useState(false);
   const [isDeletingRecording, setIsDeletingRecording] = useState(false);
@@ -268,7 +269,6 @@ export function PracticeSession({
   const recorderTerminalSinkRef = useRef<RecorderTerminalSink | null>(null);
   const mountedRef = useRef(true);
   const pageHiddenRef = useRef(false);
-  const nativeImagePreviewRef = useRef<NativeImagePreviewSession | null>(null);
   const savingRecordingRef = useRef(false);
   const saveGenerationRef = useRef(0);
   const recordingStartAttemptRef = useRef(0);
@@ -288,49 +288,10 @@ export function PracticeSession({
   const practiceContextRef = useRef({ practice, practiceIndex });
   practiceContextRef.current = { practice, practiceIndex };
 
-  const clearNativeImagePreview = useCallback((session?: NativeImagePreviewSession) => {
-    const activeSession = nativeImagePreviewRef.current;
-    if (!activeSession || (session && activeSession !== session)) return;
-    if (activeSession.resetTimer !== null) {
-      clearTimeout(activeSession.resetTimer);
-      activeSession.resetTimer = null;
-    }
-    nativeImagePreviewRef.current = null;
-  }, []);
-
-  const scheduleUnusedImagePreviewReset = useCallback((session: NativeImagePreviewSession) => {
-    if (nativeImagePreviewRef.current !== session || session.didPageHide) return;
-    if (session.resetTimer !== null) {
-      clearTimeout(session.resetTimer);
-    }
-    // 部分运行环境不触发 Page.onHide；短暂保留标记后释放，避免下一次真实切后台被误判。
-    session.resetTimer = setTimeout(() => {
-      session.resetTimer = null;
-      clearNativeImagePreview(session);
-    }, 1500);
-  }, [clearNativeImagePreview]);
-
   const openBookImagePreview = useCallback(() => {
-    clearNativeImagePreview();
-    const session: NativeImagePreviewSession = { didPageHide: false, resetTimer: null };
-    nativeImagePreviewRef.current = session;
-    const clearSession = () => clearNativeImagePreview(session);
-    try {
-      const request = Taro.previewImage({
-        current: practice.imageUrl,
-        urls: [practice.imageUrl],
-        fail: clearSession,
-        complete: () => scheduleUnusedImagePreviewReset(session),
-      });
-      if (request && typeof request.catch === "function") {
-        void request.catch(clearSession);
-      }
-      return request;
-    } catch (error) {
-      clearSession();
-      throw error;
-    }
-  }, [clearNativeImagePreview, practice.imageUrl, scheduleUnusedImagePreviewReset]);
+    setIsModelRateMenuOpen(false);
+    setIsBookPreviewOpen(true);
+  }, []);
 
   const applyRecordingMachine = useCallback((next: RecordingMachine) => {
     recordingMachineRef.current = next;
@@ -342,8 +303,7 @@ export function PracticeSession({
       clearTimeout(bookSwiperDurationRestoreTimerRef.current);
       bookSwiperDurationRestoreTimerRef.current = null;
     }
-    clearNativeImagePreview();
-  }, [clearNativeImagePreview]);
+  }, []);
 
   const applyPendingCheckIn = useCallback((next: PendingCheckIn | null) => {
     pendingCheckInRef.current = next;
@@ -655,6 +615,10 @@ export function PracticeSession({
     recordingAudioRef.current?.stop();
     if (mountedRef.current) {
       setIsPlayingRecording(false);
+      setHasRecordingPlaybackSession(false);
+      setRecordingPlaybackCurrentTime(0);
+      setRecordingPlaybackDuration(0);
+      setRecordingSeekPreview(null);
       setTempRecordingPath("");
       setRecordingDurationMs(0);
       setRecordingElapsedMs(0);
@@ -736,8 +700,15 @@ export function PracticeSession({
       () => Taro.createInnerAudioContext(),
       (trackId) => {
         if (trackId === null) setPlaybackScreenAwake(false);
-        if (trackId === null && mountedRef.current && !pageHiddenRef.current) {
-          setIsPlayingRecording(false);
+        if (mountedRef.current && !pageHiddenRef.current) {
+          setHasRecordingPlaybackSession(trackId !== null);
+          if (trackId === null) {
+            setIsPlayingRecording(false);
+            setRecordingPlaybackCurrentTime(0);
+            setRecordingPlaybackDuration(0);
+            setRecordingSeekPreview(null);
+            setIsModelSeekDragging(false);
+          }
         }
       },
       (error) => {
@@ -752,6 +723,18 @@ export function PracticeSession({
           setPlaybackScreenAwake(true);
           if (mountedRef.current && !pageHiddenRef.current) {
             setIsPlayingRecording(true);
+          }
+        },
+        onPause: () => {
+          setPlaybackScreenAwake(false);
+          if (mountedRef.current && !pageHiddenRef.current) {
+            setIsPlayingRecording(false);
+          }
+        },
+        onTimeUpdate: (currentTime, duration) => {
+          if (mountedRef.current && !pageHiddenRef.current) {
+            setRecordingPlaybackCurrentTime(currentTime);
+            setRecordingPlaybackDuration(duration);
           }
         },
       },
@@ -1273,6 +1256,10 @@ export function PracticeSession({
     setIsModelSeekDragging(false);
     setIsModelRateMenuOpen(false);
     setIsPlayingRecording(false);
+    setHasRecordingPlaybackSession(false);
+    setRecordingPlaybackCurrentTime(0);
+    setRecordingPlaybackDuration(0);
+    setRecordingSeekPreview(null);
 
     const current = recordingMachineRef.current;
     if (current.state === "starting") {
@@ -1294,21 +1281,15 @@ export function PracticeSession({
   useEffect(() => {
     if (typeof Taro.onAppHide !== "function") return undefined;
     const handleAppHide = () => {
-      // 真实切后台比原生图片预览优先，必须停止播放并暂停麦克风。
-      clearNativeImagePreview();
       handlePracticeHidden();
     };
     Taro.onAppHide(handleAppHide);
     return () => {
       if (typeof Taro.offAppHide === "function") Taro.offAppHide(handleAppHide);
     };
-  }, [clearNativeImagePreview, handlePracticeHidden]);
+  }, [handlePracticeHidden]);
 
   useDidShow(() => {
-    const previewSession = nativeImagePreviewRef.current;
-    if (previewSession?.didPageHide) {
-      clearNativeImagePreview(previewSession);
-    }
     const wasHidden = pageHiddenRef.current;
     pageHiddenRef.current = false;
     // 后台旋转可能暂时没有有效布局；回到前台后重新读取可见阅读区。
@@ -1333,20 +1314,10 @@ export function PracticeSession({
   });
 
   useDidHide(() => {
-    const previewSession = nativeImagePreviewRef.current;
-    if (previewSession) {
-      previewSession.didPageHide = true;
-      if (previewSession.resetTimer !== null) {
-        clearTimeout(previewSession.resetTimer);
-        previewSession.resetTimer = null;
-      }
-      return;
-    }
     handlePracticeHidden();
   });
 
   useUnload(() => {
-    clearNativeImagePreview();
     recordingStartAttemptRef.current += 1;
     practiceSwitchAttemptRef.current += 1;
     pendingRestoreAttemptRef.current += 1;
@@ -1844,6 +1815,34 @@ export function PracticeSession({
     controller.toggle("recording", tempRecordingPath);
   };
 
+  const handleRecordingSeekChanging = (event: { detail: { value: number } }) => {
+    const value = Number(event.detail.value);
+    if (!Number.isFinite(value)) return;
+    const duration = recordingPlaybackDuration > 0
+      ? recordingPlaybackDuration
+      : recordingDurationMs / 1000;
+    setRecordingSeekPreview(
+      duration > 0 ? Math.min(Math.max(0, value), duration) : Math.max(0, value),
+    );
+    setIsModelSeekDragging(true);
+  };
+
+  const handleRecordingSeekChange = (event: { detail: { value: number } }) => {
+    const value = Number(event.detail.value);
+    if (Number.isFinite(value)) {
+      const duration = recordingPlaybackDuration > 0
+        ? recordingPlaybackDuration
+        : recordingDurationMs / 1000;
+      const boundedValue = duration > 0
+        ? Math.min(Math.max(0, value), duration)
+        : Math.max(0, value);
+      recordingAudioRef.current?.seek(boundedValue);
+      setRecordingPlaybackCurrentTime(boundedValue);
+    }
+    setRecordingSeekPreview(null);
+    setIsModelSeekDragging(false);
+  };
+
   const retrySaveRecording = async () => {
     const pending = pendingCheckInRef.current;
     if (!pending || pending.recoverable || savingRecordingRef.current || deletingRecordingRef.current || completionInFlightRef.current || practiceSwitchInFlightRef.current || pageHiddenRef.current || recordingMachineRef.current.state !== "recorded") return;
@@ -2018,6 +2017,17 @@ export function PracticeSession({
     modelPlaybackDuration > 0 ? modelPlaybackDuration : modelProgressMax,
     Math.max(0, shownModelPlaybackTime),
   );
+  const resolvedRecordingPlaybackDuration = recordingPlaybackDuration > 0
+    ? recordingPlaybackDuration
+    : recordingDurationMs / 1000;
+  const shownRecordingPlaybackTime = recordingSeekPreview ?? recordingPlaybackCurrentTime;
+  const recordingProgressMax = Math.max(1, Math.ceil(resolvedRecordingPlaybackDuration));
+  const recordingProgressValue = Math.min(
+    resolvedRecordingPlaybackDuration > 0
+      ? resolvedRecordingPlaybackDuration
+      : recordingProgressMax,
+    Math.max(0, shownRecordingPlaybackTime),
+  );
   const retryRecordingButton = recordingState === "recorded" && !isSavingRecording && pendingCheckIn ? (
     <Button className='practice-recorder__retry device-touch-target' disabled={isDeletingRecording} onClick={startRecording}>
       重新录制
@@ -2036,12 +2046,12 @@ export function PracticeSession({
 
   return (
     <View className={`practice-page ${layoutClassName}${isFittedLayout ? " practice-page--fitted" : ""}${layout.orientation === "landscape" ? " practice-page--landscape" : ""}`}>
-      <PageMeta pageStyle={isDirectoryOpen ? "overflow: hidden;" : ""} />
+      <PageMeta pageStyle={isDirectoryOpen || isBookPreviewOpen ? "overflow: hidden;" : ""} />
       <View className='practice-page__content device-layout__content'>
         <View className='practice-header'>
           <Text className='practice-header__course'>{bundle.book.title}</Text>
           <Text className='practice-header__section'>{isLandscapeLayout ? `· ${practice.sectionTitle}` : practice.sectionTitle}</Text>
-          <View className={`practice-header__progress-row${playingTrackId && activeModelTrack ? " practice-header__progress-row--audio-active" : ""}`}>
+          <View className={`practice-header__progress-row${(playingTrackId && activeModelTrack) || hasRecordingPlaybackSession ? " practice-header__progress-row--audio-active" : ""}`}>
             <Text className='practice-header__progress'>
               {!isLandscapeLayout && <Text className='practice-header__progress-prefix'>跟读训练 </Text>}
               {practiceIndex + 1} / {bundle.practices.length}
@@ -2109,6 +2119,41 @@ export function PracticeSession({
                     ))}
                   </View>
                 )}
+              </View>
+            )}
+            {!playingTrackId && hasRecordingPlaybackSession && (
+              <View className='practice-model-player' catchMove>
+                <Button
+                  className='practice-model-player__toggle device-touch-target'
+                  aria-label={isPlayingRecording ? "停止回听录音" : "回听录音"}
+                  onClick={playRecording}
+                >
+                  {isPlayingRecording
+                    ? <Text aria-hidden>■</Text>
+                    : <View className='practice-model-player__play-icon practice-model-player__play-icon--play' />}
+                </Button>
+                <View className='practice-model-player__body'>
+                  <Slider
+                    className='practice-model-player__progress'
+                    min={0}
+                    max={recordingProgressMax}
+                    step={1}
+                    value={recordingProgressValue}
+                    disabled={resolvedRecordingPlaybackDuration <= 0}
+                    activeColor='#14563f'
+                    backgroundColor='#718f84'
+                    blockColor='#14563f'
+                    blockSize={20}
+                    onChanging={handleRecordingSeekChanging}
+                    onChange={handleRecordingSeekChange}
+                  />
+                  <Text className='practice-model-player__time'>
+                    {formatAudioTime(shownRecordingPlaybackTime)} / {formatAudioTime(resolvedRecordingPlaybackDuration)}
+                  </Text>
+                </View>
+                <View className='practice-model-player__rate' aria-label='录音按原速播放'>
+                  <Text>1.0×</Text>
+                </View>
               </View>
             )}
             <View className='practice-header__actions'>
@@ -2389,7 +2434,7 @@ export function PracticeSession({
                     {isSavingRecording
                       ? "正在安全保存录音，请稍候…"
                       : pendingCheckIn?.recoverable
-                        ? isLandscapeLayout ? "录音已保存" : `已安全保存在本机（${formatDuration(recordingDurationMs)}），请回听确认。`
+                        ? "已保存录音文件。"
                         : `录音保存失败（${formatDuration(recordingDurationMs)}），请重试保存；关闭小程序后可能无法恢复。`}
                   </Text>
                   {!isSavingRecording && pendingCheckIn && (
@@ -2457,6 +2502,37 @@ export function PracticeSession({
         onClose={() => setIsDirectoryOpen(false)}
         onSelect={(nextIndex) => requestPracticeSwitch(nextIndex, { animate: false })}
       />
+      {isBookPreviewOpen && (
+        <View className='practice-book-preview' catchMove>
+          <View className='practice-book-preview__toolbar'>
+            <Text
+              className='practice-book-preview__close device-touch-target'
+              onClick={() => setIsBookPreviewOpen(false)}
+            >
+              关闭
+            </Text>
+            <Text className='practice-book-preview__hint'>双指缩放 · 拖动查看</Text>
+          </View>
+          <MovableArea className='practice-book-preview__area' scaleArea>
+            <MovableView
+              className='practice-book-preview__canvas'
+              direction='all'
+              inertia
+              outOfBounds
+              scale
+              scaleMin={1}
+              scaleMax={4}
+            >
+              <Image
+                className='practice-book-preview__image'
+                src={practice.imageUrl}
+                mode='aspectFit'
+                webp
+              />
+            </MovableView>
+          </MovableArea>
+        </View>
+      )}
     </View>
   );
 }

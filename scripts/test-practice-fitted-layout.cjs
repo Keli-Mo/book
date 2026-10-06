@@ -507,7 +507,7 @@ for (const route of routes) {
     } finally { cleanup(page); }
   });
 
-  test(`${route.name}：放大只预览当前图片，关闭返回时页码和已录草稿保持不变`, async () => {
+  test(`${route.name}：页内放大只显示当前图片，关闭后页码和已录草稿保持不变`, async () => {
     const { page, previews } = fixture(route, modes[2]);
     try {
       const originalImage = byClass(render(page), "practice-book-page__image").props.src;
@@ -520,17 +520,22 @@ for (const route of routes) {
       const expand = byClass(tree, "practice-book-expand");
       assert.ok(expand, "Pad 竖屏保留当前页放大入口");
       const initialProgress = progress(page);
-      const state = page.stateValues();
       const actions = [...page.recorderActions];
       await expand.props.onClick();
-      assert.equal(previews.length, 1);
-      assert.equal(previews[0].current, imageUrl);
-      assert.deepEqual(previews[0].urls, [imageUrl], "只打开当前教材图片");
-      assert.deepEqual(page.stateValues(), state);
+      let previewTree = render(page);
+      const preview = byClass(previewTree, "practice-book-preview");
+      assert.ok(preview, "应在当前训练页内打开全屏预览层");
+      assert.equal(previews.length, 0, "不得调用会切换原生层的 previewImage");
+      const toolbarChildren = byClass(preview, "practice-book-preview__toolbar").props.children;
+      assert.ok(hasClass(toolbarChildren[0], "practice-book-preview__close"), "关闭按钮应固定在左侧，避开微信右上角胶囊");
+      assert.equal(byClass(preview, "practice-book-preview__image").props.src, imageUrl, "只显示当前教材图片");
+      const movable = byClass(preview, "practice-book-preview__canvas");
+      assert.equal(movable.props.scale, true, "页内预览应支持双指缩放");
+      assert.equal(movable.props.scaleMax, 4);
       assert.deepEqual(page.recorderActions, actions);
-      page.hide();
-      page.show();
-      await settle();
+      byClass(previewTree, "practice-book-preview__close").props.onClick();
+      previewTree = render(page);
+      assert.equal(byClass(previewTree, "practice-book-preview"), undefined, "关闭后移除预览层");
       assert.equal(progress(page), initialProgress);
       assert.equal(page.savedRecordings.length, 1);
       assert.ok(byClass(render(page), "practice-recorder__retry"));
@@ -617,7 +622,7 @@ test("旧教材：left/top 左上角锚点转为圆钮中心，已人工确认�
   }
 });
 
-test("Pad 竖屏：放大查看返回前保持示范音频与活动录音", async () => {
+test("Pad 竖屏：打开和关闭页内放大保持示范音频与活动录音", async () => {
   const audioRoute = {
     ...routes[0],
     params: { bookId: "22", practice: "0" },
@@ -634,13 +639,13 @@ test("Pad 竖屏：放大查看返回前保持示范音频与活动录音", asyn
     const eventsBeforePreview = [...modelAudio.events];
 
     await byClass(tree, "practice-book-expand").props.onClick();
-    audioContext.page.hide();
+    tree = render(audioContext.page);
     assert.deepEqual(
       modelAudio.events,
       eventsBeforePreview,
-      "原生图片预览引发的页面隐藏不得停止示范音频",
+      "打开页内预览不得停止示范音频",
     );
-    audioContext.page.show();
+    byClass(tree, "practice-book-preview__close").props.onClick();
     assert.ok(byClass(render(audioContext.page), "practice-model-player"), "关闭预览后播放器仍须保留");
 
     audioContext.page.hide();
@@ -654,13 +659,13 @@ test("Pad 竖屏：放大查看返回前保持示范音频与活动录音", asyn
     await begin(recordingContext.page);
     const actionsBeforePreview = [...recordingContext.page.recorderActions];
     await byClass(render(recordingContext.page), "practice-book-expand").props.onClick();
-    recordingContext.page.hide();
+    const previewTree = render(recordingContext.page);
     assert.deepEqual(
       recordingContext.page.recorderActions,
       actionsBeforePreview,
-      "原生图片预览引发的页面隐藏不得暂停或停止活动录音",
+      "打开页内预览不得暂停或停止活动录音",
     );
-    recordingContext.page.show();
+    byClass(previewTree, "practice-book-preview__close").props.onClick();
     assert.ok(byClass(render(recordingContext.page), "record-button--pause"), "关闭预览后仍须保持录音中");
 
     recordingContext.page.hide();
@@ -670,7 +675,88 @@ test("Pad 竖屏：放大查看返回前保持示范音频与活动录音", asyn
   }
 });
 
-test("Pad 竖屏：原生预览中真实切后台仍停止音频并暂停录音", async () => {
+test("Pad 竖屏：放大查看使用页内预览，避免触发原生预览生命周期", async () => {
+  const audioRoute = {
+    ...routes[0],
+    params: { bookId: "22", practice: "0" },
+  };
+  const context = fixture(audioRoute, modes[2]);
+  try {
+    let tree = render(context.page);
+    byClass(tree, "audio-hotspot").props.onClick();
+    tree = render(context.page);
+    const modelAudio = context.page.audios.find((audio) => audio.src);
+    const eventsBeforePreview = [...modelAudio.events];
+
+    await byClass(tree, "practice-book-expand").props.onClick();
+    tree = render(context.page);
+
+    assert.ok(byClass(tree, "practice-book-preview"), "放大查看应在当前训练页内打开预览层");
+    assert.equal(context.previews.length, 0, "页内预览不得调用会触发 App/Page hide 的原生 previewImage");
+    assert.deepEqual(modelAudio.events, eventsBeforePreview, "打开页内预览不得停止示范音频");
+
+    context.appHide();
+    assert.ok(["stop", "destroy"].includes(modelAudio.events.at(-1)), "页内预览打开时真正切后台仍须停止示范音频");
+  } finally {
+    cleanup(context.page);
+  }
+});
+
+test("Pad 竖屏：打开和关闭页内预览保持活动录音", async () => {
+  const context = fixture(
+    { ...routes[0], params: { bookId: "22", practice: "0" } },
+    modes[2],
+  );
+  try {
+    await begin(context.page);
+    const actionsBeforePreview = [...context.page.recorderActions];
+
+    await byClass(render(context.page), "practice-book-expand").props.onClick();
+    let tree = render(context.page);
+    assert.ok(byClass(tree, "practice-book-preview"), "活动录音中也应打开页内预览");
+    assert.equal(context.previews.length, 0, "活动录音中不得进入微信原生图片预览层");
+    assert.deepEqual(context.page.recorderActions, actionsBeforePreview, "打开页内预览不得暂停或停止录音");
+    assert.ok(byClass(tree, "record-button--pause"), "页内预览打开后录音状态仍为 recording");
+
+    byClass(tree, "practice-book-preview__close").props.onClick();
+    tree = render(context.page);
+    assert.equal(byClass(tree, "practice-book-preview"), undefined, "关闭按钮应只关闭页内预览层");
+    assert.deepEqual(context.page.recorderActions, actionsBeforePreview, "关闭页内预览不得改变录音状态");
+    assert.ok(byClass(tree, "record-button--pause"), "关闭页内预览后应继续录音");
+
+    context.appHide();
+    assert.equal(context.page.recorderActions.at(-1).action, "pause", "真正切后台仍须暂停活动录音");
+  } finally {
+    cleanup(context.page);
+  }
+});
+
+test("Pad 竖屏：打开和关闭页内预览保持录音回听", async () => {
+  const context = fixture(
+    { ...routes[0], params: { bookId: "22", practice: "0" } },
+    modes[2],
+  );
+  try {
+    await begin(context.page);
+    let tree = await finish(context.page);
+    byClass(tree, "record-actions__secondary").props.onClick();
+    tree = render(context.page);
+    const recordingAudio = context.page.audios.find((audio) => audio.src.includes("fitted-22.mp3"));
+    assert.ok(recordingAudio?.events.includes("play"), "测试必须先启动已录音回听");
+    const eventsBeforePreview = [...recordingAudio.events];
+
+    await byClass(tree, "practice-book-expand").props.onClick();
+    tree = render(context.page);
+    assert.deepEqual(recordingAudio.events, eventsBeforePreview, "打开页内预览不得停止录音回听");
+    byClass(tree, "practice-book-preview__close").props.onClick();
+    render(context.page);
+    assert.deepEqual(recordingAudio.events, eventsBeforePreview, "关闭页内预览不得停止录音回听");
+  } finally {
+    cleanup(context.page);
+  }
+});
+
+test("Pad 竖屏：页内预览打开时真实切后台仍停止音频并暂停录音", async () => {
   const audioRoute = { ...routes[0], params: { bookId: "22", practice: "0" } };
   const audioContext = fixture(audioRoute, modes[2]);
   try {
@@ -679,9 +765,6 @@ test("Pad 竖屏：原生预览中真实切后台仍停止音频并暂停录音"
     tree = render(audioContext.page);
     const modelAudio = audioContext.page.audios.find((audio) => audio.src);
     await byClass(tree, "practice-book-expand").props.onClick();
-    const eventsBeforeHide = [...modelAudio.events];
-    audioContext.page.hide();
-    assert.deepEqual(modelAudio.events, eventsBeforeHide, "原生预览引发的 Page.onHide 应先保留音频");
     audioContext.appHide();
     assert.ok(["stop", "destroy"].includes(modelAudio.events.at(-1)), "App.onHide 必须停止示范音频");
   } finally {
@@ -702,18 +785,10 @@ test("Pad 竖屏：原生预览中真实切后台仍停止音频并暂停录音"
   }
 });
 
-test("Pad 竖屏：旧预览延迟回调不影响新预览会话", async () => {
-  const catchHandlers = [];
+test("Pad 竖屏：快速重复点击只保留一个页内预览层", async () => {
   const context = fixture(
     { ...routes[0], params: { bookId: "22", practice: "0" } },
     modes[2],
-    {
-      previewImage() {
-        return {
-          catch(callback) { catchHandlers.push(callback); return this; },
-        };
-      },
-    },
   );
   try {
     let tree = render(context.page);
@@ -725,23 +800,23 @@ test("Pad 竖屏：旧预览延迟回调不影响新预览会话", async () => {
 
     await expand.props.onClick();
     await expand.props.onClick();
-    assert.equal(context.previews.length, 2, "快速重复点击应建立两次原生预览请求");
-    catchHandlers[0]?.(new Error("旧预览 Promise 延迟失败"));
-    context.previews[0].fail?.({ errMsg: "previewImage:fail cancelled" });
-    context.previews[0].complete?.({ errMsg: "previewImage:fail cancelled" });
-    context.page.hide();
-    assert.deepEqual(modelAudio.events, eventsBeforePreview, "旧预览回调不得清除新预览标记");
+    tree = render(context.page);
+    assert.equal(context.previews.length, 0, "重复点击也不得创建原生预览请求");
+    assert.equal(
+      elements(tree).filter((node) => hasClass(node, "practice-book-preview")).length,
+      1,
+      "快速重复点击应保持单个页内预览层",
+    );
+    assert.deepEqual(modelAudio.events, eventsBeforePreview, "重复点击不得打断示范音频");
   } finally {
     cleanup(context.page);
   }
 });
 
-test("Pad 竖屏：未触发 Page.onHide 的预览请求会自动释放标记", async () => {
-  const timers = createTimers();
+test("Pad 竖屏：关闭页内预览后真实 Page.onHide 正常清理音频", async () => {
   const context = fixture(
     { ...routes[0], params: { bookId: "22", practice: "0" } },
     modes[2],
-    { timers },
   );
   try {
     let tree = render(context.page);
@@ -749,16 +824,16 @@ test("Pad 竖屏：未触发 Page.onHide 的预览请求会自动释放标记", 
     tree = render(context.page);
     const modelAudio = context.page.audios.find((audio) => audio.src);
     await byClass(tree, "practice-book-expand").props.onClick();
-    context.previews[0].complete?.({ errMsg: "previewImage:ok" });
-    timers.advance(1500);
+    tree = render(context.page);
+    byClass(tree, "practice-book-preview__close").props.onClick();
     context.page.hide();
-    assert.ok(["stop", "destroy"].includes(modelAudio.events.at(-1)), "超时后的真实页面隐藏必须正常清理音频");
+    assert.ok(["stop", "destroy"].includes(modelAudio.events.at(-1)), "真实页面隐藏必须正常清理音频");
   } finally {
     cleanup(context.page);
   }
 });
 
-test("Pad 竖屏：预览标记存在时卸载仍释放录音与 App 监听", async () => {
+test("Pad 竖屏：页内预览打开时卸载仍释放录音与 App 监听", async () => {
   const context = fixture({ ...routes[0], params: { bookId: "22", practice: "0" } }, modes[2]);
   await begin(context.page);
   await byClass(render(context.page), "practice-book-expand").props.onClick();
