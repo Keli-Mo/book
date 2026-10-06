@@ -543,16 +543,20 @@ assert.match(checkInNavigation, /aria-label=['"]返回首页['"]/, "自定义导
 assert.match(checkInNavigation, /Taro\.reLaunch\(\{\s*url:\s*["']\/pages\/Home\/Home["']\s*\}\)/, "首页入口应真实返回首页");
 
 assert.match(practice, /useDidHide/, "训练页应监听页面隐藏");
+const practiceHiddenBody = practice.match(
+  /const handlePracticeHidden = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[/,
+)?.[1] || "";
 const practiceHideBody = practice.match(
   /useDidHide\(\(\) => \{([\s\S]*?)\n  \}\);/,
 )?.[1] || "";
+assert.match(practiceHideBody, /handlePracticeHidden\(\)/, "Page.onHide 应调用统一隐藏清理");
 assert.match(
-  practiceHideBody,
+  practiceHiddenBody,
   /stopPracticePlayback\(\s*modelAudioControllerRef\.current,\s*recordingAudioRef\.current,?\s*\)/,
-  "训练页隐藏回调本身应停止示范音频和录音回听",
+  "训练页统一隐藏清理应停止示范音频和录音回听",
 );
 assert.doesNotMatch(
-  practiceHideBody,
+  practiceHiddenBody,
   /recorderRef|resetRecording|recorder\.stop/,
   "训练页隐藏时不能停止或丢弃正在进行的录音",
 );

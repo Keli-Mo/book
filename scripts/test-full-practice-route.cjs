@@ -1,9 +1,15 @@
 /* eslint-disable import/no-commonjs */
 const assert = require("assert/strict");
 const { createPage, elements, textOf, byClass, load } = require("./test-practice-book-route.cjs");
+
 const { BOOKS } = load("src/features/bookLibrary/bookCatalog.ts");
 const { concatImages } = load("src/pages/BookDetail/Components/BookPreview/constants/images.ts");
 const { buildBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
+const {
+  clampHotspotCenter,
+  resolveHotspotAnchorOffset,
+} = load("src/features/listeningPractice/hotspotLayout.ts");
+const centerAnchoredHotspotIds = new Set(["3-84-0", "4-140-0", "4-164-0", "5-134-0"]);
 const opened = [];
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 const open = (bookId, params, options) => {
@@ -32,6 +38,42 @@ const imageOf = (tree) => byClass(tree, "practice-book-page__image")?.props.src;
 const directoryOf = (tree) => elements(tree).find((node) => node.type?.name === "PracticeDirectory");
 
 async function run() {
+  assert.equal(typeof resolveHotspotAnchorOffset, "function", "热点锚点分类必须由可测试的纯函数统一维护");
+  const anchorCounts = { legacyTopLeft: 0, confirmedCenter: 0, thinkCenter: 0, od6Center: 0 };
+  for (const book of BOOKS) {
+    const bundle = buildBookPracticeBundle(book.id);
+    for (const practice of bundle.practices) {
+      for (const track of practice.tracks) {
+        const numericBookId = Number.parseInt(book.id, 10);
+        let expected;
+        if (centerAnchoredHotspotIds.has(track.id)) {
+          anchorCounts.confirmedCenter += 1;
+          expected = { offsetXPx: 0, offsetYPx: 0 };
+        } else if (numericBookId >= 3 && numericBookId <= 25) {
+          anchorCounts.legacyTopLeft += 1;
+          expected = { offsetXPx: 13, offsetYPx: 13 };
+        } else if (book.seriesId === "think") {
+          anchorCounts.thinkCenter += 1;
+          expected = { offsetXPx: book.id === "26" ? -22 : -8, offsetYPx: 0 };
+        } else {
+          anchorCounts.od6Center += 1;
+          expected = { offsetXPx: 0, offsetYPx: 0 };
+        }
+        assert.deepEqual(
+          resolveHotspotAnchorOffset(book.id, book.seriesId, track.id),
+          expected,
+          `教材 ${book.id} 热点 ${track.id} 的锚点类型必须与数据来源一致`,
+        );
+      }
+    }
+  }
+  assert.deepEqual(anchorCounts, {
+    legacyTopLeft: 2077,
+    confirmedCenter: 4,
+    thinkCenter: 429,
+    od6Center: 130,
+  }, "全部 2,640 个热点都必须且只能归入一种坐标锚点类型");
+
   for (const book of BOOKS) {
     const images = concatImages[book.id];
     const page = open(book.id, { page: "0" });
@@ -64,8 +106,22 @@ async function run() {
       assert.equal(hotspots.length, practice.tracks.length);
       const actualLeft = Number.parseFloat(hotspots[0].props.style.left);
       const actualTop = Number.parseFloat(hotspots[0].props.style.top);
-      assert.ok(Math.abs(actualLeft - Number.parseFloat(practice.tracks[0].left)) <= 1, "固定画布只允许边缘热点做触控安全位移");
-      assert.ok(Math.abs(actualTop - Number.parseFloat(practice.tracks[0].top)) <= 1, "固定画布只允许边缘热点做触控安全位移");
+      const hotspotLayer = byClass(tree, "practice-book-page__hotspots--fitted");
+      const imageSize = {
+        width: Number.parseFloat(hotspotLayer.props.style.width),
+        height: Number.parseFloat(hotspotLayer.props.style.height),
+      };
+      const numericBookId = Number.parseInt(bookId, 10);
+      const usesLegacyAnchor = numericBookId >= 3 && numericBookId <= 25 &&
+        !centerAnchoredHotspotIds.has(practice.tracks[0].id);
+      const expectedCenter = clampHotspotCenter({
+        left: Number.parseFloat(practice.tracks[0].left),
+        top: Number.parseFloat(practice.tracks[0].top),
+      }, imageSize, undefined, usesLegacyAnchor ? 13 : 0, usesLegacyAnchor ? 13 : 0);
+      assert.ok(Math.abs(actualLeft - expectedCenter.left) < 0.001,
+        "旧教材热点应按左上角锚点转换，中心坐标热点保持原位");
+      assert.ok(Math.abs(actualTop - expectedCenter.top) < 0.001,
+        "热点纵坐标应遵循本书的数据锚点类型");
       hotspots[0].props.onClick();
       assert.equal(oldPage.audios.at(-1).src, practice.tracks[0].url, "补全页面不改变原点读坐标和音源");
       oldPage.dispose();

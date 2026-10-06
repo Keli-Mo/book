@@ -46,6 +46,16 @@ const sizeOf = (node) => ({
   width: Number.parseFloat(node?.props?.style?.width),
   height: Number.parseFloat(node?.props?.style?.height),
 });
+const fitToBounds = (bounds, natural) => {
+  const scale = Math.min(bounds.width / natural.width, bounds.height / natural.height);
+  return { width: natural.width * scale, height: natural.height * scale };
+};
+const assertCloseSize = (actual, expected, message) => {
+  assert.ok(Math.abs(actual.width - expected.width) <= 1,
+    `${message}：宽度 ${actual.width}，期望 ${expected.width}`);
+  assert.ok(Math.abs(actual.height - expected.height) <= 1,
+    `${message}：高度 ${actual.height}，期望 ${expected.height}`);
+};
 
 function fixture(bookId, getImageSize, initialPage = "95", {
   layout = PHONE,
@@ -302,8 +312,8 @@ test("Think 1 学生书 Pad 首帧和测量后始终占满同一阅读区", () =
 
     measurements.splice(0).forEach((deliver) => deliver());
     const measured = render(page);
-    assert.deepEqual(sizeOf(byClass(measured, "practice-book-viewport")), PAD_SLOT,
-      "Pad 测量后外层仍与阅读区一致");
+    assert.deepEqual(byClass(measured, "practice-book-viewport").props.style, firstStyle,
+      "Pad 测量后不得从百分比切换成像素尺寸");
     const imageSize = sizeOf(activeImageFrame(measured));
     assert.ok(imageSize.width < PAD_SLOT.width && imageSize.height <= PAD_SLOT.height,
       "真实偏长页面应完整居中在 Pad 阅读区内");
@@ -366,6 +376,55 @@ for (const [bookId, canonical] of Object.entries({
       const measured = sizeOf(byClass(render(page), "practice-book-viewport"));
       assert.equal(measured.width, SLOT.width);
       assert.equal(measured.height, Math.round(SLOT.width * canonical.height / canonical.width));
+    } finally {
+      page.unload();
+      page.dispose();
+    }
+  });
+
+  test(`Oxford Discover 6 教材 ${bookId} Pad 首帧、测量与图片加载后不缩放`, () => {
+    const { page, measurements } = od6Fixture(bookId, undefined, "0", {
+      layout: PAD,
+      slot: PAD_SLOT,
+      deferMeasurement: true,
+    });
+    try {
+      const firstTree = render(page);
+      const firstViewportStyle = byClass(firstTree, "practice-book-viewport").props.style;
+      const firstImage = byClass(firstTree, "practice-book-page__image");
+      assert.deepEqual(firstViewportStyle, { width: "100%", height: "100%" });
+      assert.equal(firstImage.props.mode, "aspectFit");
+
+      assert.ok(measurements.length > 0, "首帧必须请求测量真实阅读区");
+      measurements.splice(0).forEach((deliver) => deliver());
+      let measuredTree = render(page);
+      assert.deepEqual(
+        byClass(measuredTree, "practice-book-viewport").props.style,
+        firstViewportStyle,
+        "DOM 测量返回后阅读区不得改变尺寸表达",
+      );
+      assertCloseSize(
+        sizeOf(activeImageFrame(measuredTree)),
+        fitToBounds(PAD_SLOT, canonical),
+        "DOM 测量后真实图面应按阅读区等比排布",
+      );
+
+      const loadedNatural = { width: canonical.width - 160, height: canonical.height };
+      byClass(measuredTree, "practice-book-page__image").props.onLoad({ detail: loadedNatural });
+      assert.ok(measurements.length > 0, "图片 onLoad 后必须重新请求阅读区测量");
+      measurements.splice(0).forEach((deliver) => deliver());
+      measuredTree = render(page);
+      assert.deepEqual(
+        byClass(measuredTree, "practice-book-viewport").props.style,
+        firstViewportStyle,
+        "图片 onLoad 后重测也不得改变阅读区外框",
+      );
+      assertCloseSize(
+        sizeOf(activeImageFrame(measuredTree)),
+        fitToBounds(PAD_SLOT, loadedNatural),
+        "图片真实尺寸返回后图面应重新等比定位",
+      );
+      assert.equal(byClass(measuredTree, "practice-book-page__image").props.mode, "aspectFit");
     } finally {
       page.unload();
       page.dispose();

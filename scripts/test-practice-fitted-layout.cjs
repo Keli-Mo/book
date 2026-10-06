@@ -35,20 +35,33 @@ const render = (page) => { page.render(); page.render(); return page.render(); }
 const settle = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
 const stableCanvasByPage = new WeakMap();
 
-function fixture(route, mode, { deferred = false, confirmSwitch = true } = {}) {
+function fixture(route, mode, {
+  deferred = false,
+  confirmSwitch = true,
+  previewImage,
+  timers,
+} = {}) {
   let profile = layoutFor(mode);
   const slot = { ...mode.slot };
   const measurements = [];
   const selectors = [];
   const previews = [];
+  const appHideHandlers = new Set();
   const page = createPage(route.file, route.params, {
     savedFilePath: `/saved/fitted-${route.params.bookId}.mp3`,
     showModal: async () => ({ confirm: confirmSwitch }),
+    setTimeout: timers?.setTimeout,
+    clearTimeout: timers?.clearTimeout,
     overrides: { "@/hooks/useDeviceLayout": { useDeviceLayout: () => profile } },
     taroOverrides: {
       getImageInfo({ success }) { success(natural); },
       nextTick(callback) { callback(); },
-      previewImage(options) { previews.push(options); return Promise.resolve(); },
+      previewImage(options) {
+        previews.push(options);
+        return previewImage ? previewImage(options) : Promise.resolve();
+      },
+      onAppHide(callback) { appHideHandlers.add(callback); },
+      offAppHide(callback) { appHideHandlers.delete(callback); },
       createSelectorQuery() {
         const requests = [];
         let selector;
@@ -73,6 +86,8 @@ function fixture(route, mode, { deferred = false, confirmSwitch = true } = {}) {
   render(page);
   return {
     page, slot, measurements, selectors, previews,
+    appHide() { for (const callback of [...appHideHandlers]) callback(); },
+    appHideListenerCount() { return appHideHandlers.size; },
     rotate(nextMode) {
       profile = layoutFor(nextMode);
       Object.assign(slot, nextMode.slot);
@@ -104,9 +119,12 @@ function assertImageSize(page, slot, mode, message = "教材尺寸", imageNatura
   const tree = render(page);
   const scrollable = mode.orientation === "landscape";
   const outerStyle = byClass(tree, "practice-book-viewport")?.props.style;
+  const resolveOuterLength = (value, fallback) => value === "100%"
+    ? fallback
+    : Number.parseFloat(value);
   const outerSize = {
-    width: Number.parseFloat(outerStyle?.width),
-    height: Number.parseFloat(outerStyle?.height),
+    width: resolveOuterLength(outerStyle?.width, slot.width),
+    height: resolveOuterLength(outerStyle?.height, slot.height),
   };
   const bookPage = activeBookPage(tree);
   const hotspotLayer = byClass(bookPage, "practice-book-page__hotspots--fitted");
@@ -143,6 +161,11 @@ function assertImageSize(page, slot, mode, message = "教材尺寸", imageNatura
       "所有音频热点都应与当前真实页图同处一个容器",
     );
     if (mode.isPad) {
+      assert.deepEqual(
+        outerStyle,
+        { width: "100%", height: "100%" },
+        "Pad 竖屏外框应始终使用稳定的百分比尺寸",
+      );
       assert.ok(pageSize.width === expectedOuter.width || pageSize.height === expectedOuter.height,
         "Pad 竖屏页图应直接利用完整 bookBounds，至少贴合一条边");
     }
@@ -203,6 +226,33 @@ const loadAgain = (page) => {
   return render(page);
 };
 const cleanup = (page) => { page.unload(); page.dispose(); };
+const createTimers = () => {
+  let now = 0;
+  let nextId = 1;
+  const pending = new Map();
+  return {
+    setTimeout(callback, delay = 0) {
+      const id = nextId++;
+      pending.set(id, { callback, at: now + delay });
+      return id;
+    },
+    clearTimeout(id) { pending.delete(id); },
+    advance(ms) {
+      const target = now + ms;
+      while (true) {
+        const ready = [...pending.entries()]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((left, right) => left[1].at - right[1].at || left[0] - right[0])[0];
+        if (!ready) break;
+        const [id, timer] = ready;
+        pending.delete(id);
+        now = timer.at;
+        timer.callback();
+      }
+      now = target;
+    },
+  };
+};
 const progress = (page) => {
   const label = textOf(byClass(render(page), "practice-header__progress"));
   const pageNumbers = label.match(/\d+\s*\/\s*\d+/)?.[0];
@@ -487,3 +537,259 @@ for (const route of routes) {
     } finally { cleanup(page); }
   });
 }
+
+test("旧教材：left/top 左上角锚点转为圆钮中心，已人工确认的中心点保持原位", () => {
+  const cases = [
+    {
+      name: "Our World 1 练习册截图页",
+      file: "src/pages/Practice/Practice.tsx",
+      params: { bookId: "12", page: "6" },
+      stableCanvas: { width: 2550, height: 3263 },
+      source: { left: 41, top: 25 },
+      expectedOffset: { left: 13, top: 13 },
+    },
+    {
+      name: "剑桥 KET 学生用书截图页",
+      file: "src/pages/Practice/Practice.tsx",
+      params: { bookId: "9", page: "8" },
+      stableCanvas: { width: 825, height: 1061 },
+      source: { left: (3993 - 3576) / 825 * 100, top: (1000 - 202) / 1061 * 100 },
+      expectedOffset: { left: 13, top: 13 },
+    },
+    {
+      name: "CASA 1 已确认中心点",
+      file: "src/pages/Practice/Practice.tsx",
+      params: { bookId: "3", page: "82" },
+      stableCanvas: { width: 742, height: 1050 },
+      source: { left: 6.8, top: 95 },
+      expectedOffset: { left: 0, top: 0 },
+    },
+    {
+      name: "CASA 2 第一个已确认中心点",
+      file: "src/pages/Practice/Practice.tsx",
+      params: { bookId: "4", page: "138" },
+      stableCanvas: { width: 742, height: 1050 },
+      source: { left: 60.2, top: 93 },
+      expectedOffset: { left: 0, top: 0 },
+    },
+    {
+      name: "CASA 2 第二个已确认中心点",
+      file: "src/pages/Practice/Practice.tsx",
+      params: { bookId: "4", page: "162" },
+      stableCanvas: { width: 742, height: 1050 },
+      source: { left: 57.9, top: 95.4 },
+      expectedOffset: { left: 0, top: 0 },
+    },
+    {
+      name: "CASA 3 已确认中心点",
+      file: "src/pages/Practice/Practice.tsx",
+      params: { bookId: "5", page: "132" },
+      stableCanvas: { width: 742, height: 1050 },
+      source: { left: 5.1, top: 41.5 },
+      expectedOffset: { left: 0, top: 0 },
+    },
+  ];
+
+  for (const scenario of cases) {
+    const context = fixture(scenario, modes[2]);
+    try {
+      const tree = render(context.page);
+      const hotspotLayer = byClass(activeBookPage(tree), "practice-book-page__hotspots--fitted");
+      const hotspot = byClass(hotspotLayer, "audio-hotspot");
+      assert.ok(hotspot, `${scenario.name}必须保留示范音频按钮`);
+      const imageSize = {
+        width: Number.parseFloat(hotspotLayer.props.style.width),
+        height: Number.parseFloat(hotspotLayer.props.style.height),
+      };
+      const rendered = {
+        left: Number.parseFloat(hotspot.props.style.left),
+        top: Number.parseFloat(hotspot.props.style.top),
+      };
+      const leftOffsetPx = (rendered.left - scenario.source.left) * imageSize.width / 100;
+      const topOffsetPx = (rendered.top - scenario.source.top) * imageSize.height / 100;
+      assert.ok(Math.abs(leftOffsetPx - scenario.expectedOffset.left) < 0.1,
+        `${scenario.name}的 26px 圆钮中心应从旧左上角向右移半径（实际 ${leftOffsetPx}px）`);
+      assert.ok(Math.abs(topOffsetPx - scenario.expectedOffset.top) < 0.1,
+        `${scenario.name}的 26px 圆钮中心应从旧左上角向下移半径（实际 ${topOffsetPx}px）`);
+    } finally {
+      cleanup(context.page);
+    }
+  }
+});
+
+test("Pad 竖屏：放大查看返回前保持示范音频与活动录音", async () => {
+  const audioRoute = {
+    ...routes[0],
+    params: { bookId: "22", practice: "0" },
+  };
+  const audioContext = fixture(audioRoute, modes[2]);
+  try {
+    let tree = render(audioContext.page);
+    const hotspot = byClass(tree, "audio-hotspot");
+    assert.ok(hotspot, "测试页必须包含示范音频热点");
+    hotspot.props.onClick();
+    tree = render(audioContext.page);
+    const modelAudio = audioContext.page.audios.find((audio) => audio.src);
+    assert.ok(modelAudio, "点击热点后必须创建示范音频实例");
+    const eventsBeforePreview = [...modelAudio.events];
+
+    await byClass(tree, "practice-book-expand").props.onClick();
+    audioContext.page.hide();
+    assert.deepEqual(
+      modelAudio.events,
+      eventsBeforePreview,
+      "原生图片预览引发的页面隐藏不得停止示范音频",
+    );
+    audioContext.page.show();
+    assert.ok(byClass(render(audioContext.page), "practice-model-player"), "关闭预览后播放器仍须保留");
+
+    audioContext.page.hide();
+    assert.ok(["stop", "destroy"].includes(modelAudio.events.at(-1)), "真正隐藏训练页时仍须停止示范音频");
+  } finally {
+    cleanup(audioContext.page);
+  }
+
+  const recordingContext = fixture(audioRoute, modes[2]);
+  try {
+    await begin(recordingContext.page);
+    const actionsBeforePreview = [...recordingContext.page.recorderActions];
+    await byClass(render(recordingContext.page), "practice-book-expand").props.onClick();
+    recordingContext.page.hide();
+    assert.deepEqual(
+      recordingContext.page.recorderActions,
+      actionsBeforePreview,
+      "原生图片预览引发的页面隐藏不得暂停或停止活动录音",
+    );
+    recordingContext.page.show();
+    assert.ok(byClass(render(recordingContext.page), "record-button--pause"), "关闭预览后仍须保持录音中");
+
+    recordingContext.page.hide();
+    assert.equal(recordingContext.page.recorderActions.at(-1).action, "pause", "真正隐藏训练页时仍须暂停录音");
+  } finally {
+    cleanup(recordingContext.page);
+  }
+});
+
+test("Pad 竖屏：原生预览中真实切后台仍停止音频并暂停录音", async () => {
+  const audioRoute = { ...routes[0], params: { bookId: "22", practice: "0" } };
+  const audioContext = fixture(audioRoute, modes[2]);
+  try {
+    let tree = render(audioContext.page);
+    byClass(tree, "audio-hotspot").props.onClick();
+    tree = render(audioContext.page);
+    const modelAudio = audioContext.page.audios.find((audio) => audio.src);
+    await byClass(tree, "practice-book-expand").props.onClick();
+    const eventsBeforeHide = [...modelAudio.events];
+    audioContext.page.hide();
+    assert.deepEqual(modelAudio.events, eventsBeforeHide, "原生预览引发的 Page.onHide 应先保留音频");
+    audioContext.appHide();
+    assert.ok(["stop", "destroy"].includes(modelAudio.events.at(-1)), "App.onHide 必须停止示范音频");
+  } finally {
+    cleanup(audioContext.page);
+  }
+
+  const recordingContext = fixture(audioRoute, modes[2]);
+  try {
+    await begin(recordingContext.page);
+    await byClass(render(recordingContext.page), "practice-book-expand").props.onClick();
+    recordingContext.appHide();
+    assert.equal(recordingContext.page.recorderActions.at(-1).action, "pause", "App.onHide 必须暂停活动录音");
+    const actionCountAfterAppHide = recordingContext.page.recorderActions.length;
+    recordingContext.page.hide();
+    assert.equal(recordingContext.page.recorderActions.length, actionCountAfterAppHide, "App.onHide 与 Page.onHide 反序到达不得重复暂停");
+  } finally {
+    cleanup(recordingContext.page);
+  }
+});
+
+test("Pad 竖屏：旧预览延迟回调不影响新预览会话", async () => {
+  const catchHandlers = [];
+  const context = fixture(
+    { ...routes[0], params: { bookId: "22", practice: "0" } },
+    modes[2],
+    {
+      previewImage() {
+        return {
+          catch(callback) { catchHandlers.push(callback); return this; },
+        };
+      },
+    },
+  );
+  try {
+    let tree = render(context.page);
+    byClass(tree, "audio-hotspot").props.onClick();
+    tree = render(context.page);
+    const modelAudio = context.page.audios.find((audio) => audio.src);
+    const eventsBeforePreview = [...modelAudio.events];
+    const expand = byClass(tree, "practice-book-expand");
+
+    await expand.props.onClick();
+    await expand.props.onClick();
+    assert.equal(context.previews.length, 2, "快速重复点击应建立两次原生预览请求");
+    catchHandlers[0]?.(new Error("旧预览 Promise 延迟失败"));
+    context.previews[0].fail?.({ errMsg: "previewImage:fail cancelled" });
+    context.previews[0].complete?.({ errMsg: "previewImage:fail cancelled" });
+    context.page.hide();
+    assert.deepEqual(modelAudio.events, eventsBeforePreview, "旧预览回调不得清除新预览标记");
+  } finally {
+    cleanup(context.page);
+  }
+});
+
+test("Pad 竖屏：未触发 Page.onHide 的预览请求会自动释放标记", async () => {
+  const timers = createTimers();
+  const context = fixture(
+    { ...routes[0], params: { bookId: "22", practice: "0" } },
+    modes[2],
+    { timers },
+  );
+  try {
+    let tree = render(context.page);
+    byClass(tree, "audio-hotspot").props.onClick();
+    tree = render(context.page);
+    const modelAudio = context.page.audios.find((audio) => audio.src);
+    await byClass(tree, "practice-book-expand").props.onClick();
+    context.previews[0].complete?.({ errMsg: "previewImage:ok" });
+    timers.advance(1500);
+    context.page.hide();
+    assert.ok(["stop", "destroy"].includes(modelAudio.events.at(-1)), "超时后的真实页面隐藏必须正常清理音频");
+  } finally {
+    cleanup(context.page);
+  }
+});
+
+test("Pad 竖屏：预览标记存在时卸载仍释放录音与 App 监听", async () => {
+  const context = fixture({ ...routes[0], params: { bookId: "22", practice: "0" } }, modes[2]);
+  await begin(context.page);
+  await byClass(render(context.page), "practice-book-expand").props.onClick();
+  assert.equal(context.appHideListenerCount(), 1, "训练页应注册一个 App.onHide 监听");
+  context.page.unload();
+  assert.equal(context.page.recorderActions.at(-1).action, "stop", "卸载时必须结束录音会话");
+  context.page.dispose();
+  assert.equal(context.appHideListenerCount(), 0, "卸载后必须移除 App.onHide 监听");
+});
+
+test("Pad 竖屏：紧凑录音工具栏暴露状态类且状态变化不更换书页外框", async () => {
+  const context = fixture(routes[0], modes[2]);
+  try {
+    const initialTree = render(context.page);
+    const initialViewportStyle = byClass(initialTree, "practice-book-viewport").props.style;
+    assert.ok(hasClass(byClass(initialTree, "practice-recorder"), "practice-recorder--idle"));
+
+    await begin(context.page);
+    let tree = render(context.page);
+    assert.ok(hasClass(byClass(tree, "practice-recorder"), "practice-recorder--recording"));
+    assert.deepEqual(byClass(tree, "practice-book-viewport").props.style, initialViewportStyle);
+
+    pause(context.page);
+    tree = render(context.page);
+    assert.ok(hasClass(byClass(tree, "practice-recorder"), "practice-recorder--paused"));
+    assert.deepEqual(byClass(tree, "practice-book-viewport").props.style, initialViewportStyle);
+
+    tree = await finish(context.page);
+    assert.ok(hasClass(byClass(tree, "practice-recorder"), "practice-recorder--recorded"));
+    assert.deepEqual(byClass(tree, "practice-book-viewport").props.style, initialViewportStyle);
+  } finally {
+    cleanup(context.page);
+  }
+});

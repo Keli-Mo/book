@@ -106,8 +106,8 @@ for (const value of [0, -1, NaN, Infinity]) {
   assert.equal(fitImageToBounds({width: value, height: 300}, {width: 600, height: 900}), null);
   assert.equal(fitImageToBounds({width: 400, height: 300}, {width: 600, height: value}), null);
 }
-const assertHotspot = (scenario, point, imageSize, expected, hitRadiusPx, leftShiftPx) => {
-  const actual = normalize(clampHotspotCenter(point, imageSize, hitRadiusPx, leftShiftPx));
+const assertHotspot = (scenario, point, imageSize, expected, hitRadiusPx, offsetXPx, offsetYPx) => {
+  const actual = normalize(clampHotspotCenter(point, imageSize, hitRadiusPx, offsetXPx, offsetYPx));
   assert.deepEqual(actual, expected, `${scenario}：热点中心收敛结果不符合契约`);
   assert.ok(Number.isFinite(actual.left), `${scenario}：left 必须是有限数`);
   assert.ok(Number.isFinite(actual.top), `${scenario}：top 必须是有限数`);
@@ -138,7 +138,16 @@ assertHotspot(
   { width: 400, height: 600 },
   { left: 44.5, top: 40 },
   undefined,
-  22,
+  -22,
+);
+assertHotspot(
+  "旧版左上角锚点转为新圆形按钮中心",
+  { left: 50, top: 40 },
+  { width: 400, height: 600 },
+  { left: 53.25, top: 42.166666666666664 },
+  undefined,
+  13,
+  13,
 );
 assertHotspot(
   "左移后仍保持在图片触控边界内",
@@ -146,7 +155,7 @@ assertHotspot(
   { width: 400, height: 600 },
   { left: 5.5, top: 40 },
   undefined,
-  22,
+  -22,
 );
 
 const edgeCases = [

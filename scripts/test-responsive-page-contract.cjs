@@ -505,6 +505,18 @@ check("书库和我的打卡仅在 split 下使用两列", () => {
   }
 });
 
+check("iPad Pro 13 竖屏的我的录音页面放宽单栏容器", () => {
+  const page = pages.find((item) => item.name === "我的打卡");
+  assert.ok(
+    matchingRules(page.styles, [".my-check-ins.device-layout--pad.device-layout--portrait"]).some(
+      (rule) =>
+        rule.parent?.type === "root" &&
+        has(rule, "max-width", "960PX"),
+    ),
+    "Pad 竖屏应直接覆盖全局 820PX 单栏上限，不能依赖微信端未命中的媒体查询",
+  );
+});
+
 check("首页不因 split 进入多栏", () => {
   const home = pages.find((page) => page.name === "首页");
   const columns = matchingRules(
@@ -611,10 +623,66 @@ check("横屏和 iPad 仅在局部 fitted 阅读区限制高度", () => {
   assert.ok(ruleWith(practice.styles, [fitted, ".practice-workspace__controls"], { height: "224PX" }));
   assert.ok(
     ruleWith(practice.styles, [padPortrait, ".practice-workspace__controls"], {
-      height: "152PX",
-      flex: "0 0 152PX",
+      height: "104PX",
+      flex: "0 0 104PX",
     }),
-    "iPad 竖屏应只保留紧凑控制区，把底部空白释放给完整书页",
+    "iPad 竖屏应把录音和翻页压入固定紧凑控制区",
+  );
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-header"], {
+      display: "grid",
+      "grid-template-areas": '"course section" "progress progress"',
+    }),
+    "iPad 竖屏 Header 应压为课程标题与进度操作两行",
+  );
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-header__course"], {
+      color: "#315f50",
+      "font-size": "13PX",
+      "font-weight": "700",
+    }),
+    "iPad 竖屏教材名应使用更醒目的固定字号和深色字重",
+  );
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-header__section"], {
+      color: "#193f34",
+      "font-size": "18PX",
+      "font-weight": "800",
+    }),
+    "iPad 竖屏单元标题应保持更强的主标题层级",
+  );
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-recorder"], {
+      display: "flex",
+      height: "52PX",
+      overflow: "hidden",
+    }),
+    "iPad 竖屏录音区应保持固定单行高度，状态变化不能挤压书页",
+  );
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-recorder--recorded", "> .record-actions"], {
+      flex: "0 1 42%",
+    }),
+    "iPad 竖屏已录制态的回听与完成按钮应向左扩展",
+  );
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-recorder--recorded", ".record-actions__secondary"], {
+      "font-size": "14PX",
+    }),
+    "iPad 竖屏已录制态的回听文字应更醒目",
+  );
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-recorder--recorded", ".check-in-button"], {
+      "font-size": "14PX",
+    }),
+    "iPad 竖屏已录制态的完成练习文字应更醒目",
+  );
+  assert.ok(
+    ruleWith(practice.styles, [padPortrait, ".practice-book-viewport"], {
+      position: "absolute",
+      inset: "0",
+    }),
+    "iPad 竖屏书页外框必须首帧起固定铺满阅读区，不能在测量后改写外框几何",
   );
   assert.ok(matchingRules(practice.styles, [".practice-page--landscape", ".practice-workspace"]).some(rule =>
     has(rule, "display", "grid") && values(rule, "grid-template-columns").some(value => compact(value) === "minmax(0,1fr)180PX")));

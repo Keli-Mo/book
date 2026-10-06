@@ -106,12 +106,14 @@ async function applyTextScale(page,scale) {
 (async()=>{
   fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({channel:'msedge',headless:true});const results=[];
   const bottomFocus=stage==='home-bottom';
-  const profiles=stage==='before'?[[768,1024,true,0]]:bottomFocus?[[390,844,false,34]]:[[320,740,false,0],[390,844,false,34],[844,390,false,21],[768,1024,true,0],[1024,768,true,20],[1180,820,true,20],[375,700,true,0],[600,400,true,0]];
+  const ipad13Focus=stage==='mycheckins-ipad13';
+  const profiles=stage==='before'?[[768,1024,true,0]]:bottomFocus?[[390,844,false,34]]:ipad13Focus?[[1032,1376,true,0]]:[[320,740,false,0],[390,844,false,34],[844,390,false,21],[768,1024,true,0],[1032,1376,true,0],[1024,768,true,20],[1180,820,true,20],[375,700,true,0],[600,400,true,0]];
   try {for(const [width,height,isPad,safeAreaBottom] of profiles){
-    const profile={windowWidth:width,windowHeight:height,isPad,orientation:width>height?'landscape':'portrait',isSplit:isPad&&width>=960&&height>=600,statusBarHeight:20,safeAreaBottom};
+    const orientation=width>height?'landscape':'portrait';
+    const profile={windowWidth:width,windowHeight:height,isPad,orientation,isSplit:isPad&&orientation==='landscape'&&width>=960&&height>=600,statusBarHeight:20,safeAreaBottom};
     const context=await browser.newContext({viewport:{width,height}});const page=await context.newPage();
     const scaledCases=(width===390&&height===844)||(width===1024&&height===768)?textScaleCases:[];
-    const scenarios=bottomFocus?[['Home','recent',2]]:stage==='share-read'?cases.filter(([name])=>name==='CheckInDetail').map(([name,state])=>[name,state,1]):[...cases.map(([name,state])=>[name,state,1]),...scaledCases];
+    const scenarios=bottomFocus?[['Home','recent',2]]:ipad13Focus?[['MyCheckIns','records',1]]:stage==='share-read'?cases.filter(([name])=>name==='CheckInDetail').map(([name,state])=>[name,state,1]):[...cases.map(([name,state])=>[name,state,1]),...scaledCases];
     for(const [name,state,textScale] of scenarios){
       const body=(await surface(name,state,profile)).replace(/(-?[\d.]+)rpx/g,(_,v)=>Number(v)*width/750+'px');
       // 加载实际构建产物，额外导航组件的样式由页面 bundle 自动收集。
@@ -156,6 +158,15 @@ async function applyTextScale(page,scale) {
         const content=$(surfaceName==='Home'?'.library-home__content':surfaceName==='BookLibrary'?'.book-library':surfaceName==='Practice'?'.practice-page, .practice-empty':surfaceName==='MyCheckIns'?'.my-check-ins':'.check-in-detail, .check-in-state');
         const padding=content?parseFloat(getComputedStyle(content).paddingLeft):null;
         if(content&&padding<10) errors.push('正文左右留白丢失');
+        if(surfaceName==='MyCheckIns'&&padSurface&&innerWidth>=960&&innerHeight>innerWidth){
+          const requiredClasses=['device-layout--pad','device-layout--portrait','device-layout--single'];
+          for(const className of requiredClasses) if(!content?.classList.contains(className)) errors.push(`iPad Pro 13 根容器缺少:${className}`);
+          if(content){
+            const contentBox=box(content),expectedGutter=(innerWidth-960)/2;
+            if(Math.abs(contentBox.width-960)>1) errors.push(`iPad Pro 13 我的录音宽度错误:${contentBox.width.toFixed(1)}!=960`);
+            if(Math.abs(contentBox.left-expectedGutter)>1||Math.abs(innerWidth-contentBox.right-expectedGutter)>1) errors.push('iPad Pro 13 我的录音未水平贴合居中');
+          }
+        }
         if(surfaceName==='Practice'){
           const shell=$('.practice-screen');
           const title=$('.check-in-navigation__title');

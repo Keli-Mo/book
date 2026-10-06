@@ -257,6 +257,12 @@
   .my-check-ins__notice-button { width: 100%; }
 }
 
+// Pad 竖屏直接覆盖共享的 820px 单栏上限；窄 Pad 会由 width: 100% 自动收敛。
+// 不放进媒体查询，避免微信 WXSS 未命中大写 PX 查询后继续使用 820px。
+.my-check-ins.device-layout--pad.device-layout--portrait.device-layout--single {
+  max-width: 960PX;
+}
+
 // 完整 Pad 横屏提高录音卡片的阅读尺寸，窄窗口继续使用原布局。
 @media (min-width: 960PX) {
   .my-check-ins.device-layout--pad.device-layout--landscape {

@@ -18,7 +18,12 @@ import {
   readBookImageSize,
   readBookStableCanvasSize,
 } from "@/features/listeningPractice/bookImageSizes";
-import { clampHotspotCenter, fitImageToBounds, fitImageToWidth } from "@/features/listeningPractice/hotspotLayout";
+import {
+  clampHotspotCenter,
+  fitImageToBounds,
+  fitImageToWidth,
+  resolveHotspotAnchorOffset,
+} from "@/features/listeningPractice/hotspotLayout";
 import {
   isPracticeSwiperTouchChange,
   PAGE_TURN_DURATION_MS,
@@ -111,11 +116,11 @@ const getRecorderTimeoutOperation = (error: unknown) => {
 };
 
 type NaturalImageSize = { width: number; height: number };
-const naturalImageSizeCache = new Map<string, NaturalImageSize>();
-const DEFAULT_THINK_HOTSPOT_LEFT_SHIFT_PX = 8;
-const THINK_HOTSPOT_LEFT_SHIFT_PX_BY_BOOK_ID: Readonly<Record<string, number>> = {
-  "26": 22,
+type NativeImagePreviewSession = {
+  didPageHide: boolean;
+  resetTimer: ReturnType<typeof setTimeout> | null;
 };
+const naturalImageSizeCache = new Map<string, NaturalImageSize>();
 
 const readNaturalImageSize = (value: unknown): NaturalImageSize | null => {
   if (!value || typeof value !== "object") return null;
@@ -263,6 +268,7 @@ export function PracticeSession({
   const recorderTerminalSinkRef = useRef<RecorderTerminalSink | null>(null);
   const mountedRef = useRef(true);
   const pageHiddenRef = useRef(false);
+  const nativeImagePreviewRef = useRef<NativeImagePreviewSession | null>(null);
   const savingRecordingRef = useRef(false);
   const saveGenerationRef = useRef(0);
   const recordingStartAttemptRef = useRef(0);
@@ -282,6 +288,50 @@ export function PracticeSession({
   const practiceContextRef = useRef({ practice, practiceIndex });
   practiceContextRef.current = { practice, practiceIndex };
 
+  const clearNativeImagePreview = useCallback((session?: NativeImagePreviewSession) => {
+    const activeSession = nativeImagePreviewRef.current;
+    if (!activeSession || (session && activeSession !== session)) return;
+    if (activeSession.resetTimer !== null) {
+      clearTimeout(activeSession.resetTimer);
+      activeSession.resetTimer = null;
+    }
+    nativeImagePreviewRef.current = null;
+  }, []);
+
+  const scheduleUnusedImagePreviewReset = useCallback((session: NativeImagePreviewSession) => {
+    if (nativeImagePreviewRef.current !== session || session.didPageHide) return;
+    if (session.resetTimer !== null) {
+      clearTimeout(session.resetTimer);
+    }
+    // 部分运行环境不触发 Page.onHide；短暂保留标记后释放，避免下一次真实切后台被误判。
+    session.resetTimer = setTimeout(() => {
+      session.resetTimer = null;
+      clearNativeImagePreview(session);
+    }, 1500);
+  }, [clearNativeImagePreview]);
+
+  const openBookImagePreview = useCallback(() => {
+    clearNativeImagePreview();
+    const session: NativeImagePreviewSession = { didPageHide: false, resetTimer: null };
+    nativeImagePreviewRef.current = session;
+    const clearSession = () => clearNativeImagePreview(session);
+    try {
+      const request = Taro.previewImage({
+        current: practice.imageUrl,
+        urls: [practice.imageUrl],
+        fail: clearSession,
+        complete: () => scheduleUnusedImagePreviewReset(session),
+      });
+      if (request && typeof request.catch === "function") {
+        void request.catch(clearSession);
+      }
+      return request;
+    } catch (error) {
+      clearSession();
+      throw error;
+    }
+  }, [clearNativeImagePreview, practice.imageUrl, scheduleUnusedImagePreviewReset]);
+
   const applyRecordingMachine = useCallback((next: RecordingMachine) => {
     recordingMachineRef.current = next;
     if (mountedRef.current) setRecordingMachine(next);
@@ -292,7 +342,8 @@ export function PracticeSession({
       clearTimeout(bookSwiperDurationRestoreTimerRef.current);
       bookSwiperDurationRestoreTimerRef.current = null;
     }
-  }, []);
+    clearNativeImagePreview();
+  }, [clearNativeImagePreview]);
 
   const applyPendingCheckIn = useCallback((next: PendingCheckIn | null) => {
     pendingCheckInRef.current = next;
@@ -427,9 +478,10 @@ export function PracticeSession({
   ]);
 
   const clampedHotspots = useMemo(
-    () =>
-      practice.tracks.map((track) => {
+    () => {
+      return practice.tracks.map((track) => {
         if (imageSize.width <= 0 || imageSize.height <= 0) return track;
+        const anchorOffset = resolveHotspotAnchorOffset(bundle.book.id, bundle.book.seriesId, track.id);
         const originalCenter = {
           left: Number.parseFloat(track.left),
           top: Number.parseFloat(track.top),
@@ -437,15 +489,16 @@ export function PracticeSession({
         const center = clampHotspotCenter(originalCenter, {
           width: imageSize.width,
           height: imageSize.height,
-        }, undefined, bundle.book.seriesId === "think"
-          ? THINK_HOTSPOT_LEFT_SHIFT_PX_BY_BOOK_ID[bundle.book.id] ?? DEFAULT_THINK_HOTSPOT_LEFT_SHIFT_PX
-          : 0);
+        }, undefined,
+        anchorOffset.offsetXPx,
+        anchorOffset.offsetYPx);
         return {
           ...track,
           left: `${center.left}%`,
           top: `${center.top}%`,
         };
-      }),
+      });
+    },
     [bundle.book.id, bundle.book.seriesId, imageSize.height, imageSize.width, practice.tracks],
   );
 
@@ -1199,31 +1252,8 @@ export function PracticeSession({
     return () => clearInterval(timer);
   }, [recordingState]);
 
-  useDidShow(() => {
-    const wasHidden = pageHiddenRef.current;
-    pageHiddenRef.current = false;
-    // 后台旋转可能暂时没有有效布局；回到前台后重新读取可见阅读区。
-    if (wasHidden || isFittedLayout) {
-      if (typeof Taro.nextTick === "function") Taro.nextTick(measureBookImage);
-      else measureBookImage();
-    }
-    const visiblePractice = practiceContextRef.current;
-    if (persistReadingProgress) {
-      saveFullReadingProgress(bundle.book.id, visiblePractice.practice.imageIndex);
-    }
-    clearHiddenStopRetry();
-    // 重试可能在后台完成，返回时用同一录音的最新快照恢复路径和持久状态。
-    const latest = getPendingCheckInStore().list().find((item) => item.requestId === pendingCheckInRef.current?.requestId);
-    if (latest) {
-      applyPendingCheckIn(latest);
-      setTempRecordingPath(latest.localPath);
-    }
-    if (wasHidden) {
-      setPendingRestoreRefresh((refresh) => refresh + 1);
-    }
-  });
-
-  useDidHide(() => {
+  const handlePracticeHidden = useCallback(() => {
+    if (pageHiddenRef.current) return;
     // 权限弹窗返回前曾进过后台的点击必须作废，即使页面随后又恢复显示也不能自动开麦。
     recordingStartAttemptRef.current += 1;
     practiceSwitchAttemptRef.current += 1;
@@ -1259,9 +1289,64 @@ export function PracticeSession({
         stopRecorderWhileHidden(true);
       }
     }
+  }, [runRecorderAction, stopRecorderWhileHidden]);
+
+  useEffect(() => {
+    if (typeof Taro.onAppHide !== "function") return undefined;
+    const handleAppHide = () => {
+      // 真实切后台比原生图片预览优先，必须停止播放并暂停麦克风。
+      clearNativeImagePreview();
+      handlePracticeHidden();
+    };
+    Taro.onAppHide(handleAppHide);
+    return () => {
+      if (typeof Taro.offAppHide === "function") Taro.offAppHide(handleAppHide);
+    };
+  }, [clearNativeImagePreview, handlePracticeHidden]);
+
+  useDidShow(() => {
+    const previewSession = nativeImagePreviewRef.current;
+    if (previewSession?.didPageHide) {
+      clearNativeImagePreview(previewSession);
+    }
+    const wasHidden = pageHiddenRef.current;
+    pageHiddenRef.current = false;
+    // 后台旋转可能暂时没有有效布局；回到前台后重新读取可见阅读区。
+    if (wasHidden || isFittedLayout) {
+      if (typeof Taro.nextTick === "function") Taro.nextTick(measureBookImage);
+      else measureBookImage();
+    }
+    const visiblePractice = practiceContextRef.current;
+    if (persistReadingProgress) {
+      saveFullReadingProgress(bundle.book.id, visiblePractice.practice.imageIndex);
+    }
+    clearHiddenStopRetry();
+    // 重试可能在后台完成，返回时用同一录音的最新快照恢复路径和持久状态。
+    const latest = getPendingCheckInStore().list().find((item) => item.requestId === pendingCheckInRef.current?.requestId);
+    if (latest) {
+      applyPendingCheckIn(latest);
+      setTempRecordingPath(latest.localPath);
+    }
+    if (wasHidden) {
+      setPendingRestoreRefresh((refresh) => refresh + 1);
+    }
+  });
+
+  useDidHide(() => {
+    const previewSession = nativeImagePreviewRef.current;
+    if (previewSession) {
+      previewSession.didPageHide = true;
+      if (previewSession.resetTimer !== null) {
+        clearTimeout(previewSession.resetTimer);
+        previewSession.resetTimer = null;
+      }
+      return;
+    }
+    handlePracticeHidden();
   });
 
   useUnload(() => {
+    clearNativeImagePreview();
     recordingStartAttemptRef.current += 1;
     practiceSwitchAttemptRef.current += 1;
     pendingRestoreAttemptRef.current += 1;
@@ -1909,7 +1994,12 @@ export function PracticeSession({
             : fitImageToWidth(isFittedLayout ? bookBounds.width : phoneColumnWidth, viewportNaturalSize)
       );
   const bookViewportStyle = bookViewportSize
-    ? {
+    ? isPadPortraitLayout ? {
+        // Pad 竖屏首帧与测量后始终用同一套 CSS 几何，
+        // 避免原生 Image/Swiper 因 100% 切换为 px 而重算 aspectFit。
+        width: "100%",
+        height: "100%",
+      } : {
         width: `${bookViewportSize.width}px`,
         height: `${bookViewportSize.height}px`,
       }
@@ -2025,7 +2115,7 @@ export function PracticeSession({
               {isFittedLayout && !isLandscapeLayout && (
                 <Text
                   className='practice-book-expand device-touch-target'
-                  onClick={() => Taro.previewImage({ current: practice.imageUrl, urls: [practice.imageUrl] })}
+                  onClick={openBookImagePreview}
                 >
                   放大查看
                 </Text>
@@ -2170,7 +2260,7 @@ export function PracticeSession({
           </View>
 
           <PracticeControls fitted={isFittedLayout}>
-            <View className='practice-recorder'>
+            <View className={`practice-recorder practice-recorder--${recordingState}`}>
               <View className='practice-recorder__heading'>
                 <Text className='practice-recorder__title'>我的跟读</Text>
                 <View className='practice-recorder__heading-actions'>

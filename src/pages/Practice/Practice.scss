@@ -1049,19 +1049,105 @@ button[disabled] { opacity: 0.5; }
 // iPad 竖屏图面按阅读区宽高等比定框，完整展示整页，不增加书内滚动。
 .practice-page.practice-page--fitted.device-layout--pad:not(.practice-page--landscape) {
   .practice-header {
-    padding-bottom: 2PX;
-    &__course { font-size: 11PX; line-height: 15PX; }
-    &__section { margin-top: 2PX; font-size: 18PX; line-height: 22PX; }
-    &__progress-row { margin-top: 0; }
+    display: grid;
+    grid-template-areas: "course section" "progress progress";
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: 8PX;
+    align-items: center;
+    padding-bottom: 0;
+
+    &__course {
+      grid-area: course;
+      color: #315f50;
+      font-size: 13PX;
+      font-weight: 700;
+      line-height: 22PX;
+      white-space: nowrap;
+    }
+    &__section {
+      overflow: hidden;
+      min-width: 0;
+      grid-area: section;
+      margin-top: 0;
+      color: #193f34;
+      font-size: 18PX;
+      font-weight: 800;
+      line-height: 22PX;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    &__progress-row { grid-area: progress; margin-top: 0; }
   }
   .practice-workspace { gap: 6PX; }
   .practice-workspace__book { align-items: center; }
-  // 收紧控制区底部留白，让翻页按钮下移，并把释放的高度交给完整书页。
-  .practice-workspace__controls { height: 152PX; flex: 0 0 152PX; }
+  // 始终填满固定书区；JS 测量只计算内图和热点，不再改写外框尺寸。
+  .practice-book-viewport { position: absolute; inset: 0; }
+  // 录音区和翻页区始终保持同一高度，切换录音状态时不重新缩放书页。
+  .practice-workspace__controls { height: 104PX; flex: 0 0 104PX; }
   .practice-recorder {
-    padding: 6PX 8PX;
-    &__heading { min-height: 24PX; }
+    display: flex;
+    overflow: hidden;
+    box-sizing: border-box;
+    height: 52PX;
+    min-height: 52PX;
+    align-items: center;
+    gap: 8PX;
+    padding: 4PX 8PX;
+
+    &__heading {
+      min-width: 0;
+      min-height: 44PX;
+      flex: none;
+      gap: 6PX;
+    }
+    &__title { display: none; }
+    &__heading-actions { gap: 4PX; }
+    &__time { font-size: 11PX; }
+    &__tip {
+      overflow: hidden;
+      min-width: 0;
+      flex: 1 1 120PX;
+      margin-top: 0;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    &__retry { height: 44PX; min-height: 44PX; }
+
+    > .record-button,
+    > .recorder-status,
+    > .record-actions,
+    > .record-actions__secondary,
+    > .recording-controls { min-width: 0; flex: 1 1 0; }
+    > .record-button,
+    > .record-actions__secondary { margin-top: 0; }
   }
+  .recording-indicator {
+    overflow: hidden;
+    max-width: 180PX;
+    flex: 0 1 auto;
+    margin-top: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .recording-controls,
+  .record-actions { height: 44PX; align-items: stretch; gap: 6PX; }
+  .practice-recorder--recorded > .record-actions { flex: 0 1 42%; }
+  .practice-recorder--recorded .record-actions > .record-actions__secondary,
+  .practice-recorder--recorded .record-actions > .check-in-button { font-size: 14PX; }
+  .recording-controls .record-button,
+  .record-actions > .record-actions__secondary,
+  .record-actions > .check-in-button { height: 44PX; margin-top: 0; line-height: 44PX; }
+  .recorder-status {
+    overflow: hidden;
+    box-sizing: border-box;
+    height: 44PX;
+    margin-top: 0;
+    padding: 0 8PX;
+    line-height: 44PX;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .practice-navigation { margin-top: 8PX; }
   .practice-book-page,
   .practice-book-page__image,
   .practice-book-page__neighbor { height: 100%; }

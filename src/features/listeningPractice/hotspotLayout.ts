@@ -9,6 +9,41 @@ export type HotspotImageSize = {
 };
 
 const DEFAULT_HIT_RADIUS_PX = 22;
+const HOTSPOT_VISUAL_RADIUS_PX = 13;
+const DEFAULT_THINK_HOTSPOT_LEFT_SHIFT_PX = 8;
+const THINK_HOTSPOT_LEFT_SHIFT_PX_BY_BOOK_ID: Readonly<Record<string, number>> = {
+  "26": 22,
+};
+const CENTER_ANCHORED_HOTSPOT_IDS = new Set([
+  "3-84-0",
+  "4-140-0",
+  "4-164-0",
+  "5-134-0",
+]);
+
+/**
+ * 将各批教材的历史录点语义统一为当前圆钮中心，再叠加已确认的题目避让。
+ */
+export const resolveHotspotAnchorOffset = (
+  bookId: string,
+  seriesId: string,
+  trackId: string,
+) => {
+  if (CENTER_ANCHORED_HOTSPOT_IDS.has(trackId)) {
+    return { offsetXPx: 0, offsetYPx: 0 };
+  }
+  const numericBookId = Number.parseInt(bookId, 10);
+  if (numericBookId >= 3 && numericBookId <= 25) {
+    return { offsetXPx: HOTSPOT_VISUAL_RADIUS_PX, offsetYPx: HOTSPOT_VISUAL_RADIUS_PX };
+  }
+  if (seriesId === "think") {
+    return {
+      offsetXPx: -(THINK_HOTSPOT_LEFT_SHIFT_PX_BY_BOOK_ID[bookId] ?? DEFAULT_THINK_HOTSPOT_LEFT_SHIFT_PX),
+      offsetYPx: 0,
+    };
+  }
+  return { offsetXPx: 0, offsetYPx: 0 };
+};
 
 const clampAxis = (
   value: number,
@@ -32,20 +67,24 @@ export const clampHotspotCenter = (
   point: HotspotCenter,
   imageSize: HotspotImageSize,
   hitRadiusPx = DEFAULT_HIT_RADIUS_PX,
-  leftShiftPx = 0,
+  offsetXPx = 0,
+  offsetYPx = 0,
 ): HotspotCenter => {
   const safeRadius =
     Number.isFinite(hitRadiusPx) && hitRadiusPx >= 0
       ? hitRadiusPx
       : DEFAULT_HIT_RADIUS_PX;
-  const leftShiftPercent = Number.isFinite(leftShiftPx) && imageSize.width > 0
-    ? (Math.max(0, leftShiftPx) * 100) / imageSize.width
+  const offsetXPercent = Number.isFinite(offsetXPx) && imageSize.width > 0
+    ? (offsetXPx * 100) / imageSize.width
+    : 0;
+  const offsetYPercent = Number.isFinite(offsetYPx) && imageSize.height > 0
+    ? (offsetYPx * 100) / imageSize.height
     : 0;
 
   // 两个轴独立收敛，单轴尺寸异常不影响另一轴的合法百分比。
   return {
-    left: clampAxis(point.left - leftShiftPercent, imageSize.width, safeRadius),
-    top: clampAxis(point.top, imageSize.height, safeRadius),
+    left: clampAxis(point.left + offsetXPercent, imageSize.width, safeRadius),
+    top: clampAxis(point.top + offsetYPercent, imageSize.height, safeRadius),
   };
 };
 
