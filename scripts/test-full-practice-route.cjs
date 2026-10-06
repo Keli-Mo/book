@@ -77,17 +77,22 @@ async function run() {
   for (const book of BOOKS) {
     const images = concatImages[book.id];
     const bundle = buildFullBookPracticeBundle(book.id);
+    const visibleImages = bundle.practices.map((practice) => practice.imageUrl);
     const page = open(book.id, { page: "0" });
     let tree = page.render();
-    assert.equal(imageOf(tree), images[0], `${book.id} 从真实第一页开始，不能跳过无音频页`);
+    assert.equal(imageOf(tree), visibleImages[0], `${book.id} 从首个可见页开始，不能跳过有内容的无音频页`);
     const items = directoryOf(tree).props.groups.flatMap((group) => group.items);
-    assert.equal(items.length, images.length, `${book.id} 目录覆盖全部登记图片`);
-    assert.equal(new Set(items.map((item) => item.practiceIndex)).size, images.length);
-    for (const index of [0, Math.floor(images.length / 2), images.length - 1]) {
+    assert.equal(items.length, visibleImages.length, `${book.id} 目录覆盖全部非空白图片`);
+    assert.equal(new Set(items.map((item) => item.practiceIndex)).size, visibleImages.length);
+    if (book.id === "9") {
+      assert.equal(images.length, 189, "KET 学生书保留全部源图片登记");
+      assert.equal(visibleImages.length, 187, "KET 学生书只排除两张已核验空白图");
+    }
+    for (const index of [0, Math.floor(visibleImages.length / 2), visibleImages.length - 1]) {
       await directoryOf(tree).props.onSelect(index);
       page.render();
       tree = page.render();
-      assert.equal(imageOf(tree), images[index], `${book.id} 第 ${index + 1} 张可访问`);
+      assert.equal(imageOf(tree), visibleImages[index], `${book.id} 第 ${index + 1} 个可见页可访问`);
       assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), bundle.practices[index].pageLabel || `第 ${bundle.practices[index].pageNumber} 页`);
       assert.doesNotMatch(textOf(byClass(tree, "practice-header__progress")), /跟读训练|\d+\s*\/\s*\d+/);
     }

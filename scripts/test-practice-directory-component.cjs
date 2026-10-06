@@ -83,16 +83,14 @@ function assertExpandedGroup(tree, groups, expectedGroup) {
 }
 
 for (const route of routes) {
-  test(`${route.name}：所有章节标题显示首项页码`, () => {
+  test(`${route.name}：所有章节标题保持教材目录名称`, () => {
     const context = fixture(route);
     try {
       const tree = context.open();
       for (const group of context.groups) {
-        const firstItem = group.items[0];
-        const startLabel = firstItem.pageLabel || `第 ${firstItem.pageNumber} 页`;
         assert.equal(
           textOf(byClass(groupNode(tree, group.id), "practice-directory-group__title")),
-          `${startLabel} · ${group.title}`,
+          group.title,
         );
       }
     } finally { cleanup(context.page); }
@@ -108,6 +106,13 @@ for (const route of routes) {
       const current = itemNode(tree, currentIndex);
       assert.ok(current);
       assert.equal(hasClass(current, "practice-directory-item--active"), true);
+      const currentItem = currentGroup.items.find((item) => item.practiceIndex === currentIndex);
+      const currentPageLabel = currentItem.pageLabel || `第 ${currentItem.pageNumber} 页`;
+      assert.equal(
+        textOf(byClass(current, "practice-directory-item__page")),
+        currentItem.pageTitle ? `${currentPageLabel} · ${currentItem.pageTitle}` : currentPageLabel,
+        "教材页码及已核验的小标题应显示在具体页面卡片中",
+      );
       assert.equal(byClass(tree, "practice-directory-scroll").props.scrollIntoView, "");
       assert.match(textOf(groupNode(tree, currentGroup.id)), /当前章节/);
     } finally { cleanup(page); }
@@ -203,20 +208,44 @@ for (const route of routes) {
   });
 }
 
-test("KET Map of the units：章节标题显示真实起始页", () => {
+test("KET Unit 3：章节标题不带页码，页面卡片标注各自小标题", () => {
   const context = fixture({
-    name: "KET Map of the units",
+    name: "KET Unit 3",
     file: "src/pages/Practice/Practice.tsx",
-    params: { bookId: "9", page: "4" },
+    params: { bookId: "9", page: "22" },
   });
   try {
     const tree = context.open();
-    const mapGroup = context.groups.find((group) => group.title === "Map of the units");
-    assert.ok(mapGroup);
+    const unitGroup = context.groups.find((group) => group.title === "Unit 3: Dinner time");
+    assert.ok(unitGroup);
     assert.equal(
-      textOf(byClass(groupNode(tree, mapGroup.id), "practice-directory-group__title")),
-      "第 4 页 · Map of the units",
+      textOf(byClass(groupNode(tree, unitGroup.id), "practice-directory-group__title")),
+      "Unit 3: Dinner time",
     );
+    const firstItem = unitGroup.items[0];
+    assert.equal(
+      textOf(byClass(itemNode(tree, firstItem.practiceIndex), "practice-directory-item__page")),
+      "第 22 页 · Dinner time",
+    );
+    const nextItem = unitGroup.items[1];
+    assert.equal(
+      textOf(byClass(itemNode(tree, nextItem.practiceIndex), "practice-directory-item__page")),
+      "第 23 页 · Young chef / Vocabulary: School lunches",
+      "页面卡片不能把整个章节标题机械复制到后续页",
+    );
+  } finally { cleanup(context.page); }
+});
+
+test("KET 未核验小标题的页面只显示教材页码", () => {
+  const context = fixture({
+    name: "KET Map continuation",
+    file: "src/pages/Practice/Practice.tsx",
+    params: { bookId: "9", page: "5" },
+  });
+  try {
+    const tree = context.open();
+    const item = itemNode(tree, context.currentIndex);
+    assert.equal(textOf(byClass(item, "practice-directory-item__page")), "第 5 页");
   } finally { cleanup(context.page); }
 });
 

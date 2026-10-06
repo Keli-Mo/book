@@ -79,6 +79,19 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   assert.equal(home.navigations.at(-1), "/pages/Practice/Practice?bookId=9&practice=0");
   assert.equal(storage.get(key), legacyBook9, "首页显示旧进度不得重写存储");
 
+  const hiddenBlankProgress = { version: 2, bookId: "9", imageIndex: 2 };
+  const firstVisibleAfterBlank = buildFullBookPracticeBundle("9").practices.find((item) => item.imageIndex === 3);
+  storage.set(key, hiddenBlankProgress);
+  home.show(); tree = home.render();
+  assert.equal(
+    textOf(byClass(tree, "continue-card__progress")),
+    `${firstVisibleAfterBlank.sectionTitle} · ${firstVisibleAfterBlank.pageLabel}`,
+    "历史进度落在已删除空白页时应显示下一张非空页",
+  );
+  await byClass(tree, "continue-card__button").props.onClick();
+  assert.equal(home.navigations.at(-1), "/pages/Practice/Practice?bookId=9&page=3");
+  assert.deepEqual(storage.get(key), hiddenBlankProgress, "读取旧空白页进度不得主动改写本地存储");
+
   for (let id = 3; id <= 30; id += 1) {
     const bookId = String(id);
     const sourceBundle = buildBookPracticeBundle(bookId);

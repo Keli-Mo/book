@@ -956,7 +956,12 @@ button[disabled] { opacity: 0.5; }
   .practice-recorder__retry { padding: 0 4PX; font-size: 12PX; }
 }
 .practice-directory-item--active { border-color: #2f896c; background: #e4f3ed; }
-.practice-directory-item__page { display: block; font-size: 26rpx; font-weight: 700; }
+.practice-directory-item__page {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 26rpx;
+  font-weight: 700;
+}
 .practice-directory-item__tracks {
   display: block;
   margin-top: 8rpx;

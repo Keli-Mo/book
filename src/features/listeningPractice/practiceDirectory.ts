@@ -1,7 +1,7 @@
 import type { ListeningPractice } from "./bookPractice";
 
 // 目录仅消费页号、章节和音频数，旧教材模型无需具备完整通用训练项字段。
-type DirectoryPractice = Pick<ListeningPractice, "id" | "pageNumber" | "pageLabel" | "sectionTitle"> & {
+type DirectoryPractice = Pick<ListeningPractice, "id" | "pageNumber" | "pageLabel" | "pageTitle" | "sectionTitle"> & {
   tracks: readonly unknown[];
 };
 
@@ -10,6 +10,7 @@ export interface PracticeDirectoryItem {
   practiceIndex: number;
   pageNumber: number;
   pageLabel?: string;
+  pageTitle?: string;
   trackCount: number;
 }
 
@@ -45,6 +46,7 @@ export const buildPracticeDirectoryGroups = (
       practiceIndex,
       pageNumber: practice.pageNumber,
       ...(practice.pageLabel ? { pageLabel: practice.pageLabel } : {}),
+      ...(practice.pageTitle ? { pageTitle: practice.pageTitle } : {}),
       trackCount: practice.tracks.length,
     });
   });

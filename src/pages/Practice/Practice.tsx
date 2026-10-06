@@ -3,6 +3,7 @@ import Taro, { useRouter } from "@tarojs/taro";
 import { useMemo, useRef } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { buildBookPracticeBundle, buildFullBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
+import { findVisibleBookPageIndex } from "@/features/listeningPractice/bookPageVisibility";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import CheckInNavigation from "../CheckInDetail/CheckInNavigation";
@@ -34,7 +35,11 @@ export default function Practice() {
       const imageIndex = rawPageIndex !== undefined
         ? index
         : buildBookPracticeBundle(bookId)?.practices[index]?.imageIndex;
-      const practiceIndex = bundle.practices.findIndex((practice) => practice.imageIndex === imageIndex);
+      const practiceIndex = findVisibleBookPageIndex(
+        bookId,
+        bundle.practices,
+        imageIndex ?? -1,
+      );
       if (!Number.isSafeInteger(index) || practiceIndex < 0) {
         throw new Error("训练编号超出本书范围，请重新选择教材");
       }

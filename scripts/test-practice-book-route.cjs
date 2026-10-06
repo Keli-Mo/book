@@ -661,6 +661,20 @@ async function testRoutes() {
   assert.doesNotMatch(textOf(byClass(ketTree, "practice-header__progress")), /跟读训练|\d+\s*\/\s*\d+/);
   ketPage.dispose();
 
+  const ketFrontBlank = createPage("src/pages/Practice/Practice.tsx", { bookId: "9", page: "2" });
+  let ketBlankTree = ketFrontBlank.render();
+  assert.match(byClass(ketBlankTree, "practice-book-page__image").props.src, /_4\.png(?:\?|$)/,
+    "旧链接指向前置空白页时应落到下一张非空页，且不改变源图片索引");
+  assert.equal(textOf(byClass(ketBlankTree, "practice-header__progress")).trim(), "第 3 页");
+  ketFrontBlank.dispose();
+
+  const ketTrailingBlank = createPage("src/pages/Practice/Practice.tsx", { bookId: "9", page: "188" });
+  ketBlankTree = ketTrailingBlank.render();
+  assert.match(byClass(ketBlankTree, "practice-book-page__image").props.src, /_188\.png(?:\?|$)/,
+    "旧链接指向末尾空白页时应落到上一张非空页");
+  assert.equal(textOf(byClass(ketBlankTree, "practice-header__progress")).trim(), "第 187 页");
+  ketTrailingBlank.dispose();
+
   assert.equal(fs.existsSync(path.join(projectRoot, "src/features/listeningPractice/book3Practice.ts")), false, "固定 CASA 死文件应在替换引用后删除");
   for (const bookId of ["3", "22", "25"]) {
     const bundle = buildFullBookPracticeBundle(bookId);

@@ -6,7 +6,7 @@ const { BOOKS } = load("src/features/bookLibrary/bookCatalog.ts");
 const { buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 const { buildPracticeDirectoryGroups, findPracticeDirectoryGroupId } = load("src/features/listeningPractice/practiceDirectory.ts");
 
-test("KET 学生书的完整目录保持全部 40 个边界和 189 页顺序", () => {
+test("KET 学生书的完整目录保持全部 40 个边界和 187 个非空页顺序", () => {
   const bundle = buildFullBookPracticeBundle("9");
   const groups = buildPracticeDirectoryGroups(bundle.practices);
   const expectedStarts = [
@@ -51,9 +51,12 @@ test("KET 学生书的完整目录保持全部 40 个边界和 189 页顺序", (
     ["Answer key and audio scripts", 151],
     ["Acknowledgements", 186],
   ];
-  assert.deepEqual(groups.map((group) => [group.title, group.items[0].practiceIndex]), expectedStarts);
+  assert.deepEqual(
+    groups.map((group) => [group.title, bundle.practices[group.items[0].practiceIndex].imageIndex]),
+    expectedStarts,
+  );
   const items = groups.flatMap((group) => group.items);
-  assert.equal(items.length, 189);
+  assert.equal(items.length, 187);
   assert.deepEqual(items.map((item) => item.id), bundle.practices.map((page) => page.id));
   assert.deepEqual(items.map((item) => item.practiceIndex), bundle.practices.map((_, index) => index));
 });
@@ -71,7 +74,7 @@ test("KET 练习册的重复 Vocabulary extra 必须留在各自章节位置", (
     "翻到后续词汇页再开目录，应定位本页所在小节");
 });
 
-test("29 册 4958 页目录展开后与整本翻页顺序完全相同", () => {
+test("29 册 4956 个非空页目录展开后与整本翻页顺序完全相同", () => {
   let totalPages = 0;
   for (const book of BOOKS) {
     const bundle = buildFullBookPracticeBundle(book.id);
@@ -89,7 +92,7 @@ test("29 册 4958 页目录展开后与整本翻页顺序完全相同", () => {
     totalPages += items.length;
   }
   assert.equal(BOOKS.length, 29);
-  assert.equal(totalPages, 4958);
+  assert.equal(totalPages, 4956);
 });
 
 test("仅连续同名页面共享分组，隔章重复标题不会倒序合并", () => {

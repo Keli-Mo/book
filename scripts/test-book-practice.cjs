@@ -60,6 +60,8 @@ const loadBookPracticeModule = (overrides = {}) => {
     if (Object.hasOwn(overrides, request)) return overrides[request];
     const filenameByRequest = {
       "@/features/listeningPractice/bookPageLabel": "src/features/listeningPractice/bookPageLabel.ts",
+      "@/features/listeningPractice/bookPageTitle": "src/features/listeningPractice/bookPageTitle.ts",
+      "@/features/listeningPractice/bookPageVisibility": "src/features/listeningPractice/bookPageVisibility.ts",
       "@/features/bookLibrary/bookCatalog": "src/features/bookLibrary/bookCatalog.ts",
       "@/pages/BookDetail/Components/BookPreview/constants/images": "src/pages/BookDetail/Components/BookPreview/constants/images.ts",
       "@/pages/BookDetail/Components/BookPreview/constants/audioList": "src/pages/BookDetail/Components/BookPreview/constants/audioList.ts",

@@ -34,6 +34,7 @@ const practices = [
   {
     id: "p1",
     pageNumber: 4,
+    pageTitle: "Unit 1 课文",
     sectionTitle: "Unit 1 课文",
     tracks: [{}, {}],
   },
@@ -46,12 +47,14 @@ const practices = [
   {
     id: "p3",
     pageNumber: 12,
+    pageTitle: "Unit 1 练习",
     sectionTitle: "Unit 1 练习",
     tracks: [{}],
   },
   {
     id: "p4",
     pageNumber: 25,
+    pageTitle: "Unit 2 课文",
     sectionTitle: "Unit 2 课文",
     tracks: [{}, {}, {}],
   },
@@ -64,7 +67,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(groups)), [
     id: "practice-directory-group-0",
     title: "Unit 1 课文",
     items: [
-      { id: "p1", practiceIndex: 0, pageNumber: 4, trackCount: 2 },
+      { id: "p1", practiceIndex: 0, pageNumber: 4, pageTitle: "Unit 1 课文", trackCount: 2 },
       { id: "p2", practiceIndex: 1, pageNumber: 5, trackCount: 1 },
     ],
   },
@@ -72,14 +75,14 @@ assert.deepEqual(JSON.parse(JSON.stringify(groups)), [
     id: "practice-directory-group-1",
     title: "Unit 1 练习",
     items: [
-      { id: "p3", practiceIndex: 2, pageNumber: 12, trackCount: 1 },
+      { id: "p3", practiceIndex: 2, pageNumber: 12, pageTitle: "Unit 1 练习", trackCount: 1 },
     ],
   },
   {
     id: "practice-directory-group-2",
     title: "Unit 2 课文",
     items: [
-      { id: "p4", practiceIndex: 3, pageNumber: 25, trackCount: 3 },
+      { id: "p4", practiceIndex: 3, pageNumber: 25, pageTitle: "Unit 2 课文", trackCount: 3 },
     ],
   },
 ]);
@@ -88,6 +91,16 @@ assert.equal(
   "practice-directory-group-1"
 );
 assert.equal(findPracticeDirectoryGroupId(groups, 999), "");
+
+const introGroups = buildPracticeDirectoryGroups([{
+  id: "cover",
+  pageNumber: 0,
+  pageLabel: "封面",
+  sectionTitle: "课程导入",
+  tracks: [],
+}]);
+assert.equal("pageTitle" in introGroups[0].items[0], false,
+  "系统生成的课程导入占位不能冒充教材小标题");
 
 const { buildBookPracticeBundle } = require("./test-practice-book-route.cjs");
 for (const bookId of ["3", "22", "25"]) {

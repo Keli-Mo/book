@@ -136,10 +136,6 @@ function DirectoryContents({
           }}
         >
           {groups.map((group) => {
-            const firstItem = group.items[0];
-            const displayTitle = firstItem
-              ? `${firstItem.pageLabel || `第 ${firstItem.pageNumber} 页`} · ${group.title}`
-              : group.title;
             return (
               <View
                 id={group.id}
@@ -158,7 +154,7 @@ function DirectoryContents({
                 >
                   <View className='practice-directory-group__heading'>
                     <Text className='practice-directory-group__title'>
-                      {displayTitle}
+                      {group.title}
                     </Text>
                     {group.id === currentGroupId && (
                       <Text className='practice-directory-group__current'>当前章节</Text>
@@ -183,6 +179,7 @@ function DirectoryContents({
                       >
                         <Text className='practice-directory-item__page'>
                           {item.pageLabel || `第 ${item.pageNumber} 页`}
+                          {item.pageTitle ? ` · ${item.pageTitle}` : ""}
                         </Text>
                         <Text className='practice-directory-item__tracks'>
                           {item.practiceIndex === currentPracticeIndex ? "当前页 · " : ""}

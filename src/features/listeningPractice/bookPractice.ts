@@ -6,6 +6,8 @@ import { allAudioList } from "@/pages/BookDetail/Components/BookPreview/constant
 import { catalogLists } from "@/pages/BookDetail/Components/BookPreview/constants/catalogList";
 import { concatImages } from "@/pages/BookDetail/Components/BookPreview/constants/images";
 import { resolveBookPageLabel } from "@/features/listeningPractice/bookPageLabel";
+import { resolveBookPageTitle } from "@/features/listeningPractice/bookPageTitle";
+import { isBookPageVisible } from "@/features/listeningPractice/bookPageVisibility";
 
 export const DEFAULT_BOOK_ID = "3";
 
@@ -35,6 +37,7 @@ export type ListeningPractice = {
   imageIndex: number;
   pageNumber: number;
   pageLabel?: string;
+  pageTitle?: string;
   imageUrl: string;
   sectionTitle: string;
   tracks: PracticeTrack[];
@@ -342,9 +345,16 @@ export const buildFullBookPracticeBundle = (
     // 非数字图片已经过封面白名单校验；Think 的数字 0 同样表示封面。
     const pageNumber = parseImagePageNumber(imageUrl) ?? 0;
     const pageLabel = resolveBookPageLabel(bookId, imageIndex, pageNumber);
+    const pageTitle = resolveBookPageTitle(bookId, imageIndex);
     const audioPractice = originalByImageIndex.get(imageIndex);
     if (audioPractice) {
-      return pageLabel ? { ...audioPractice, pageLabel } : audioPractice;
+      return pageLabel || pageTitle
+        ? {
+            ...audioPractice,
+            ...(pageLabel ? { pageLabel } : {}),
+            ...(pageTitle ? { pageTitle } : {}),
+          }
+        : audioPractice;
     }
 
     return {
@@ -353,10 +363,11 @@ export const buildFullBookPracticeBundle = (
       imageIndex,
       pageNumber,
       ...(pageLabel ? { pageLabel } : {}),
+      ...(pageTitle ? { pageTitle } : {}),
       imageUrl,
       sectionTitle: getSectionTitle(catalog, imageIndex),
       tracks: [],
     };
-  });
+  }).filter((practice) => isBookPageVisible(bookId, practice.imageIndex));
   return freezeBundle(original.book, practices);
 };

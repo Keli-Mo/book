@@ -2,19 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 跟读页只显示教材真实页标签，并把剑桥 KET 综合教程学生用书的训练目录按教材目录细分，分组标题采用“第 4 页 · Map of the units”格式。
+**Goal:** 跟读页显示教材真实页标签，把剑桥 KET 综合教程学生用书的训练目录按教材目录细分；分组标题沿用教材目录名称，页面卡片显示真实页码和已逐页核验的小标题，并从阅读流程排除纯空白页。
 
-**Architecture:** 保留 `pageNumber`、`imageIndex`、练习 ID、图片 URL 和音频映射作为稳定资源身份，新增集中式 `pageLabel` 解析器只负责展示。`buildFullBookPracticeBundle` 为有音频页和无音频页统一附加展示标签；目录继续使用现有扁平分组模型，通过准确的 `catalogLists["9"]` 起始节点产生更细分组。
+**Architecture:** 保留 `pageNumber`、`imageIndex`、练习 ID、图片 URL 和音频映射作为稳定资源身份，集中解析 `pageLabel`、逐页核验的 `pageTitle` 和可见性。`buildFullBookPracticeBundle` 为有音频页和无音频页统一附加展示字段，并按稳定 `imageIndex` 过滤已确认的纯空白图；目录继续使用现有扁平分组模型，通过准确的 `catalogLists["9"]` 起始节点产生更细分组。
 
 **Tech Stack:** TypeScript、React 18、Taro 4、Node.js `node:test` 与现有自定义源码加载测试工具。
 
 ## Global Constraints
 
 - 本阶段只完整处理 book ID `9`；其他教材没有可靠目录依据时不得猜测标题或页码偏移。
-- `pageNumber`、`imageIndex`、练习 ID、图片 URL、音频键、热点坐标和训练顺序必须保持不变。
-- book ID `9` 的标签规则固定为：索引 0=`封面`、1=`扉页`、2=`空白页`、索引大于等于 3=`第 ${imageIndex} 页`。
+- `pageNumber`、`imageIndex`、练习 ID、图片 URL、音频键和热点坐标必须保持原始资源身份；过滤空白页后其余页面不重新编号。
+- book ID `9` 的标签规则固定为：索引 0=`封面`、1=`扉页`、索引大于等于 3=`第 ${imageIndex} 页`；索引 2 和 188 是已逐张核验的纯空白图，不进入可见练习。
 - 顶部只显示当前 `pageLabel`；无已核验标签时回退为 `第 ${pageNumber} 页`，不得显示“跟读训练”或当前位置/总页数。
-- 目录分组标题统一为“分组首项真实页标签 · 教材目录标题”，例如 `第 4 页 · Map of the units`。
+- 目录分组标题只显示教材目录名称，例如 `Map of the units`。页面卡片显示 `第 N 页`；该页存在已核验小标题时显示 `第 N 页 · 小标题`，不得把分组标题复制到组内每一页。
 - 保留目录折叠、逐页卡片、当前页标记、“定位当前页”和历史回跳行为。
 - 所有生产代码改动都先有会按预期失败的测试，再写最小实现。
 - 仅本地提交，不推送远程。
@@ -40,10 +40,12 @@
 const ketStudentBook = buildFullBookPracticeBundle("9");
 assert.equal(ketStudentBook.practices[0].pageLabel, "封面");
 assert.equal(ketStudentBook.practices[1].pageLabel, "扉页");
-assert.equal(ketStudentBook.practices[2].pageLabel, "空白页");
-assert.equal(ketStudentBook.practices[3].pageLabel, "第 3 页");
+assert.equal(ketStudentBook.practices.some((page) => page.imageIndex === 2), false);
+assert.equal(ketStudentBook.practices.some((page) => page.imageIndex === 188), false);
+assert.equal(ketStudentBook.practices[2].imageIndex, 3);
+assert.equal(ketStudentBook.practices[2].pageLabel, "第 3 页");
 
-const printedPage7 = ketStudentBook.practices[7];
+const printedPage7 = ketStudentBook.practices.find((page) => page.imageIndex === 7);
 assert.equal(printedPage7.pageNumber, 8);
 assert.equal(printedPage7.id, "9-page-8");
 assert.match(printedPage7.imageUrl, /_8\.png(?:\?|$)/);
@@ -106,7 +108,7 @@ if (audioPractice) {
 
 Run: `node scripts/test-full-book-practice.cjs`
 
-Expected: PASS，仍报告 29 册、4,958 页、1,694 个音频页和 2,640 段音轨。
+Expected: PASS，报告 29 册、4,956 个可见页、1,694 个音频页和 2,640 段音轨；源图片清单仍为 4,958 张。
 
 - [ ] **Step 5: Commit Task 1**
 
@@ -255,9 +257,13 @@ const expectedStarts = [
 for (const [title, imageIndex] of expectedStarts) {
   const group = ketGroups.find((item) => item.title === title);
   assert.ok(group, title);
-  assert.equal(group.items[0].practiceIndex, imageIndex, title);
+  assert.equal(
+    ketBundle.practices[group.items[0].practiceIndex].imageIndex,
+    imageIndex,
+    title,
+  );
 }
-assert.equal(ketGroups.flatMap((group) => group.items).length, 189);
+assert.equal(ketGroups.flatMap((group) => group.items).length, 187);
 assert.deepEqual(
   ketGroups.flatMap((group) => group.items).map((item) => item.id),
   ketBundle.practices.map((page) => page.id),
@@ -302,7 +308,7 @@ Expected: FAIL with missing `Map of the units` or the first missing review group
 
 Run: `node --test scripts/test-full-book-directory.cjs`
 
-Expected: PASS，book `9` 仍有 189 页且逐页 ID 顺序完全一致。
+Expected: PASS，book `9` 的 189 张源图中排除 2 张空白图后有 187 个可见页；其余页面保持原始 ID、索引和顺序。
 
 - [ ] **Step 5: Commit Task 3**
 
@@ -313,17 +319,17 @@ git commit -m "feat: 细分 KET 学生书目录"
 
 ---
 
-### Task 4: 目录分组标题显示真实起始页
+### Task 4: 目录分组标题沿用教材名称，具体页面显示真实页码
 
 **Files:**
 - Modify: `src/pages/Practice/PracticeDirectory.tsx:145-170`
 - Test: `scripts/test-practice-directory-component.cjs`
 
 **Interfaces:**
-- Consumes: `PracticeDirectoryGroup.items[0].pageLabel` 和既有 `group.title`
-- Produces: 分组标题 `${startPageLabel} · ${group.title}`
+- Consumes: 既有 `group.title` 和每个目录项的 `pageLabel`、`pageTitle`
+- Produces: 分组标题 `group.title`；页面卡片显示页码，并按需追加已核验的页内小标题
 
-- [ ] **Step 1: Add the exact heading format test**
+- [ ] **Step 1: Add the exact heading and page-card tests**
 
 在 `scripts/test-practice-directory-component.cjs` 增加 book `9`、当前页索引 `4` 的渲染断言：
 
@@ -339,6 +345,10 @@ try {
   assert.ok(mapGroup);
   assert.equal(
     textOf(byClass(groupNode(tree, mapGroup.id), "practice-directory-group__title")),
+    "Map of the units",
+  );
+  assert.equal(
+    textOf(byClass(itemNode(tree, mapGroup.items[0].practiceIndex), "practice-directory-item__page")),
     "第 4 页 · Map of the units",
   );
 } finally {
@@ -346,15 +356,13 @@ try {
 }
 ```
 
-同时遍历现有 route fixture 的所有分组，按首项计算预期标题，覆盖没有 `pageLabel` 时的回退：
+同时遍历现有 route fixture 的所有分组，验证标题原样显示，并在展开后的具体页面卡片验证 `pageLabel` 优先、`pageNumber` 回退、`pageTitle` 仅在明确存在时追加：
 
 ```js
 for (const group of context.groups) {
-  const firstItem = group.items[0];
-  const startLabel = firstItem.pageLabel || `第 ${firstItem.pageNumber} 页`;
   assert.equal(
     textOf(byClass(groupNode(tree, group.id), "practice-directory-group__title")),
-    `${startLabel} · ${group.title}`,
+    group.title,
   );
 }
 ```
@@ -363,40 +371,36 @@ for (const group of context.groups) {
 
 Run: `node scripts/test-practice-directory-component.cjs`
 
-Expected: FAIL because the group heading currently renders only `group.title`.
+Expected: FAIL if a group heading still prefixes `第 xx 页 ·`.
 
-- [ ] **Step 3: Prefix every group title with its first item page label**
+- [ ] **Step 3: Render the original group title and keep labels on page cards**
 
-在 `PracticeDirectory.tsx` 计算分组起始标签：
-
-```tsx
-const firstItem = group.items[0];
-const displayTitle = firstItem
-  ? `${firstItem.pageLabel || `第 ${firstItem.pageNumber} 页`} · ${group.title}`
-  : group.title;
-```
-
-把标题节点改成：
+分组标题节点直接使用教材目录名称：
 
 ```tsx
 <Text className='practice-directory-group__title'>
-  {displayTitle}
+  {group.title}
 </Text>
 ```
 
-若分组为空则只显示 `group.title`，避免渲染 `undefined`；正常构建出的分组始终至少包含一项。
+具体页面卡片继续使用：
+
+```tsx
+{item.pageLabel || `第 ${item.pageNumber} 页`}
+{item.pageTitle ? ` · ${item.pageTitle}` : ""}
+```
 
 - [ ] **Step 4: Run the component test and verify GREEN**
 
 Run: `node scripts/test-practice-directory-component.cjs`
 
-Expected: all component directory interaction tests PASS and the exact heading assertion passes.
+Expected: all component directory interaction tests PASS; KET 分组标题为 `Map of the units`，对应页面卡片为 `第 4 页 · Map of the units`；Unit 3 页面卡片按逐页核验结果显示，未核验页不追加标题。
 
 - [ ] **Step 5: Commit Task 4**
 
 ```powershell
 git add -- src/pages/Practice/PracticeDirectory.tsx scripts/test-practice-directory-component.cjs
-git commit -m "feat: 目录标题显示教材起始页"
+git commit -m "fix: restore directory group titles"
 ```
 
 ---
@@ -456,9 +460,10 @@ Review the complete branch diff against `docs/superpowers/specs/2026-10-06-pract
 
 ```text
 第 7 页
-第 4 页 · Map of the units
-第 14 页 · Unit 2: We're going home
-第 20 页 · Vocabulary and grammar review 1
+Map of the units
+Unit 2: We're going home
+Vocabulary and grammar review 1
+展开后的页面卡片：第 4 页 · Map of the units、第 22 页 · Dinner time、第 23 页 · Young chef / Vocabulary: School lunches
 ```
 
-Confirm `9-page-8`, resource `pageNumber=8`, image URL `_8.png`, all audio tracks, and total page count remain stable.
+Confirm `9-page-8`, resource `pageNumber=8`, image URL `_8.png` and all audio tracks remain stable；确认源图片仍为 189 张、可见页为 187 页，旧链接和旧进度指向被过滤空白页时会落到相邻内容页。

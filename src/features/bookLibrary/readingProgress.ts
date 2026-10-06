@@ -4,6 +4,7 @@ import {
   buildFullBookPracticeBundle,
   type ListeningPractice,
 } from "@/features/listeningPractice/bookPractice";
+import { findVisibleBookPageIndex } from "@/features/listeningPractice/bookPageVisibility";
 
 export type LegacyReadingProgress = {
   version: 1;
@@ -39,7 +40,9 @@ const resolveProgress = (value: unknown) => {
     if (!bundle) return null;
     const indexedPractice = candidate.version === 1
       ? bundle.practices[index]
-      : bundle.practices.find((item) => item.imageIndex === index);
+      : bundle.practices[
+          findVisibleBookPageIndex(candidate.bookId, bundle.practices, index)
+        ];
     if (!indexedPractice) return null;
     const practice = candidate.version === 1
       ? buildFullBookPracticeBundle(candidate.bookId)?.practices.find((item) => item.id === indexedPractice.id)
@@ -47,7 +50,7 @@ const resolveProgress = (value: unknown) => {
     if (!practice) return null;
     const progress: ReadingProgress = candidate.version === 1
       ? { version: 1, bookId: candidate.bookId, practiceIndex: index }
-      : { version: 2, bookId: candidate.bookId, imageIndex: index };
+      : { version: 2, bookId: candidate.bookId, imageIndex: practice.imageIndex };
     return { progress, practice, isThink: bundle.book.seriesId === "think" };
   } catch (_error) {
     return null;
