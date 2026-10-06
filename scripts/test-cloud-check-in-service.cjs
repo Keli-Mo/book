@@ -12,10 +12,14 @@ function harness() {
   const controls = { response: { ok: true, data: { id: "id", shareToken: "token" } }, error: null, infoError: null, throwUpload: null };
   const task = { abort() { this.aborted = true; }, onProgressUpdate(callback) { this.progress = callback; } };
   const wx = {
-    getFileInfo(options) {
-      infoCalls.push(options);
-      if (controls.infoError) options.fail(controls.infoError);
-      else options.success(controls.infoResult || { size: 1000, digest: "A".repeat(40) });
+    getFileSystemManager() {
+      return {
+        getFileInfo(options) {
+          infoCalls.push(options);
+          if (controls.infoError) options.fail(controls.infoError);
+          else options.success(controls.infoResult || { size: 1000, digest: "A".repeat(40) });
+        },
+      };
     },
     cloud: {
       async callFunction({ name, data }) { calls.push({ name, data }); if (controls.error) throw controls.error; return { result: controls.response }; },
@@ -83,7 +87,7 @@ test("新协议与原生 SHA1 接口存在", async () => {
   for (const name of ["prepareCheckIn", "commitCheckIn", "getCheckInRecordingInfo", "startPreparedCheckInUpload"])
     assert.equal(typeof api[name], "function", `${name} 必须导出`);
 });
-test("原生 getFileInfo 使用 sha1 和实际 saved 路径", async () => {
+test("文件管理器 getFileInfo 使用 sha1 和实际 saved 路径", async () => {
   const h = harness();
   assert.deepEqual(plain(await h.api.getCheckInRecordingInfo("/saved/record.mp3")), { fileSizeBytes: 1000, contentSha1: "a".repeat(40) });
   assert.equal(h.infoCalls[0].filePath, "/saved/record.mp3"); assert.equal(h.infoCalls[0].digestAlgorithm, "sha1");

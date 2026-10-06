@@ -82,6 +82,14 @@ export type CheckInSubmissionCoordinatorAdapters = {
 type SubmitOptions = { onProgress?: (progress: SubmissionProgress) => void };
 type Phase = "idle" | "preparing" | "uploading" | "backoff" | "persisting" | "committing" | "done";
 const RETRY_DELAYS_MS = [1000, 3000];
+const MAX_RECORDING_DURATION_MS = 300_000;
+const MAX_NATIVE_DURATION_OVERSHOOT_MS = 5_000;
+
+const normalizeCloudDurationMs = (durationMs: number) =>
+  durationMs > MAX_RECORDING_DURATION_MS &&
+  durationMs <= MAX_RECORDING_DURATION_MS + MAX_NATIVE_DURATION_OVERSHOOT_MS
+    ? MAX_RECORDING_DURATION_MS
+    : durationMs;
 
 const createError = (code: string, message: string) =>
   Object.assign(new Error(message), { code });
@@ -223,7 +231,9 @@ export const createCheckInSubmissionCoordinator = (adapters: CheckInSubmissionCo
       shareVersion: 2 as const,
       fileSizeBytes: recording.fileSizeBytes,
       contentSha1: recording.contentSha1.toLowerCase(),
-      durationMs: pending.durationMs,
+      // RecorderManager 到达配置上限后的 onStop 可能晚少量毫秒；仅在云协议边界收窄该误差，
+      // 保留本机原始元数据，明显超长的值继续由服务端严格拒绝。
+      durationMs: normalizeCloudDurationMs(pending.durationMs),
       bookId: pending.context.bookId,
       bookTitle: pending.context.bookTitle,
       practiceId: pending.context.practiceId,

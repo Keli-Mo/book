@@ -156,6 +156,26 @@ test("实际文件指纹和规范 request/snapshot 贯穿提交", async () => {
   assert.equal(h.calls[5][1].recordingFileId, "cloud://test.bucket/checkins/fresh.mp3");
 });
 
+test("原生五分钟自动停止五秒内超时只在云提交边界归一化", async () => {
+  for (const durationMs of [300119, 304999, 305000]) {
+    const slightOvershoot = harness();
+    assert.equal((await slightOvershoot.submit(item({ durationMs })).promise).state, "committed");
+    const prepared = slightOvershoot.calls.find(call => call[0] === "prepare")[1];
+    const committed = slightOvershoot.calls.find(call => call[0] === "commit")[1];
+    assert.equal(prepared.durationMs, 300000, "原生 max-duration 的五秒内调度误差应按配置上限提交");
+    assert.equal(committed.durationMs, 300000, "prepare 与 commit 必须使用同一个规范时长");
+    assert.equal(slightOvershoot.values.get(item().requestId).durationMs, durationMs, "不得改写本机保存的原始元数据");
+  }
+
+  const excessive = harness();
+  assert.equal((await excessive.submit(item({ durationMs: 305001 })).promise).state, "committed");
+  assert.equal(
+    excessive.calls.find(call => call[0] === "prepare")[1].durationMs,
+    305001,
+    "超过窄容差的录音必须交给云端严格拒绝，不得静默截断",
+  );
+});
+
 test("大写分享代次发送云端时规范为小写", async () => {
   const h = harness();
   const result = await h.submit(item({ shareRequestId: "A".repeat(32) })).promise;

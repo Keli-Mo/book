@@ -507,7 +507,7 @@ test("prepare 只读、大小写与规范化载荷", async () => {
 test("非法参数、缺身份零副作用", async () => {
   const h = harness();
   for (const change of [{ requestId: "../bad" }, { requestId: "" }, { requestId: "a".repeat(33) }, { contentSha1: "bad" },
-    { durationMs: NaN }, { durationMs: 499 }, { fileSizeBytes: 0 }, { fileSizeBytes: 1.5 }, { practiceIndex: -1 }, { bookId: "" }]) {
+    { durationMs: NaN }, { durationMs: 499 }, { durationMs: 300001 }, { fileSizeBytes: 0 }, { fileSizeBytes: 1.5 }, { practiceIndex: -1 }, { bookId: "" }]) {
     const r = await h.call("prepare", input(change)); assert.equal(r.ok, false); assert.ok(r.code); assert.ok(r.message);
   }
   h.controls.owner = ""; assert.equal((await h.call("prepare", input())).ok, false);

@@ -25,8 +25,8 @@ function setup(options = {}) {
     cloud: { async callFunction({ data }) { calls.push(data); if (options.offline) throw new Error('network offline'); if (options.denied) return { result: { ok: false, code: 'NOT_OWNER' } }; return { result: { ok: true, data: options.source || { id: 'owner-share', recordingUrl: 'https://private.example/audio?token=secret', fileSizeBytes: 100, contentSha1: sha } } }; } },
     downloadFile(opts) { download = opts; return { abort() { aborted++; }, onProgressUpdate(callback) { progress = callback; } }; },
     saveFile({ tempFilePath, success, fail }) { if (!files.has(tempFilePath)) return fail({ code: 'ENOENT' }); const savedFilePath = `wxfile://recovered-${savedPaths.length}.mp3`; savedPaths.push(tempFilePath); files.set(savedFilePath, files.get(tempFilePath)); files.delete(tempFilePath); success({ savedFilePath }); },
-    getFileInfo({ filePath, success, fail }) { const info = files.get(filePath); if (control.failInfo || (control.failSavedInfo && filePath.includes('recovered')) || !info) fail({ errCode: 1300002, errMsg: 'private path ENOENT' }); else success(info); },
     getFileSystemManager() { return {
+      getFileInfo({ filePath, success, fail }) { const info = files.get(filePath); if (control.failInfo || (control.failSavedInfo && filePath.includes('recovered')) || !info) fail({ errCode: 1300002, errMsg: 'private path ENOENT' }); else success(info); },
       access({ path: p, success, fail }) { files.has(p) ? success({}) : fail({ errCode: 1300002 }); },
       getSavedFileList({ success }) { success({ fileList: [{ filePath: 'wxfile://unindexed', size: control.usage }] }); },
       unlink({ filePath, success }) { removed.push(filePath); files.delete(filePath); success({}); },

@@ -98,11 +98,13 @@ const wx = { cloud: {
     queueMicrotask(() => success({ fileID }));
     return { abort() {}, onProgressUpdate() {} };
   },
-}, getFileInfo({ filePath, success, fail }) {
-  const content = localFiles.get(filePath);
-  if (!content) return fail({ code: 'ENOENT' });
-  success({ size: content.length, digest: crypto.createHash('sha1').update(content).digest('hex') });
-} };
+}, getFileSystemManager() { return {
+  getFileInfo({ filePath, success, fail }) {
+    const content = localFiles.get(filePath);
+    if (!content) return fail({ code: 'ENOENT' });
+    success({ size: content.length, digest: crypto.createHash('sha1').update(content).digest('hex') });
+  },
+}; } };
 const load = relative => {
   const mod = { exports: {} };
   const source = ts.transpileModule(fs.readFileSync(path.join(root, relative), 'utf8'), {
@@ -327,8 +329,10 @@ const createCoordinator = pendingStore => createCheckInSubmissionCoordinator({
   }
 
   const appConfig = fs.readFileSync(path.join(root, 'src/app.config.ts'), 'utf8');
+  const practiceSession = fs.readFileSync(path.join(root, 'src/pages/Practice/PracticeSession.tsx'), 'utf8');
   assert.ok(counters.downloads > 0, '真实 helper 必须确实执行 HTTPS 流');
   assert.equal(reader.timers.size, 0);
-  assert.match(appConfig, /点击分享后才会上传云端/, '麦克风用途应与新上传手势一致');
+  assert.doesNotMatch(appConfig, /["']scope\.record["']\s*:/, 'app.json.permission 不得声明无效的 scope.record');
+  assert.match(practiceSession, /跟读录音只会在你点击分享后上传/, '运行时麦克风用途提示应与新上传手势一致');
   console.log('本地分享集成通过：完成零联网、重启恢复、好友口令鉴权、30天过期重传、丢回包/本地回写失败幂等恢复、旧协议拦截、脱敏日志接线、本地不删除。');
 })().catch(error => { console.error(error); process.exitCode = 1; });

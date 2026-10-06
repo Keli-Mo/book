@@ -88,15 +88,15 @@ const wx = {
     if (files.delete(filePath)) success({});
     else fail({ errCode: 1300002, errMsg: "removeSavedFile:fail file not exist" });
   },
-  getFileInfo({ filePath, digestAlgorithm, success, fail }) {
-    infoPaths.push(filePath);
-    assert.equal(files.has(filePath), true, "读取指纹时必须已完成 saveFile");
-    assert.equal(digestAlgorithm, "sha1");
-    if (infoError) fail(infoError);
-    else success({ size: 4107, digest: "A".repeat(40) });
-  },
   getFileSystemManager() {
     return {
+      getFileInfo({ filePath, digestAlgorithm, success, fail }) {
+        infoPaths.push(filePath);
+        assert.equal(files.has(filePath), true, "读取指纹时必须已完成 saveFile");
+        assert.equal(digestAlgorithm, "sha1");
+        if (infoError) fail(infoError);
+        else success({ size: 4107, digest: "A".repeat(40) });
+      },
       getSavedFileList({ success, fail }) {
         if (savedFileListError) fail(savedFileListError);
         else success({ fileList: savedFileEntries });
@@ -284,6 +284,13 @@ const runtime = compile(
   assert.equal(logs[logStart][1].reason, "permission_denied");
   assert.equal(logs[logStart][1].code, "EACCES");
   assert.equal(JSON.stringify(logs.slice(logStart)).includes("secret"), false);
+  runtime.logRecordingDiagnostic("share.preparing.failed", { requestId: "c".repeat(32), error: {
+    code: "INVALID_ARGUMENT", message: "提交的信息格式不正确，请重试", payload: "private-payload",
+  } });
+  assert.equal(logs[logStart + 1][1].recording, "c".repeat(8));
+  assert.equal(logs[logStart + 1][1].code, "INVALID_ARGUMENT", "已知业务错误码必须保留，便于定位准备阶段失败");
+  assert.equal(logs[logStart + 1][1].reason, "invalid_argument");
+  assert.equal(JSON.stringify(logs.slice(logStart)).includes("private-payload"), false);
   const originalWarn = diagnosticConsole.warn;
   diagnosticConsole.warn = () => { throw new Error("console unavailable"); };
   assert.doesNotThrow(() => runtime.logRecordingDiagnostic("delete.unexpected.failed", { error: new Error("test") }));

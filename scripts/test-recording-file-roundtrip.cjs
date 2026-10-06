@@ -37,19 +37,19 @@ const wx = {
       success({ savedFilePath });
     } catch (error) { fail(error); }
   },
-  getFileInfo({ filePath, digestAlgorithm, success, fail }) {
-    try {
-      assert.equal(digestAlgorithm, "sha1");
-      if (awaitingFingerprint.has(filePath)) {
-        const journal = metadata.get('pending-check-ins-v1-save-journal');
-        assert.ok(journal?.entries.some(entry => entry.item.localPath === filePath), '原生保存成功后、读取指纹前必须已记录实际路径');
-        awaitingFingerprint.delete(filePath);
-      }
-      const bytes = fs.readFileSync(filePath);
-      success({ size: bytes.length, digest: sha1(bytes) });
-    } catch (error) { fail(error); }
-  },
   getFileSystemManager: () => ({
+    getFileInfo({ filePath, digestAlgorithm, success, fail }) {
+      try {
+        assert.equal(digestAlgorithm, "sha1");
+        if (awaitingFingerprint.has(filePath)) {
+          const journal = metadata.get('pending-check-ins-v1-save-journal');
+          assert.ok(journal?.entries.some(entry => entry.item.localPath === filePath), '原生保存成功后、读取指纹前必须已记录实际路径');
+          awaitingFingerprint.delete(filePath);
+        }
+        const bytes = fs.readFileSync(filePath);
+        success({ size: bytes.length, digest: sha1(bytes) });
+      } catch (error) { fail(error); }
+    },
     getSavedFileList({ success, fail }) {
       try { success({ fileList: listSavedFiles() }); }
       catch (error) { fail({ errMsg: `getSavedFileList:fail ${error.message}` }); }

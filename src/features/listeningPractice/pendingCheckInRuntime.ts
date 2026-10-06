@@ -8,6 +8,7 @@ type RecordingDiagnosticDetails = { requestId?: string; error?: unknown; fileSiz
 const diagnosticErrorCodes = new Set([
   "EACCES", "EPERM", "ENOENT", "EBUSY", "ETIMEDOUT", "EIO", "ENOSPC", "ECONNRESET",
   "FORBIDDEN", "UNAUTHENTICATED", "NOT_FOUND", "SHARE_EXPIRED", "REQUEST_DELETED",
+  "INVALID_ARGUMENT",
   "RECOVERY_CAPACITY", "RECOVERY_VERIFY_FAILED", "RECOVERY_CHANGED", "RECOVERY_SOURCE_INVALID", "RECOVERY_RESPONSE_INVALID",
   "PENDING_PERSIST_FAILED", "RECORDING_INFO_INVALID", "SHARE_PROTOCOL_MISMATCH", "SHARE_RESPONSE_INVALID",
 ]);
@@ -20,7 +21,8 @@ export const logRecordingDiagnostic = (stage: string, details?: RecordingDiagnos
     const code = (typeof nativeCode === "number" && Number.isFinite(nativeCode)) ||
       (typeof nativeCode === "string" && (diagnosticErrorCodes.has(nativeCode) || /^-?\d{1,10}$/.test(nativeCode))) ? nativeCode : undefined;
     const message = typeof error === "string" ? error : String(error?.errMsg || error?.message || "");
-    const reason = /permission|denied|EACCES|EPERM/i.test(message) ? "permission_denied"
+    const reason = code === "INVALID_ARGUMENT" ? "invalid_argument"
+      : /permission|denied|EACCES|EPERM/i.test(message) ? "permission_denied"
       : /quota|storage.?full|space/i.test(message) ? "storage_full"
       : /no such file|not exist|ENOENT/i.test(message) ? "not_found"
       : /busy|EBUSY/i.test(message) ? "file_busy"
