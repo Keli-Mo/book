@@ -42,7 +42,7 @@ export default function Home() {
 
   useShareAppMessage(() => ({
     title: sharedTitle,
-    path: "pages/Home/Home",
+    path: "/pages/Home/Home",
     imageUrl: sharedImage,
   }));
 

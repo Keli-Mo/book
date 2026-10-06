@@ -181,6 +181,17 @@ const appConfig = readSource("src/app.config.ts");
 const home = readSource("src/pages/Home/Home.tsx");
 const library = fs.readFileSync(libraryPagePath, "utf8");
 
+for (const [pageName, source] of [
+  ["首页", home],
+  ["全部教材页", library],
+]) {
+  assert.match(
+    source,
+    /path:\s*["']\/pages\/Home\/Home["']/,
+    `${pageName}分享路径必须以前导斜杠开头`,
+  );
+}
+
 assert.match(
   appConfig,
   /pages\/BookLibrary\/BookLibrary/,

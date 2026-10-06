@@ -39,7 +39,7 @@ export default function BookLibrary() {
 
   useShareAppMessage(() => ({
     title: sharedTitle,
-    path: "pages/Home/Home",
+    path: "/pages/Home/Home",
     imageUrl: sharedImage,
   }));
 
