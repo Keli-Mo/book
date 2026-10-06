@@ -135,58 +135,66 @@ function DirectoryContents({
             }
           }}
         >
-          {groups.map((group) => (
-            <View
-              id={group.id}
-              key={group.id}
-              className='practice-directory-group'
-            >
+          {groups.map((group) => {
+            const firstItem = group.items[0];
+            const displayTitle = firstItem
+              ? `${firstItem.pageLabel || `第 ${firstItem.pageNumber} 页`} · ${group.title}`
+              : group.title;
+            return (
               <View
-                className={`practice-directory-group__header device-touch-target ${
-                  group.id === currentGroupId
-                    ? "practice-directory-group__header--current"
-                    : ""
-                }`}
-                onClick={() => setExpandedGroupId((expanded) =>
-                  expanded === group.id ? "" : group.id
-                )}
+                id={group.id}
+                key={group.id}
+                className='practice-directory-group'
               >
-                <View className='practice-directory-group__heading'>
-                  <Text className='practice-directory-group__title'>{group.title}</Text>
-                  {group.id === currentGroupId && (
-                    <Text className='practice-directory-group__current'>当前章节</Text>
+                <View
+                  className={`practice-directory-group__header device-touch-target ${
+                    group.id === currentGroupId
+                      ? "practice-directory-group__header--current"
+                      : ""
+                  }`}
+                  onClick={() => setExpandedGroupId((expanded) =>
+                    expanded === group.id ? "" : group.id
                   )}
+                >
+                  <View className='practice-directory-group__heading'>
+                    <Text className='practice-directory-group__title'>
+                      {displayTitle}
+                    </Text>
+                    {group.id === currentGroupId && (
+                      <Text className='practice-directory-group__current'>当前章节</Text>
+                    )}
+                  </View>
+                  <Text className='practice-directory-group__toggle'>
+                    {group.items.length} 页 · {expandedGroupId === group.id ? "收起" : "展开"}
+                  </Text>
                 </View>
-                <Text className='practice-directory-group__toggle'>
-                  {group.items.length} 页 · {expandedGroupId === group.id ? "收起" : "展开"}
-                </Text>
+                {expandedGroupId === group.id && (
+                  <View className='practice-directory-items'>
+                    {group.items.map((item) => (
+                      <View
+                        id={`practice-directory-page-${item.practiceIndex}`}
+                        key={item.id}
+                        className={`practice-directory-item device-touch-target ${
+                          item.practiceIndex === currentPracticeIndex
+                            ? "practice-directory-item--active"
+                            : ""
+                        }`}
+                        onClick={() => onSelect(item.practiceIndex)}
+                      >
+                        <Text className='practice-directory-item__page'>
+                          {item.pageLabel || `第 ${item.pageNumber} 页`}
+                        </Text>
+                        <Text className='practice-directory-item__tracks'>
+                          {item.practiceIndex === currentPracticeIndex ? "当前页 · " : ""}
+                          {item.trackCount ? `${item.trackCount} 段音频` : "自主跟读"}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
-              {expandedGroupId === group.id && (
-                <View className='practice-directory-items'>
-                  {group.items.map((item) => (
-                    <View
-                      id={`practice-directory-page-${item.practiceIndex}`}
-                      key={item.id}
-                      className={`practice-directory-item device-touch-target ${
-                        item.practiceIndex === currentPracticeIndex
-                          ? "practice-directory-item--active"
-                          : ""
-                      }`}
-                      onClick={() => onSelect(item.practiceIndex)}
-                    >
-                      <Text className='practice-directory-item__page'>
-                        {item.pageLabel || `第 ${item.pageNumber} 页`}
-                      </Text>
-                      <Text className='practice-directory-item__tracks'>
-                        {item.practiceIndex === currentPracticeIndex ? "当前页 · " : ""}
-                        {item.trackCount ? `${item.trackCount} 段音频` : "自主跟读"}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
       </View>
     </View>

@@ -83,6 +83,21 @@ function assertExpandedGroup(tree, groups, expectedGroup) {
 }
 
 for (const route of routes) {
+  test(`${route.name}：所有章节标题显示首项页码`, () => {
+    const context = fixture(route);
+    try {
+      const tree = context.open();
+      for (const group of context.groups) {
+        const firstItem = group.items[0];
+        const startLabel = firstItem.pageLabel || `第 ${firstItem.pageNumber} 页`;
+        assert.equal(
+          textOf(byClass(groupNode(tree, group.id), "practice-directory-group__title")),
+          `${startLabel} · ${group.title}`,
+        );
+      }
+    } finally { cleanup(context.page); }
+  });
+
   test(`${route.name}：打开目录展开当前章，但不滚动到选中页`, () => {
     const context = fixture(route);
     const { page, groups, currentGroup, currentIndex } = context;
@@ -187,6 +202,23 @@ for (const route of routes) {
     } finally { cleanup(page); }
   });
 }
+
+test("KET Map of the units：章节标题显示真实起始页", () => {
+  const context = fixture({
+    name: "KET Map of the units",
+    file: "src/pages/Practice/Practice.tsx",
+    params: { bookId: "9", page: "4" },
+  });
+  try {
+    const tree = context.open();
+    const mapGroup = context.groups.find((group) => group.title === "Map of the units");
+    assert.ok(mapGroup);
+    assert.equal(
+      textOf(byClass(groupNode(tree, mapGroup.id), "practice-directory-group__title")),
+      "第 4 页 · Map of the units",
+    );
+  } finally { cleanup(context.page); }
+});
 
 test("关闭再打开还原关闭前的目录滚动位置", () => {
   const context = fixture(routes[0]);
