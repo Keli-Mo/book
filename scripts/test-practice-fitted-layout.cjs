@@ -254,10 +254,9 @@ const createTimers = () => {
   };
 };
 const progress = (page) => {
-  const label = textOf(byClass(render(page), "practice-header__progress"));
-  const pageNumbers = label.match(/\d+\s*\/\s*\d+/)?.[0];
-  assert.ok(pageNumbers, `必须显示当前页码与总页数：${label}`);
-  return pageNumbers;
+  const label = textOf(byClass(render(page), "practice-header__progress")).trim();
+  assert.match(label, /^(?:封面|扉页|空白页|第 [1-9]\d* 页)$/, `必须显示真实教材页标签：${label}`);
+  return label;
 };
 
 for (const route of routes) {

@@ -9,6 +9,7 @@ const readerPath = "src/features/bookLibrary/thinkBookReader.ts";
 const aliasPaths = {
   "@/features/bookLibrary/bookCatalog": "src/features/bookLibrary/bookCatalog.ts",
   "@/features/listeningPractice/bookPractice": "src/features/listeningPractice/bookPractice.ts",
+  "@/features/listeningPractice/bookPageLabel": "src/features/listeningPractice/bookPageLabel.ts",
   "@/pages/BookDetail/Components/BookPreview/constants/images": "src/pages/BookDetail/Components/BookPreview/constants/images.ts",
   "@/pages/BookDetail/Components/BookPreview/constants/audioList": "src/pages/BookDetail/Components/BookPreview/constants/audioList.ts",
   "@/pages/BookDetail/Components/BookPreview/constants/catalogList": "src/pages/BookDetail/Components/BookPreview/constants/catalogList.ts",
