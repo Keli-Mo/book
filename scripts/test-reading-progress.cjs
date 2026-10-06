@@ -74,6 +74,19 @@ assert.equal(api(createStore(null)).saveReadingProgress("3", 999999), false, "�
 const { buildBookPracticeBundle, buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 assert.equal(typeof api(createStore(null)).saveFullReadingProgress, "function", "全页进度应使用独立的稳定图片索引 API");
 
+{
+  const stored = { version: 1, bookId: "9", practiceIndex: 0 };
+  const store = createStore(stored);
+  const progress = api(store);
+  const practice = progress.resolveReadingProgressPractice(stored);
+  assert.equal(practice.id, "9-page-9", "旧音频索引必须仍解析到原稳定页 ID");
+  assert.equal(practice.pageLabel, "第 8 页", "旧进度必须使用全页教材核验后的显示页码");
+  assert.deepEqual(practice, buildFullBookPracticeBundle("9").practices.find((item) => item.id === "9-page-9"));
+  assert.deepEqual(progress.readReadingProgress(), stored);
+  assert.equal(store.value, stored, "解析旧进度不得重写存储");
+  assert.equal(progress.resolveReadingProgressUrl(stored), "/pages/Practice/Practice?bookId=9&practice=0");
+}
+
 for (let id = 3; id <= 31; id += 1) {
   const bookId = String(id);
   const legacy = buildBookPracticeBundle(bookId);
@@ -94,9 +107,11 @@ for (let id = 3; id <= 31; id += 1) {
     const store = createStore(stored);
     const progress = api(store);
     const practice = legacy.practices[practiceIndex];
+    const fullPractice = full.practices.find((item) => item.id === practice.id);
+    assert.ok(fullPractice, "旧音频页必须能按稳定 ID 找到全页教材页");
     assert.deepEqual(progress.readReadingProgress(), stored, "读取旧进度不能改写或升级存储");
     assert.equal(store.value, stored);
-    assert.deepEqual(progress.resolveReadingProgressPractice(stored), practice, "旧索引必须保持原音频教材页");
+    assert.deepEqual(progress.resolveReadingProgressPractice(stored), fullPractice, "旧索引必须返回同一稳定 ID 的全页教材页和显示页码");
     assert.equal(progress.resolveReadingProgressUrl(stored), legacy.book.seriesId === "think"
       ? `/pages/ThinkBookReader/ThinkBookReader?bookId=${bookId}&page=${practice.imageIndex}`
       : `/pages/Practice/Practice?bookId=${bookId}&practice=${practiceIndex}`);

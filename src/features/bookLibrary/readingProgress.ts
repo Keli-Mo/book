@@ -37,9 +37,13 @@ const resolveProgress = (value: unknown) => {
       ? buildBookPracticeBundle(candidate.bookId)
       : buildFullBookPracticeBundle(candidate.bookId);
     if (!bundle) return null;
-    const practice = candidate.version === 1
+    const indexedPractice = candidate.version === 1
       ? bundle.practices[index]
       : bundle.practices.find((item) => item.imageIndex === index);
+    if (!indexedPractice) return null;
+    const practice = candidate.version === 1
+      ? buildFullBookPracticeBundle(candidate.bookId)?.practices.find((item) => item.id === indexedPractice.id)
+      : indexedPractice;
     if (!practice) return null;
     const progress: ReadingProgress = candidate.version === 1
       ? { version: 1, bookId: candidate.bookId, practiceIndex: index }

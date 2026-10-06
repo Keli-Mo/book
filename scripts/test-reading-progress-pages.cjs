@@ -69,16 +69,28 @@ const directory = (page) => elements(page.render()).find(node => node.type?.name
   assert.equal(storage.get(key).imageIndex, 4);
   practice.hide();
 
+  const legacyBook9 = { version: 1, bookId: "9", practiceIndex: 0 };
+  const book9Page = buildFullBookPracticeBundle("9").practices.find((item) => item.id === "9-page-9");
+  storage.set(key, legacyBook9);
+  home.show(); tree = home.render();
+  assert.equal(textOf(byClass(tree, "continue-card__progress")), `${book9Page.sectionTitle} · 第 8 页`,
+    "首页旧进度必须显示教材核验页码，不得显示资源页码教材第 9 页");
+  await byClass(tree, "continue-card__button").props.onClick();
+  assert.equal(home.navigations.at(-1), "/pages/Practice/Practice?bookId=9&practice=0");
+  assert.equal(storage.get(key), legacyBook9, "首页显示旧进度不得重写存储");
+
   for (let id = 3; id <= 30; id += 1) {
     const bookId = String(id);
     const sourceBundle = buildBookPracticeBundle(bookId);
     const practiceIndex = Math.min(7, sourceBundle.practices.length - 1);
     const sourcePractice = sourceBundle.practices[practiceIndex];
+    const displayPractice = buildFullBookPracticeBundle(bookId).practices.find((item) => item.id === sourcePractice.id);
+    assert.ok(displayPractice, "旧音频页必须能按稳定 ID 找到全页教材页");
     storage.set(key, { version: 1, bookId, practiceIndex });
     home.show(); tree = home.render();
     assert.equal(textOf(byClass(tree, "continue-card__progress")),
-      `${sourcePractice.sectionTitle} · 教材第 ${sourcePractice.pageNumber} 页`,
-      "旧进度应继续显示原音频题的真实页码");
+      `${displayPractice.sectionTitle} · ${displayPractice.pageLabel || `教材第 ${displayPractice.pageNumber} 页`}`,
+      "旧进度应显示同一稳定 ID 的全页教材核验页码");
     await byClass(tree, "continue-card__button").props.onClick();
     assert.equal(home.navigations.at(-1),
       sourceBundle.book.seriesId === "think"
