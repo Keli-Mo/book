@@ -147,6 +147,21 @@
   max-width: 100%;
 }
 
+.practice-book-zoom-area {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+.practice-book-zoom-view {
+  display: block;
+}
+
 // 尺寸表外的兼容页面仍用 widthFix 按自身比例撑高。
 .practice-page:not(.practice-page--fitted) {
   .practice-book-page__image,
@@ -161,6 +176,7 @@
 }
 
 .practice-book-slide {
+  position: relative;
   overflow: hidden;
   height: 100%;
 
@@ -171,11 +187,61 @@
   }
 }
 
+.practice-book-static {
+  width: 100%;
+  height: 100%;
+
+  &--covered {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
 .practice-workspace__controls {
   position: relative;
   z-index: 2;
   flex: none;
   min-width: 0;
+}
+
+.practice-zoom-recorder {
+  position: fixed;
+  z-index: 50;
+  right: 12PX;
+  bottom: 8PX;
+  bottom: calc(8PX + env(safe-area-inset-bottom));
+  display: flex;
+  max-width: calc(100vw - 24PX);
+  min-height: 56PX;
+  align-items: center;
+  gap: 6PX;
+  padding: 6PX;
+  box-sizing: border-box;
+  border: 1PX solid rgba(47, 137, 108, 0.22);
+  border-radius: 14PX;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 6PX 24PX rgba(36, 54, 47, 0.2);
+
+  &__button {
+    min-width: 44PX;
+    min-height: 44PX;
+    margin: 0;
+    padding: 0 10PX;
+    border: 0;
+    border-radius: 9PX;
+    background: #e4f3ed;
+    color: #276c58;
+    font-size: 13PX;
+    line-height: 44PX;
+    white-space: nowrap;
+
+    &::after { border: 0; }
+  }
+
+  &__start,
+  &__finish { background: #2f896c; color: #ffffff; }
+  &__stop { background: #e85d3d; color: #ffffff; }
+  &__status { padding: 0 10PX; color: #496158; font-size: 13PX; }
 }
 
 // 宽 Pad 保留左右两栏；两栏按自然高度展开，不让录音内容参与教材缩放。
@@ -590,66 +656,6 @@ button[disabled] { opacity: 0.5; }
   }
 }
 
-.practice-book-preview {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  box-sizing: border-box;
-  background: #17231f;
-  color: #ffffff;
-
-  &__toolbar {
-    display: flex;
-    height: 56PX;
-    min-height: 56PX;
-    flex: 0 0 56PX;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 16PX;
-    box-sizing: border-box;
-    background: rgba(11, 22, 18, 0.92);
-  }
-
-  &__hint {
-    color: rgba(255, 255, 255, 0.76);
-    font-size: 14PX;
-  }
-
-  &__close {
-    display: flex;
-    min-width: 64PX;
-    height: 44PX;
-    align-items: center;
-    justify-content: center;
-    border-radius: 22PX;
-    background: rgba(255, 255, 255, 0.14);
-    color: #ffffff;
-    font-size: 15PX;
-    font-weight: 700;
-  }
-
-  &__area {
-    width: 100%;
-    height: 0;
-    min-height: 0;
-    flex: 1 1 0;
-    overflow: hidden;
-  }
-
-  &__canvas,
-  &__image {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-}
-
 .practice-directory-mask {
   position: fixed;
   inset: 0;
@@ -1005,19 +1011,6 @@ button[disabled] { opacity: 0.5; }
     &__progress-row { min-height: 44PX; gap: 8PX; margin-top: 2PX; }
     &__progress { font-size: 13PX; white-space: nowrap; }
     &__directory { flex: none; padding: 0 8PX; font-size: 12PX; }
-  }
-
-  .practice-book-expand {
-    display: flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    min-width: 44PX;
-    min-height: 44PX;
-    padding: 0 8PX;
-    color: #276c58;
-    font-size: 12PX;
-    white-space: nowrap;
   }
 
   .practice-workspace {
