@@ -13,6 +13,30 @@ const diagnosticErrorCodes = new Set([
   "PENDING_PERSIST_FAILED", "RECORDING_INFO_INVALID", "SHARE_PROTOCOL_MISMATCH", "SHARE_RESPONSE_INVALID",
 ]);
 
+/** 原生文件 API 偶尔既不 success 也不 fail；有限等待避免串行仓储队列永久停住。 */
+const LOCAL_FILE_API_TIMEOUT_MS = 15_000;
+const localFileTimeout = (operation: string) =>
+  Object.assign(new Error(`${operation} timeout`), { code: "ETIMEDOUT" });
+const withLocalFileTimeout = <T>(operation: string, task: () => Promise<T>): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(localFileTimeout(operation));
+    }, LOCAL_FILE_API_TIMEOUT_MS);
+    const finish = () => {
+      if (settled) return false;
+      settled = true;
+      clearTimeout(timer);
+      return true;
+    };
+    try { task().then(value => { if (finish()) resolve(value); }, error => { if (finish()) reject(error); }); }
+    catch (error) { if (finish()) reject(error); }
+  });
+const boundedRecordingInfo = (filePath: string) =>
+  withLocalFileTimeout("getFileInfo", () => getCheckInRecordingInfo(filePath));
+
 /** 仅控制台诊断，不落盘、不上传；原始错误可能含路径/凭证，只输出分类与错误码。 */
 export const logRecordingDiagnostic = (stage: string, details?: RecordingDiagnosticDetails) => {
   try {
@@ -63,13 +87,14 @@ export const diagnoseLocalRecordingFailure = async (item: Pick<PendingCheckIn, "
   try { if (typeof wx.getAccountInfoSync === "function") details.appVersion = wx.getAccountInfoSync().miniProgram.version; } catch (_error) { /* optional */ }
   logRecordingDiagnostic("playback.local.failed", details);
   try {
-    await new Promise<void>((resolve, reject) => wx.getFileSystemManager().access({ path: item.localPath, success: () => resolve(), fail: reject }));
+    await withLocalFileTimeout("access", () => new Promise<void>((resolve, reject) =>
+      wx.getFileSystemManager().access({ path: item.localPath, success: () => resolve(), fail: reject })));
     logRecordingDiagnostic("playback.local.access.success", { requestId: item.requestId });
   } catch (accessError) {
     logRecordingDiagnostic("playback.local.access.failed", { requestId: item.requestId, error: accessError });
   }
   try {
-    const info = await getCheckInRecordingInfo(item.localPath);
+    const info = await boundedRecordingInfo(item.localPath);
     logRecordingDiagnostic("playback.local.info.success", { requestId: item.requestId, fileSizeBytes: info.fileSizeBytes,
       ...(item.contentSha1 ? { fingerprintMatches: item.contentSha1.toLowerCase() === info.contentSha1 } : {}) });
   } catch (infoError) {
@@ -80,22 +105,50 @@ export const diagnoseLocalRecordingFailure = async (item: Pick<PendingCheckIn, "
 const saveLocalFile = async (tempFilePath: string, onSaved?: (savedFilePath: string) => Promise<void>): Promise<SavedPendingRecordingFile> => {
   logRecordingDiagnostic("save.file.start");
   const saved = await new Promise<{ savedFilePath: string }>((resolve, reject) => {
-    wx.saveFile({
-      tempFilePath,
-      success: ({ savedFilePath }) => {
-        logRecordingDiagnostic("save.file.success");
-        resolve({ savedFilePath });
-      },
-      fail: (error) => {
-        logRecordingDiagnostic("save.file.failed", { error });
-        reject(error);
-      },
-    });
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const error = localFileTimeout("saveFile");
+      logRecordingDiagnostic("save.file.failed", { error });
+      reject(error);
+    }, LOCAL_FILE_API_TIMEOUT_MS);
+    const discardLateSavedFile = (savedFilePath: string) => {
+      if (!savedFilePath || pendingCheckInStore.list().some(item => item.localPath === savedFilePath)) return;
+      // 原生成功已迟于仓储的超时结果，不能再调用 onSaved 写检查点或主索引。
+      void removeLocalFile(savedFilePath, "saved").catch(error =>
+        logRecordingDiagnostic("save.file.late_cleanup.failed", { error }));
+    };
+    try {
+      wx.saveFile({
+        tempFilePath,
+        success: ({ savedFilePath }) => {
+          if (settled) { discardLateSavedFile(savedFilePath); return; }
+          settled = true;
+          clearTimeout(timer);
+          logRecordingDiagnostic("save.file.success");
+          resolve({ savedFilePath });
+        },
+        fail: (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          logRecordingDiagnostic("save.file.failed", { error });
+          reject(error);
+        },
+      });
+    } catch (error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      logRecordingDiagnostic("save.file.failed", { error });
+      reject(error);
+    }
   });
   // 尽早落盘实际保存路径；指纹读取/主索引失败后仍有跨重启恢复线索。
   if (onSaved) await onSaved(saved.savedFilePath);
   try {
-    return { ...saved, ...await getCheckInRecordingInfo(saved.savedFilePath) };
+    return { ...saved, ...await boundedRecordingInfo(saved.savedFilePath) };
   } catch (error) {
     logRecordingDiagnostic("save.fingerprint.failed", { error });
     // saveFile 已移动临时文件；指纹读取失败不能丢掉 saved 路径，提交时可再次读取补齐。
@@ -104,7 +157,7 @@ const saveLocalFile = async (tempFilePath: string, onSaved?: (savedFilePath: str
 };
 
 const fileExists = (filePath: string) =>
-  new Promise<boolean>((resolve, reject) => {
+  withLocalFileTimeout("access", () => new Promise<boolean>((resolve, reject) => {
     wx.getFileSystemManager().access({
       path: filePath,
       success: () => resolve(true),
@@ -123,13 +176,13 @@ const fileExists = (filePath: string) =>
         }
       },
     });
-  });
+  }));
 
 const removeLocalFile = async (filePath: string, kind: "saved" | "temporary") => {
   const stage = `delete.file.${kind}`;
   logRecordingDiagnostic(`${stage}.start`);
   try {
-    await new Promise<void>((resolve, reject) => {
+    await withLocalFileTimeout(kind === "saved" ? "removeSavedFile" : "unlink", () => new Promise<void>((resolve, reject) => {
       const options = {
         filePath,
         success: () => resolve(),
@@ -138,7 +191,7 @@ const removeLocalFile = async (filePath: string, kind: "saved" | "temporary") =>
       // 与 wx.saveFile 配套；缓存路径不依赖 unlink 对普通本地文件的写权限。
       if (kind === "saved") wx.removeSavedFile(options);
       else wx.getFileSystemManager().unlink(options);
-    });
+    }));
     logRecordingDiagnostic(`${stage}.success`);
   } catch (error) {
     logRecordingDiagnostic(`${stage}.failed`, { error });
@@ -171,7 +224,7 @@ const isMissingDevtoolsSavedDirectory = (error: unknown) => {
 
 /** saveFile 管理区的实际占用；包含尚未写入或已经脱离索引的文件。 */
 export const getLocalRecordingUsageBytes = () =>
-  new Promise<number>((resolve, reject) => {
+  withLocalFileTimeout("getSavedFileList", () => new Promise<number>((resolve, reject) => {
     const manager = wx.getFileSystemManager();
     if (typeof manager.getSavedFileList !== "function") {
       reject(new Error("getSavedFileList unsupported"));
@@ -206,7 +259,7 @@ export const getLocalRecordingUsageBytes = () =>
         } else reject(error);
       },
     });
-  });
+  }));
 
 /** 请求编号只负责去重，不承担分享鉴权；四段随机数足够避免本机录音碰撞。 */
 const createRequestId = () =>
@@ -222,7 +275,7 @@ const pendingCheckInStore = createPendingCheckInStore({
     set: (key, value) => wx.setStorageSync(key, value),
   },
   file: {
-    info: getCheckInRecordingInfo,
+    info: boundedRecordingInfo,
     usageBytes: getLocalRecordingUsageBytes,
     save: saveLocalFile,
     exists: fileExists,
@@ -238,10 +291,10 @@ export const getPendingCheckInStore = () => pendingCheckInStore;
 
 const discardRecoveryTemporary = async (filePath: string) => {
   if (!filePath || pendingCheckInStore.list().some(item => item.localPath === filePath)) return;
-  await new Promise<void>((resolve) => {
-    try { wx.getFileSystemManager().unlink({ filePath, success: () => resolve(), fail: () => resolve() }); }
-    catch (_error) { resolve(); }
-  });
+  try {
+    await withLocalFileTimeout("unlink", () => new Promise<void>((resolve) =>
+      wx.getFileSystemManager().unlink({ filePath, success: () => resolve(), fail: () => resolve() })));
+  } catch (_error) { /* 临时文件清理失败不阻止恢复流程。 */ }
 };
 
 const downloadRecoveryFile = (url: string, expiresAtMs?: number): Promise<string> => new Promise((resolve, reject) => {
@@ -281,7 +334,7 @@ const downloadRecoveryFile = (url: string, expiresAtMs?: number): Promise<string
 
 const recordingRecovery = createRecordingRecovery({
   store: pendingCheckInStore, source: getCheckInRecoverySource, download: downloadRecoveryFile,
-  info: getCheckInRecordingInfo, discardTemporary: discardRecoveryTemporary, now: () => Date.now(),
+  info: boundedRecordingInfo, discardTemporary: discardRecoveryTemporary, now: () => Date.now(),
   usageBytes: getLocalRecordingUsageBytes,
 });
 export const recoverPendingRecording = recordingRecovery.recover;

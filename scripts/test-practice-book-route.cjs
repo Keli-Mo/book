@@ -46,6 +46,8 @@ const load = (file, overrides = {}, cache = new Map()) => {
 const { buildBookPracticeBundle, buildFullBookPracticeBundle } = load("src/features/listeningPractice/bookPractice.ts");
 const { readBookImageSize, readBookStableCanvasSize } = load("src/features/listeningPractice/bookImageSizes.ts");
 const { requestRecorderAction, resolveRecorderCallback } = load("src/features/listeningPractice/recordingStateMachine.ts");
+const { createRecorderCoordinator, isRecorderStateConflictError } = load("src/features/listeningPractice/recorderCoordinator.ts");
+const { createRecordingSessionJournal } = load("src/features/listeningPractice/recordingSessionJournal.ts");
 const livePages = new Set();
 
 // 仅替换 React/Taro 调度与录音持久化、提交边界；路由、bundle、目录、音频控制器及点击回调都执行生产代码。
@@ -68,6 +70,16 @@ const createPage = (file, params, options = {}) => {
   const modalCalls = [];
   const actionSheetCalls = [];
   const pendingItems = [...(options.pendingItems || [])];
+  const recordingSessionStorage = new Map();
+  let recordingSessionSequence = 0;
+  const recordingSessionJournal = createRecordingSessionJournal({
+    storage: {
+      get: (key) => recordingSessionStorage.get(key),
+      set: (key, value) => recordingSessionStorage.set(key, value),
+    },
+    clock: { now: () => 1 },
+    random: { hex: () => (++recordingSessionSequence).toString(16).padStart(32, "0") },
+  });
   const recorderActionOutcomes = Object.fromEntries(
     Object.entries(options.recorderActionOutcomes || {}).map(([action, outcomes]) => [
       action,
@@ -200,7 +212,7 @@ const createPage = (file, params, options = {}) => {
       const acquireSequence = options.acquireSequence || ["ok"];
       const outcome = acquireSequence[Math.min(acquireAttempts, acquireSequence.length - 1)];
       acquireAttempts += 1;
-      if (outcome === "busy") return { ok: false, reason: "busy", phase: "draining" };
+      if (outcome === "busy" || outcome === "uncertain") return { ok: false, reason: "busy", phase: outcome === "uncertain" ? "uncertain" : "draining" };
       if (outcome === "unavailable") return { ok: false, reason: "unavailable" };
       const session = { listener: null, detachedTerminalSink: null, phase: "idle", released: false };
       const runAction = (action, actionOptions) => {
@@ -208,6 +220,25 @@ const createPage = (file, params, options = {}) => {
         const actionOutcome = recorderActionOutcomes[action]?.shift();
         if (actionOutcome === "throw") {
           return { ok: false, reason: "exception", error: new Error(`${action} 同步失败`) };
+        }
+        if (actionOutcome === "throw-busy") {
+          session.phase = "uncertain";
+          return { ok: false, reason: "native-error", error: { errMsg: "operateRecorder:fail is recording or paused" } };
+        }
+        if (actionOutcome === "throw-uncertain") {
+          session.phase = "uncertain";
+          return { ok: false, reason: "native-error", error: new Error("native stop failed before terminal") };
+        }
+        if (actionOutcome === "stop-then-throw") {
+          assert.equal(action, "stop");
+          void dispatchRecorder("Stop", { tempFilePath: "/tmp/hidden-reentrant.mp3", duration: 1600, fileSize: 5000 });
+          return { ok: false, reason: "native-error", error: new Error("stop callback preceded throw") };
+        }
+        if (actionOutcome === "start-then-throw") {
+          assert.equal(action, "start");
+          dispatchRecorder("Start");
+          session.phase = "uncertain";
+          return { ok: false, reason: "native-error", error: new Error("start callback preceded throw") };
         }
         session.phase = action === "start" ? "starting" : action === "stop" ? "stopping" : action === "pause" ? "paused" : "recording";
         return { ok: true };
@@ -219,12 +250,14 @@ const createPage = (file, params, options = {}) => {
         stop: () => runAction("stop"),
         release(releaseOptions) {
           recorderReleaseCalls.push(releaseOptions);
-          session.detachedTerminalSink = releaseOptions?.terminalSink || null;
+          session.detachedTerminalSink = releaseOptions?.terminalSink || session.detachedTerminalSink;
+          let stopResult = null;
           if (["starting", "recording", "paused"].includes(session.phase)) {
-            runAction("stop");
+            stopResult = runAction("stop");
           }
           session.listener = null;
           session.released = true;
+          if (stopResult && !stopResult.ok) return { ok: false, reason: "native-error", phase: session.phase, error: stopResult.error };
           return { ok: true, phase: session.phase === "idle" ? "idle" : "draining" };
         },
         subscribe(listener) {
@@ -246,10 +279,15 @@ const createPage = (file, params, options = {}) => {
       };
     },
     getPhase: () => activeRecorder?.phase || "idle",
+    getEntryRecoveryStatus: () => options.entryRecoveryStatus || "none",
+    retryEntryRecovery: options.retryEntryRecovery || (async () => false),
+    abandonUnconfirmedRecording: () => { if (activeRecorder) activeRecorder.phase = "idle"; return true; },
   };
   const dispatchRecorder = (event, value) => {
     const session = activeRecorder;
     const terminalEvent = event === "Stop" || event === "Error";
+    // release 后协调器只保留终止回调；迟到的 Start/Pause/Resume 不得复活隐藏页。
+    if (!terminalEvent && !session?.listener) return undefined;
     assert.ok(
       session?.listener || (terminalEvent && session?.detachedTerminalSink),
       `录音事件 ${event} 必须由页面 listener 或卸载后的 terminal sink 接收`,
@@ -257,7 +295,16 @@ const createPage = (file, params, options = {}) => {
     if (event === "Start") session.phase = "recording";
     if (event === "Pause") session.phase = "paused";
     if (event === "Resume") session.phase = "recording";
-    if (event === "Stop" || event === "Error") session.phase = "idle";
+    if (event === "Stop") session.phase = "idle";
+    if (event === "Error") {
+      const occupied = /is recording or paused/i.test(value?.errMsg || "");
+      const uncertain = occupied || options.unknownErrorsUncertain !== false;
+      if (uncertain && session.listener?.onStop) {
+        const capturedStop = session.listener.onStop;
+        session.detachedTerminalSink = (terminal) => terminal.type === "stop" ? capturedStop(terminal.result) : undefined;
+      }
+      session.phase = uncertain ? "uncertain" : "idle";
+    }
     if (session.listener) return session.listener[`on${event}`]?.(value);
     const terminalSink = session.detachedTerminalSink;
     session.detachedTerminalSink = null;
@@ -308,13 +355,13 @@ const createPage = (file, params, options = {}) => {
   recorderHandlers.OperationTimeout = (operation) => {
     if (activeRecorder) activeRecorder.phase = "draining";
     return activeRecorder?.listener?.onError?.({
-      errMsg: operation === "stop" ? "录音停止确认超时，请重试" : "录音启动确认超时，请重试",
+      errMsg: operation === "stop" ? "录音停止确认超时，请稍候" : "录音启动确认超时，请稍候",
       code: "RECORDER_OPERATION_TIMEOUT",
       operation,
     });
   };
   recorderHandlers.DrainTimeout = () => {
-    if (activeRecorder?.phase === "draining") activeRecorder.phase = "idle";
+    if (activeRecorder?.phase === "draining") activeRecorder.phase = "uncertain";
   };
   const immediate = (value) => {
     const chain = {
@@ -328,6 +375,7 @@ const createPage = (file, params, options = {}) => {
     ready: options.pendingReady || (async () => {}),
     cleanup: options.pendingCleanup || (async () => {}),
     list: () => pendingItems,
+    retrySave: requestId => options.pendingRetrySave ? options.pendingRetrySave(requestId, pendingItems) : Promise.resolve(null),
     checkCanStartRecording: options.capacityCheck || (async () => ({ allowed: true, message: "" })),
     saveRecording(input) {
       savedRecordings.push(input);
@@ -355,7 +403,7 @@ const createPage = (file, params, options = {}) => {
     },
     async complete(requestId, committed) {
       completedPending.push({ requestId, committed });
-      if (options.pendingComplete) return options.pendingComplete(requestId, committed);
+      if (options.pendingComplete) return options.pendingComplete(requestId, committed, pendingItems);
       const index = pendingItems.findIndex((current) => current.requestId === requestId);
       if (index < 0 || !committed) return false;
       pendingItems[index] = { ...pendingItems[index], completedAtMs: 2 };
@@ -388,7 +436,8 @@ const createPage = (file, params, options = {}) => {
       getCheckInDetail: async () => options.detail,
       getReadableCloudError: (error) => error.message,
     },
-    "@/features/listeningPractice/recorderCoordinator": { getRecorderCoordinator: () => recorderCoordinator },
+    "@/features/listeningPractice/recorderCoordinator": { getRecorderCoordinator: () => options.recorderCoordinator || recorderCoordinator, isRecorderStateConflictError },
+    "@/features/listeningPractice/recordingSessionJournal": { getRecordingSessionJournal: () => recordingSessionJournal },
     "@/features/listeningPractice/pendingCheckInRuntime": { getPendingCheckInStore: () => pendingStore, logRecordingDiagnostic: options.recordingDiagnostic || (() => {}), diagnoseLocalRecordingFailure: options.recordingFailureProbe || (() => {}), getActivePendingRecovery: () => undefined },
     "@/features/listeningPractice/checkInSubmissionRuntime": { getCheckInSubmissionCoordinator: () => submissionCoordinator },
     "@/hooks/useAppEntryIntroGuard": { useAppEntryIntroGuard() {} },
@@ -422,14 +471,16 @@ const createPage = (file, params, options = {}) => {
         frames.delete(id);
       }
     }
+    options.beforeEffects?.();
     effects.splice(0).forEach((effect) => effect());
     return tree;
   };
   const page = {
     render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending, completedPending,
     modalCalls, actionSheetCalls,
-    recorderReleaseCalls, recorderTerminalOutcomes,
+    recorderReleaseCalls, recorderTerminalOutcomes, recordingSessionJournal,
     get acquireAttempts() { return acquireAttempts; },
+    setRecorderPhase(phase) { if (activeRecorder) activeRecorder.phase = phase; },
     stateValues() {
       return [...frames.values()].flatMap((current) =>
         current.slots.filter((item) => Object.hasOwn(item, "value")).map((item) => item.value),
@@ -728,19 +779,23 @@ async function testRoutes() {
       const startButton = elements(tree).find((node) => node.type === "Button" && textOf(node).includes("开始跟读录音"));
       assert.ok(startButton, "录音能力确认后应显示开始按钮");
       await startButton.props.onClick();
+      assert.equal(page.recordingSessionJournal.read()?.stage, "starting", "调用原生 start 前必须同步写入起始页录音记录");
       assert.deepEqual(page.permissionChecks, ["scope.record:granted"], "开始录音前必须确认麦克风已授权");
       assert.deepEqual(page.recorderActions[0], {
         action: "start",
         options: { duration: 300000, sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: "mp3" },
       }, "点击开始必须把生产录音参数交给 recorder owner");
       page.recorderHandlers.Start();
+      assert.equal(page.recordingSessionJournal.read()?.stage, "confirmed", "只有原生 onStart 才能确认会话归属");
       tree = page.render();
       const stopButton = elements(tree).find((node) => node.type === "Button" && textOf(node) === "结束录音");
       assert.ok(stopButton, "原生 Start 回调后应进入录音态");
       stopButton.props.onClick();
       assert.equal(page.recorderActions.at(-1).action, "stop", "结束按钮必须请求原生 stop");
       page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200, fileSize: 4096 });
+      assert.equal(page.recordingSessionJournal.read()?.stage, "terminal", "停止文件须先记入可恢复记录再异步保存");
       await settle();
+      assert.equal(page.recordingSessionJournal.read(), null, "本地保存成功后才可清除录音记录和新录音锁");
       tree = page.render();
       const context = {
         bookId, bookTitle: bundle.book.title, practiceId: practice.id,
@@ -751,6 +806,7 @@ async function testRoutes() {
         tempFilePath: "/tmp/recording.mp3",
         durationMs: 1200,
         fileSizeBytes: 4096,
+        recordingSessionId: "00000000000000000000000000000001",
         context,
       }, "原生 Stop 元数据与当前训练上下文必须先交给本地 pending store");
       await byClass(tree, "check-in-button").props.onClick();
@@ -851,7 +907,416 @@ async function testRoutes() {
     fileSize: 5000,
   });
   await settle();
-  assert.equal(hiddenWhileStarting.savedRecordings.length, 1, "后台收口 start 后的有效 Stop 仍必须保存到本地队列");
+  assert.equal(hiddenWhileStarting.savedRecordings.length, 0, "未经 onStart 确认的停止文件可能属于旧录音，不能保存到新页面");
+
+  let appHideHandler = null;
+  const appHiddenRecording = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      savedFilePath: "/saved/app-hide-a.mp3",
+      taroOverrides: {
+        onAppHide(handler) { appHideHandler = handler; },
+        offAppHide(handler) { if (appHideHandler === handler) appHideHandler = null; },
+      },
+    },
+  );
+  let appHiddenTree = appHiddenRecording.render();
+  appHiddenTree = appHiddenRecording.render();
+  await byClass(appHiddenTree, "record-button").props.onClick();
+  appHiddenRecording.recorderHandlers.Start();
+  assert.equal(typeof appHideHandler, "function", "微信右上角关闭须注册 AppHide 收口");
+  appHideHandler();
+  appHiddenRecording.hide();
+  assert.equal(appHiddenRecording.recorderActions.filter(({ action }) => action === "stop").length, 1, "AppHide 与 PageHide 连续触发只能停止一次");
+  assert.equal(appHiddenRecording.recorderActions.filter(({ action }) => action === "pause").length, 0, "关闭小程序不能把 A 留在暂停态");
+  assert.equal(appHiddenRecording.recorderReleaseCalls.length, 1, "A 页仍挂载时也必须交还全局录音器");
+  assert.equal(typeof appHiddenRecording.recorderReleaseCalls[0].terminalSink, "function", "A 页必须保留迟到的停止保存回调");
+  await appHiddenRecording.recorderHandlers.Stop({ tempFilePath: "/tmp/app-hide-a.mp3", duration: 2100, fileSize: 5000 });
+  await settle();
+  assert.equal(appHiddenRecording.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex, "A 页隐藏后的录音仍归 A 页");
+  appHiddenRecording.show();
+  appHiddenTree = appHiddenRecording.render();
+  appHiddenTree = appHiddenRecording.render();
+  assert.equal(appHiddenRecording.acquireAttempts, 2, "A 页再显示时须重新获取录音器");
+  await byClass(appHiddenTree, "practice-recorder__retry").props.onClick();
+  assert.equal(appHiddenRecording.recorderActions.filter(({ action }) => action === "start").length, 2, "A 页返回后可再次录音");
+
+  const noStopTimers = createFakeTimers();
+  const noStopCallbacks = {};
+  const noStopNativeCalls = { start: 0, stop: 0 };
+  const noStopNative = {
+    onStart(callback) { noStopCallbacks.start = callback; },
+    onStop(callback) { noStopCallbacks.stop = callback; },
+    onError(callback) { noStopCallbacks.error = callback; },
+    start() { noStopNativeCalls.start += 1; },
+    stop() { noStopNativeCalls.stop += 1; },
+  };
+  const noStopCoordinator = createRecorderCoordinator({
+    getRecorderManager: () => noStopNative,
+    scheduler: noStopTimers,
+    drainTimeoutMs: 5000,
+    abandonQuietWindowMs: 1000,
+  });
+  let noStopAppHide;
+  const noStopPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderCoordinator: noStopCoordinator,
+      setTimeout: noStopTimers.setTimeout,
+      clearTimeout: noStopTimers.clearTimeout,
+      taroOverrides: {
+        onAppHide(callback) { noStopAppHide = callback; },
+        offAppHide(callback) { if (noStopAppHide === callback) noStopAppHide = null; },
+      },
+      showModal: async () => ({ confirm: true, cancel: false }),
+    },
+  );
+  let noStopTree = noStopPage.render();
+  noStopTree = noStopPage.render();
+  await byClass(noStopTree, "record-button").props.onClick();
+  assert.equal(noStopNativeCalls.start, 1, "A 页须先发起真实协调器录音");
+  noStopCallbacks.start();
+  assert.equal(noStopPage.recordingSessionJournal.read()?.stage, "confirmed");
+  assert.equal(typeof noStopAppHide, "function");
+  noStopAppHide();
+  noStopPage.hide();
+  assert.equal(noStopNativeCalls.stop, 1, "右上角退出时仅请求一次 stop");
+  assert.equal(noStopCoordinator.getPhase(), "draining");
+  noStopPage.show();
+  noStopTree = noStopPage.render();
+  noStopTree = noStopPage.render();
+  assert.match(textOf(noStopTree), /正在自动恢复录音设备/, "热返回应进入自动恢复状态");
+  assert.equal(byClass(noStopTree, "record-button--check-recovery"), undefined, "热返回自动处理旧录音，不要求用户点入口");
+  noStopTimers.advance(1499);
+  assert.notEqual(noStopPage.recordingSessionJournal.read(), null, "短暂收尾时仍给旧录音结束回调机会");
+  noStopTimers.advance(1);
+  assert.equal(noStopPage.recordingSessionJournal.read(), null, "短时无回调后自动放弃旧录音");
+  assert.equal(noStopPage.modalCalls.length, 0, "自动放弃不弹确认框");
+  noStopTimers.advance(1000);
+  noStopTree = noStopPage.render();
+  noStopTree = noStopPage.render();
+  assert.equal(noStopCoordinator.getPhase(), "idle", "放弃后的短暂隔离应在小程序内结束");
+  const noStopRetryButton = byClass(noStopTree, "record-button");
+  assert.ok(noStopRetryButton, "用户放弃后，无须重启微信即可再次录音");
+  await noStopRetryButton.props.onClick();
+  assert.equal(noStopNativeCalls.start, 2, "用户重新点击才启动第二段录音");
+  noStopPage.dispose();
+
+  const unconfirmedCloseTimers = createFakeTimers();
+  const unconfirmedCloseCallbacks = {};
+  const unconfirmedCloseNative = {
+    onStart(callback) { unconfirmedCloseCallbacks.start = callback; },
+    onStop(callback) { unconfirmedCloseCallbacks.stop = callback; },
+    onError(callback) { unconfirmedCloseCallbacks.error = callback; },
+    start() {}, stop() {},
+  };
+  const unconfirmedCloseCoordinator = createRecorderCoordinator({
+    getRecorderManager: () => unconfirmedCloseNative,
+    scheduler: unconfirmedCloseTimers,
+    quietWindowMs: 10,
+  });
+  let unconfirmedCloseAppHide;
+  const unconfirmedClosePage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderCoordinator: unconfirmedCloseCoordinator,
+      setTimeout: unconfirmedCloseTimers.setTimeout,
+      clearTimeout: unconfirmedCloseTimers.clearTimeout,
+      taroOverrides: {
+        onAppHide(callback) { unconfirmedCloseAppHide = callback; },
+        offAppHide(callback) { if (unconfirmedCloseAppHide === callback) unconfirmedCloseAppHide = null; },
+      },
+      showModal: async () => ({ confirm: true, cancel: false }),
+    },
+  );
+  let unconfirmedCloseTree = unconfirmedClosePage.render();
+  unconfirmedCloseTree = unconfirmedClosePage.render();
+  await byClass(unconfirmedCloseTree, "record-button").props.onClick();
+  assert.equal(unconfirmedClosePage.recordingSessionJournal.read()?.stage, "starting");
+  unconfirmedCloseAppHide();
+  unconfirmedClosePage.hide();
+  unconfirmedCloseCallbacks.stop({ tempFilePath: "/tmp/old-before-confirm.mp3", duration: 1700, fileSize: 5000 });
+  unconfirmedCloseTimers.advance(10);
+  assert.equal(unconfirmedCloseCoordinator.getPhase(), "idle");
+  unconfirmedClosePage.show();
+  unconfirmedCloseTree = unconfirmedClosePage.render();
+  unconfirmedCloseTree = unconfirmedClosePage.render();
+  assert.equal(byClass(unconfirmedCloseTree, "record-button--check-recovery"), undefined, "热返回后未确认录音由页面自动放弃");
+  unconfirmedCloseTimers.advance(1500);
+  assert.equal(unconfirmedClosePage.recordingSessionJournal.read(), null);
+  assert.equal(unconfirmedClosePage.savedRecordings.length, 0);
+  unconfirmedCloseTimers.advance(1000);
+  unconfirmedCloseTree = unconfirmedClosePage.render();
+  unconfirmedCloseTree = unconfirmedClosePage.render();
+  assert.ok(byClass(unconfirmedCloseTree, "record-button"), "放弃无法归属的旧文件后可直接重录");
+  unconfirmedClosePage.dispose();
+
+  // 右上角关闭后微信进程仍在时，App.onLaunch 不会再运行：旧 onStop 已到达，
+  // 但本地保存未完成，协调器已经 idle。页面上的“尝试保存”必须处理 journal 本身。
+  const hotReturnNative = {
+    start() {}, stop() {}, onStart() {}, onStop() {}, onError() {},
+  };
+  const hotReturnCoordinator = createRecorderCoordinator({ getRecorderManager: () => hotReturnNative });
+  const hotReturnPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderCoordinator: hotReturnCoordinator,
+      savedFilePath: "/saved/hot-return.mp3",
+      showModal: async () => ({ confirm: false, cancel: true }),
+    },
+  );
+  const hotReturnPractice = buildFullBookPracticeBundle("22").practices[firstAudioPageIndex];
+  const hotReturnSession = hotReturnPage.recordingSessionJournal.begin({
+    bookId: "22", bookTitle: buildBookPracticeBundle("22").book.title,
+    practiceId: hotReturnPractice.id, practiceIndex: firstAudioPageIndex,
+    pageNumber: hotReturnPractice.pageNumber, sectionTitle: hotReturnPractice.sectionTitle,
+    imageUrl: hotReturnPractice.imageUrl,
+  });
+  assert.equal(hotReturnPage.recordingSessionJournal.confirm(hotReturnSession.id), true);
+  assert.equal(hotReturnPage.recordingSessionJournal.recordTerminal(hotReturnSession.id, {
+    tempFilePath: "/tmp/hot-return.mp3", duration: 2100, fileSize: 5000,
+  }), true);
+  let hotReturnTree = hotReturnPage.render();
+  hotReturnTree = hotReturnPage.render();
+  assert.equal(hotReturnCoordinator.getPhase(), "idle", "热返回前原生录音器可能已经结束");
+  assert.equal(hotReturnCoordinator.getEntryRecoveryStatus(), "none", "热返回前尚未建立恢复任务");
+  hotReturnPage.show();
+  await settle();
+  hotReturnTree = hotReturnPage.render();
+  assert.equal(byClass(hotReturnTree, "record-button--check-recovery"), undefined, "热返回的停止文件由页面自动保存，无手动入口");
+  assert.equal(hotReturnPage.savedRecordings.length, 1, "热返回应自动保存已有停止文件");
+  assert.equal(hotReturnPage.savedRecordings[0]?.recordingSessionId, hotReturnSession.id);
+  assert.equal(hotReturnPage.recordingSessionJournal.read(), null, "旧录音保存成功后必须解除持久录音锁");
+  hotReturnPage.dispose();
+
+  const changedWhileModalCoordinator = createRecorderCoordinator({ getRecorderManager: () => hotReturnNative });
+  const changedWhileModalPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderCoordinator: changedWhileModalCoordinator,
+      savedFilePath: "/saved/new-modal.mp3",
+    },
+  );
+  const oldModalSession = changedWhileModalPage.recordingSessionJournal.begin(hotReturnSession.context);
+  changedWhileModalPage.recordingSessionJournal.confirm(oldModalSession.id);
+  changedWhileModalPage.recordingSessionJournal.recordTerminal(oldModalSession.id, {
+    tempFilePath: "/tmp/old-modal.mp3", duration: 2100, fileSize: 5000,
+  });
+  changedWhileModalPage.recordingSessionJournal.clear(oldModalSession.id);
+  const newerSession = changedWhileModalPage.recordingSessionJournal.begin(hotReturnSession.context);
+  changedWhileModalPage.recordingSessionJournal.confirm(newerSession.id);
+  changedWhileModalPage.recordingSessionJournal.recordTerminal(newerSession.id, {
+    tempFilePath: "/tmp/new-modal.mp3", duration: 2200, fileSize: 5100,
+  });
+  changedWhileModalPage.render();
+  changedWhileModalPage.render();
+  changedWhileModalPage.show();
+  await settle();
+  assert.equal(changedWhileModalPage.savedRecordings.length, 1, "自动恢复只保存显示时最新的停止文件");
+  assert.equal(changedWhileModalPage.savedRecordings[0].tempFilePath, "/tmp/new-modal.mp3");
+  assert.equal(changedWhileModalPage.savedRecordings[0].recordingSessionId, newerSession.id);
+  assert.equal(changedWhileModalPage.recordingSessionJournal.read(), null);
+  assert.equal(byClass(changedWhileModalPage.render(), "record-button--check-recovery"), undefined);
+  changedWhileModalPage.dispose();
+
+  const busyOnReturn = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { acquireSequence: ["ok", "busy", "ok"], savedFilePath: "/saved/busy-on-return.mp3" },
+  );
+  let busyOnReturnTree = busyOnReturn.render();
+  busyOnReturnTree = busyOnReturn.render();
+  await byClass(busyOnReturnTree, "record-button").props.onClick();
+  busyOnReturn.recorderHandlers.Start();
+  busyOnReturnTree = busyOnReturn.render();
+  byClass(busyOnReturnTree, "record-button--stop").props.onClick();
+  await busyOnReturn.recorderHandlers.Stop({ tempFilePath: "/tmp/busy-on-return.mp3", duration: 1500, fileSize: 5000 });
+  busyOnReturn.hide();
+  busyOnReturn.show();
+  busyOnReturnTree = busyOnReturn.render();
+  busyOnReturnTree = busyOnReturn.render();
+  assert.equal(busyOnReturn.acquireAttempts, 2);
+  assert.equal(byClass(busyOnReturnTree, "practice-recorder__retry").props["aria-disabled"], true, "B 占有空闲录音器时，返回的 A 页重录按钮也必须锁住");
+  assert.match(textOf(busyOnReturnTree), /正在自动恢复录音设备/);
+
+  const pausedAppHide = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/paused-app-hide.mp3" },
+  );
+  let pausedAppHideTree = pausedAppHide.render();
+  pausedAppHideTree = pausedAppHide.render();
+  await byClass(pausedAppHideTree, "record-button").props.onClick();
+  pausedAppHide.recorderHandlers.Start();
+  pausedAppHideTree = pausedAppHide.render();
+  byClass(pausedAppHideTree, "record-button--pause").props.onClick();
+  pausedAppHide.recorderHandlers.Pause();
+  pausedAppHide.hide();
+  assert.equal(pausedAppHide.recorderActions.at(-1).action, "stop", "已暂停的 A 录音在关闭小程序时也须结束");
+  assert.equal(pausedAppHide.recorderReleaseCalls.length, 1, "已暂停录音也要交还 owner");
+  await pausedAppHide.recorderHandlers.Stop({ tempFilePath: "/tmp/paused-app-hide.mp3", duration: 1600, fileSize: 5000 });
+  assert.equal(pausedAppHide.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex);
+
+  const idleAppHide = createPage("src/pages/Practice/Practice.tsx", { bookId: "22", practice: "0" });
+  idleAppHide.render();
+  idleAppHide.render();
+  idleAppHide.hide();
+  assert.equal(idleAppHide.recorderReleaseCalls.length, 1, "A 页没有录音也不能占住 B 的录音器");
+  idleAppHide.show();
+  idleAppHide.render();
+  assert.equal(idleAppHide.acquireAttempts, 2, "空闲的 A 页再显示时也能重新获取 owner");
+
+  const hiddenStopReentrant = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderCapabilities: { canRecord: true, canPause: false, canResume: false, canInterrupt: false },
+      recorderActionOutcomes: { stop: ["stop-then-throw"] },
+      savedFilePath: "/saved/hidden-reentrant.mp3",
+    },
+  );
+  let hiddenReentrantTree = hiddenStopReentrant.render();
+  hiddenReentrantTree = hiddenStopReentrant.render();
+  await byClass(hiddenReentrantTree, "record-button").props.onClick();
+  hiddenStopReentrant.recorderHandlers.Start();
+  hiddenStopReentrant.hide();
+  await settle();
+  assert.equal(hiddenStopReentrant.savedRecordings.length, 1, "后台同步 Stop 回调仍须保存录音");
+  assert.equal(
+    hiddenStopReentrant.stateValues().find((value) => value?.sessionId === 1 && value.capabilities?.canRecord)?.state,
+    "recorded",
+    "stop 先回调后报错时，不能把已完成录音的状态回退成 recording",
+  );
+
+  const hiddenUncertainTimers = createFakeTimers();
+  const hiddenUncertainPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderCapabilities: { canRecord: true, canPause: false, canResume: false, canInterrupt: false },
+      recorderActionOutcomes: { stop: ["throw-uncertain"] },
+      acquireSequence: ["ok", "uncertain"],
+      savedFilePath: "/saved/hidden-uncertain.mp3",
+      setTimeout: hiddenUncertainTimers.setTimeout,
+      clearTimeout: hiddenUncertainTimers.clearTimeout,
+    },
+  );
+  let hiddenUncertainTree = hiddenUncertainPage.render();
+  hiddenUncertainTree = hiddenUncertainPage.render();
+  await byClass(hiddenUncertainTree, "record-button").props.onClick();
+  hiddenUncertainPage.recorderHandlers.Start();
+  hiddenUncertainPage.hide();
+  assert.equal(hiddenUncertainTimers.size, 1, "协调器 uncertain 后仅保留短暂的退出收尾计时，不再安排 stop 重试");
+  assert.equal(hiddenUncertainPage.recorderActions.filter(({ action }) => action === "stop").length, 1);
+  hiddenUncertainPage.show();
+  hiddenUncertainTree = hiddenUncertainPage.render();
+  assert.match(textOf(hiddenUncertainTree), /正在自动恢复录音设备/, "后台 stop 原生状态不明时，回前台必须显示自动恢复态");
+  assert.equal(byClass(hiddenUncertainTree, "record-button--check-recovery"), undefined, "热返回时无需手动处理入口");
+  assert.equal(byClass(hiddenUncertainTree, "record-button--stop"), undefined, "不确定状态不能继续显示结束录音按钮");
+  await hiddenUncertainPage.recorderHandlers.Stop({ tempFilePath: "/tmp/hidden-uncertain.mp3", duration: 1900, fileSize: 5000 });
+  assert.equal(hiddenUncertainPage.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex, "迟到 onStop 必须保存到原录音页");
+
+  const recordingAcrossPages = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/across-pages.mp3" },
+  );
+  let recordingAcrossPagesTree = recordingAcrossPages.render();
+  recordingAcrossPagesTree = recordingAcrossPages.render();
+  await byClass(recordingAcrossPagesTree, "record-button").props.onClick();
+  recordingAcrossPages.recorderHandlers.Start();
+  recordingAcrossPagesTree = recordingAcrossPages.render();
+  await byClass(recordingAcrossPagesTree, "practice-navigation__button--primary").props.onClick();
+  recordingAcrossPagesTree = recordingAcrossPages.render();
+  assert.match(textOf(byClass(recordingAcrossPagesTree, "practice-header__progress")), progress22(1), "录音中允许翻页");
+  assert.doesNotMatch(textOf(recordingAcrossPagesTree), /归属|开始录音的页面/, "跨页录音不向用户展示内部归属规则");
+  byClass(recordingAcrossPagesTree, "record-button--pause").props.onClick();
+  recordingAcrossPages.recorderHandlers.Pause();
+  recordingAcrossPagesTree = recordingAcrossPages.render();
+  assert.doesNotMatch(textOf(recordingAcrossPagesTree), /归属|开始录音的页面/, "跨页暂停也不展示内部归属规则");
+  byClass(recordingAcrossPagesTree, "record-button--resume").props.onClick();
+  recordingAcrossPages.recorderHandlers.Resume();
+  recordingAcrossPagesTree = recordingAcrossPages.render();
+  byClass(recordingAcrossPagesTree, "record-button--stop").props.onClick();
+  await recordingAcrossPages.recorderHandlers.Stop({
+    tempFilePath: "/tmp/across-pages.mp3",
+    duration: 2400,
+    fileSize: 5000,
+  });
+  await settle();
+  assert.equal(recordingAcrossPages.savedRecordings.length, 1);
+  assert.equal(
+    recordingAcrossPages.savedRecordings[0].context.practiceIndex,
+    firstAudioPageIndex,
+    "跨页录音必须保存到开始录音的训练页",
+  );
+  recordingAcrossPagesTree = recordingAcrossPages.render();
+  assert.ok(byClass(recordingAcrossPagesTree, "check-in-button"), "跨页录音保存后，当前页应保留完成练习入口");
+  assert.ok(
+    elements(recordingAcrossPagesTree).some((node) => node.type === "Button" && textOf(node) === "重新录制"),
+    "跨页录音保存后，当前页应保留重新录制入口",
+  );
+  assert.ok(
+    elements(recordingAcrossPagesTree).some((node) => node.type === "Button" && textOf(node) === "删除录音"),
+    "跨页录音保存后，当前页应保留删除录音入口",
+  );
+
+  const reentrantStartPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { recorderActionOutcomes: { start: ["start-then-throw"] }, savedFilePath: "/saved/start-then-throw.mp3" },
+  );
+  reentrantStartPage.render();
+  let reentrantStartTree = reentrantStartPage.render();
+  await byClass(reentrantStartTree, "record-button").props.onClick();
+  reentrantStartTree = reentrantStartPage.render();
+  assert.equal(byClass(reentrantStartTree, "record-button--stop"), undefined, "原生 stop 尚未确认时不得显示不可用的结束按钮");
+  assert.match(textOf(reentrantStartTree), /正在自动恢复录音设备/, "start 重入失败后应提示自动等待原生录音器收口");
+  await byClass(reentrantStartTree, "practice-navigation__button--primary").props.onClick();
+  reentrantStartTree = reentrantStartPage.render();
+  await reentrantStartPage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/start-then-throw.mp3", duration: 1800, fileSize: 4200,
+  });
+  assert.equal(reentrantStartPage.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex, "start 同步确认后抛错与翻页并发时仍归起始页");
+
+  const remountedWhileRecording = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/remount.mp3" },
+  );
+  let remountedTree = remountedWhileRecording.render();
+  remountedTree = remountedWhileRecording.render();
+  await byClass(remountedTree, "record-button").props.onClick();
+  remountedWhileRecording.recorderHandlers.Start();
+  remountedWhileRecording.setRoute({ bookId: "22", practice: "1" });
+  assert.equal(typeof remountedWhileRecording.recorderReleaseCalls[0]?.terminalSink, "function", "训练组件重挂必须保留旧录音终止回调");
+  await remountedWhileRecording.recorderReleaseCalls[0].terminalSink({
+    type: "stop",
+    result: { tempFilePath: "/tmp/remount.mp3", duration: 2200, fileSize: 4900 },
+  });
+  assert.equal(remountedWhileRecording.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex, "组件重挂后的录音仍归属旧页");
+
+  const remountStopError = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { recorderActionOutcomes: { stop: ["throw-uncertain"] }, savedFilePath: "/saved/remount-stop-error.mp3" },
+  );
+  remountStopError.render();
+  let remountStopErrorTree = remountStopError.render();
+  await byClass(remountStopErrorTree, "record-button").props.onClick();
+  remountStopError.recorderHandlers.Start();
+  remountStopError.setRoute({ bookId: "22", practice: "1" });
+  const remountStopSink = remountStopError.recorderReleaseCalls[0]?.terminalSink;
+  assert.equal(typeof remountStopSink, "function", "stop 同步抛错时协调器仍应保留旧录音保存回调");
+  await remountStopSink({ type: "stop", result: {
+    tempFilePath: "/tmp/remount-stop-error.mp3", duration: 2200, fileSize: 4900,
+  } });
+  assert.equal(remountStopError.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex, "release 返回错误但仍等待 onStop 时不得 dispose 原状态");
 
   const hiddenPauseFailure = createPage(
     "src/pages/Practice/Practice.tsx",
@@ -863,11 +1328,8 @@ async function testRoutes() {
   await byClass(hiddenPauseFailureTree, "record-button").props.onClick();
   hiddenPauseFailure.recorderHandlers.Start();
   hiddenPauseFailure.hide();
-  assert.deepEqual(
-    hiddenPauseFailure.recorderActions.slice(-2).map(({ action }) => action),
-    ["pause", "stop"],
-    "隐藏页 pause 同步失败后必须立即降级 stop，不能继续后台录音",
-  );
+  assert.equal(hiddenPauseFailure.recorderActions.at(-1).action, "stop", "页面隐藏必须直接 stop");
+  assert.equal(hiddenPauseFailure.recorderActions.filter(({ action }) => action === "pause").length, 0, "隐藏后不应留下暂停的录音器");
   assert.equal(
     hiddenPauseFailure.modalCalls.some(({ title }) => title === "录音操作失败"),
     false,
@@ -888,14 +1350,12 @@ async function testRoutes() {
   hiddenStartFailureTree = hiddenStartFailure.render();
   await byClass(hiddenStartFailureTree, "record-button").props.onClick();
   hiddenStartFailure.hide();
-  assert.equal(hiddenStartRetryTimers.size, 1, "隐藏时首次 stop 同步失败必须安排有限安全重试");
-  hiddenStartFailure.recorderHandlers.Start();
   assert.equal(
     hiddenStartFailure.recorderActions.filter(({ action }) => action === "stop").length,
     2,
-    "stop 失败后的迟到 onStart 必须被接收并再次 stop",
+    "首次 stop 失败时释放 owner 仍应尝试安全停止",
   );
-  assert.equal(hiddenStartRetryTimers.size, 0, "迟到 onStart 已成功收口后必须清除备用重试");
+  assert.equal(hiddenStartRetryTimers.size, 1, "释放 owner 后只保留退出收尾计时，不再安排额外 stop 重试");
   assert.equal(
     hiddenStartFailure.modalCalls.some(({ title }) => title === "录音操作失败"),
     false,
@@ -923,8 +1383,8 @@ async function testRoutes() {
   boundedRetryTimers.advance(5000);
   assert.equal(
     boundedRetryPage.recorderActions.filter(({ action }) => action === "stop").length,
-    3,
-    "隐藏页 stop 连续失败时只做固定三次尝试，不能无限循环",
+    2,
+    "隐藏页停止失败后立即交给协调器，页面不能无限重试",
   );
   assert.equal(boundedRetryTimers.size, 0, "安全重试达到上限后不得残留定时器");
 
@@ -943,10 +1403,10 @@ async function testRoutes() {
   await byClass(unloadRetryTree, "record-button").props.onClick();
   unloadRetryPage.recorderHandlers.Start();
   unloadRetryPage.hide();
-  assert.equal(unloadRetryTimers.size, 1);
+  assert.equal(unloadRetryTimers.size, 1, "页面隐藏后 owner 已交由协调器，仅保留退出收尾计时");
   unloadRetryPage.unload();
   const unloadActionCount = unloadRetryPage.recorderActions.length;
-  assert.equal(unloadRetryTimers.size, 0, "页面卸载必须取消隐藏页 stop 重试");
+  assert.equal(unloadRetryTimers.size, 2, "隐藏和卸载各保留幂等退出收尾计时，不再安排隐藏页 stop 重试");
   unloadRetryTimers.advance(5000);
   assert.equal(unloadRetryPage.recorderActions.length, unloadActionCount, "卸载后不得再次调用录音器或更新页面状态");
 
@@ -965,7 +1425,7 @@ async function testRoutes() {
   byClass(hiddenResumeTree, "record-button--resume").props.onClick();
   hiddenWhileResuming.hide();
   hiddenWhileResuming.recorderHandlers.Resume();
-  assert.equal(hiddenWhileResuming.recorderActions.at(-1).action, "pause", "隐藏后迟到的 Resume 确认必须立即再次暂停");
+  assert.equal(hiddenWhileResuming.recorderActions.at(-1).action, "stop", "隐藏后迟到的 Resume 确认不能重新暂停");
 
   const hiddenResumeRetryTimers = createFakeTimers();
   const hiddenResumeFailure = createPage(
@@ -990,18 +1450,16 @@ async function testRoutes() {
   hiddenResumeFailureTree = hiddenResumeFailure.render();
   byClass(hiddenResumeFailureTree, "record-button--resume").props.onClick();
   hiddenResumeFailure.hide();
+  const stopCountBeforeLateResume = hiddenResumeFailure.recorderActions.filter(({ action }) => action === "stop").length;
   hiddenResumeFailure.recorderHandlers.Resume();
-  assert.deepEqual(
-    hiddenResumeFailure.recorderActions.slice(-2).map(({ action }) => action),
-    ["pause", "stop"],
-    "隐藏后迟到 onResume 的 pause 失败时必须立即降级 stop",
-  );
-  assert.equal(hiddenResumeRetryTimers.size, 1, "迟到 onResume 的首次 stop 失败也必须进入有限重试");
+  assert.equal(hiddenResumeFailure.recorderActions.at(-1).action, "stop", "隐藏后迟到 onResume 不能发出 pause");
+  assert.equal(hiddenResumeFailure.recorderActions.filter(({ action }) => action === "stop").length, stopCountBeforeLateResume, "迟到 onResume 也不能重复停止");
+  assert.equal(hiddenResumeRetryTimers.size, 1, "原生状态不确定时仅保留退出收尾计时，没有额外 stop 重试");
   hiddenResumeRetryTimers.advance(5000);
   assert.equal(
     hiddenResumeFailure.recorderActions.filter(({ action }) => action === "stop").length,
-    2,
-    "迟到 onResume 必须在有限重试内完成 stop",
+    stopCountBeforeLateResume,
+    "释放 owner 后页面不得再对旧录音发 stop",
   );
   assert.equal(hiddenResumeRetryTimers.size, 0);
 
@@ -1034,7 +1492,7 @@ async function testRoutes() {
   );
   let busyTree = busyPage.render();
   busyTree = busyPage.render();
-  assert.match(textOf(busyTree), /录音设备正在收尾/, "busy 应保持检测态并解释正在收尾，不能误报设备不支持");
+  assert.match(textOf(busyTree), /正在自动恢复录音设备/, "busy 应保持检测态并解释正在恢复，不能误报设备不支持");
   assert.equal(busyPage.acquireAttempts, 1);
   retryTimers.advance(299);
   assert.equal(busyPage.acquireAttempts, 1, "重试间隔未到不得频繁抢占录音器");
@@ -1046,6 +1504,38 @@ async function testRoutes() {
   assert.equal(busyPage.acquireAttempts, 3);
   busyTree = busyPage.render();
   assert.ok(byClass(busyTree, "record-button"), "旧录音器释放后应自动恢复录音入口");
+
+  const hiddenBusyTimers = createFakeTimers();
+  const hiddenBusyPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { acquireSequence: ["busy", "ok"], setTimeout: hiddenBusyTimers.setTimeout, clearTimeout: hiddenBusyTimers.clearTimeout },
+  );
+  hiddenBusyPage.render();
+  hiddenBusyPage.render();
+  hiddenBusyPage.hide();
+  hiddenBusyTimers.advance(300);
+  hiddenBusyPage.render();
+  assert.equal(hiddenBusyPage.acquireAttempts, 1, "隐藏的 A 页不能靠 busy 重试抢走 B 页 owner");
+  hiddenBusyPage.show();
+  hiddenBusyPage.render();
+  assert.equal(hiddenBusyPage.acquireAttempts, 2, "A 页重新显示后才可恢复 acquire");
+
+  const uncertainTimers = createFakeTimers();
+  const uncertainPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      acquireSequence: ["uncertain"],
+      setTimeout: uncertainTimers.setTimeout,
+      clearTimeout: uncertainTimers.clearTimeout,
+    },
+  );
+  uncertainPage.render();
+  const uncertainTree = uncertainPage.render();
+  assert.match(textOf(uncertainTree), /正在自动恢复录音设备/, "原生状态未知时应给出自动恢复说明");
+  assert.equal(byClass(uncertainTree, "record-button"), undefined, "原生状态未知时不能开放录音按钮");
+  uncertainPage.dispose();
 
   const cleanupTimers = createFakeTimers();
   const abandonedBusyPage = createPage(
@@ -1072,6 +1562,198 @@ async function testRoutes() {
   unavailablePage.render();
   assert.match(textOf(unavailablePage.render()), /暂不支持跟读录音/, "只有 unavailable 才应显示不支持录音");
 
+  const occupiedPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+  );
+  occupiedPage.render();
+  let occupiedTree = occupiedPage.render();
+  await byClass(occupiedTree, "record-button").props.onClick();
+  occupiedPage.recorderHandlers.Error({ errMsg: "operateRecorder:fail is recording or paused" });
+  occupiedTree = occupiedPage.render();
+  assert.match(occupiedPage.modalCalls.at(-1).content, /结束微信通话或其他录音/, "弹窗应说明原生占用的解决方法");
+  assert.match(textOf(occupiedTree), /结束微信通话或其他录音/, "页面应显示原生占用的解决方法");
+  assert.doesNotMatch(occupiedPage.modalCalls.at(-1).content, /operateRecorder:/, "用户弹窗不应展示微信底层英文错误");
+  assert.doesNotMatch(textOf(occupiedTree), /operateRecorder:/, "页面应使用中文解释录音器状态");
+  assert.equal(
+    elements(occupiedTree).some((node) => node.type === "Button" && textOf(node) === "重新尝试录音"),
+    false,
+    "原生录音仍被占用时不能显示无效的重试按钮",
+  );
+  assert.equal(byClass(occupiedTree, "record-button--check-recovery"), undefined, "原生占用时不要求手动放弃旧录音");
+  assert.equal(occupiedPage.recorderActions.filter(({ action }) => action === "start").length, 1);
+  occupiedPage.dispose();
+
+  const automaticRecoveryTimers = createFakeTimers();
+  const automaticRecoveryPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { setTimeout: automaticRecoveryTimers.setTimeout, clearTimeout: automaticRecoveryTimers.clearTimeout },
+  );
+  automaticRecoveryPage.render();
+  let automaticRecoveryTree = automaticRecoveryPage.render();
+  await byClass(automaticRecoveryTree, "record-button").props.onClick();
+  automaticRecoveryPage.recorderHandlers.Error({ errMsg: "operateRecorder:fail is recording or paused" });
+  automaticRecoveryTree = automaticRecoveryPage.render();
+  assert.equal(byClass(automaticRecoveryTree, "record-button--check-recovery"), undefined);
+  await automaticRecoveryPage.recorderHandlers.Stop({ tempFilePath: "", duration: 0, fileSize: 0 });
+  automaticRecoveryTimers.advance(500);
+  automaticRecoveryTree = automaticRecoveryPage.render();
+  assert.ok(byClass(automaticRecoveryTree, "record-button"), "原生 onStop 收口后应自动解除错误页锁，无须用户反复点检查");
+  assert.equal(automaticRecoveryPage.recorderActions.filter(({ action }) => action === "start").length, 1, "自动恢复不能自动开麦");
+
+  const unknownErrorPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/unknown-error.mp3", unknownErrorsUncertain: true },
+  );
+  unknownErrorPage.render();
+  let unknownErrorTree = unknownErrorPage.render();
+  await byClass(unknownErrorTree, "record-button").props.onClick();
+  unknownErrorPage.recorderHandlers.Start();
+  unknownErrorPage.recorderHandlers.Error(new Error("microphone hiccup"));
+  unknownErrorTree = unknownErrorPage.render();
+  assert.equal(byClass(unknownErrorTree, "record-button--check-recovery"), undefined, "原生错误后等待自动恢复，不要求手动放弃");
+  assert.equal(byClass(unknownErrorTree, "record-button"), undefined);
+  await unknownErrorPage.recorderHandlers.Stop({ tempFilePath: "/tmp/unknown-error.mp3", duration: 2100, fileSize: 5000 });
+  assert.equal(unknownErrorPage.savedRecordings.length, 1, "未知错误后迟到的录音也要保存到原页");
+  unknownErrorPage.dispose();
+
+  const pendingControlToasts = [];
+  const pendingControlsPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { showToast: value => pendingControlToasts.push(value) },
+  );
+  pendingControlsPage.render();
+  let pendingControlsTree = pendingControlsPage.render();
+  await byClass(pendingControlsTree, "record-button").props.onClick();
+  pendingControlsPage.recorderHandlers.Start();
+  pendingControlsTree = pendingControlsPage.render();
+  byClass(pendingControlsTree, "record-button--pause").props.onClick();
+  pendingControlsTree = pendingControlsPage.render();
+  assert.equal(byClass(pendingControlsTree, "record-button--pause").props["aria-disabled"], true, "等待暂停确认时暂停按钮必须锁定");
+  assert.equal(byClass(pendingControlsTree, "record-button--stop").props["aria-disabled"], true, "等待暂停确认时结束按钮必须锁定");
+  byClass(pendingControlsTree, "record-button--pause").props.onClick();
+  byClass(pendingControlsTree, "record-button--stop").props.onClick();
+  assert.deepEqual(pendingControlToasts.map(item => item.title), ["录音正在处理，请稍候", "录音正在处理，请稍候"], "点击锁定的录音操作应有反馈");
+  pendingControlsPage.recorderHandlers.Pause();
+  pendingControlsTree = pendingControlsPage.render();
+  byClass(pendingControlsTree, "record-button--resume").props.onClick();
+  pendingControlsTree = pendingControlsPage.render();
+  assert.equal(byClass(pendingControlsTree, "record-button--resume").props["aria-disabled"], true, "等待继续确认时继续按钮必须锁定");
+  assert.equal(byClass(pendingControlsTree, "record-button--stop").props["aria-disabled"], true, "等待继续确认时结束按钮必须锁定");
+  byClass(pendingControlsTree, "record-button--resume").props.onClick();
+  byClass(pendingControlsTree, "record-button--stop").props.onClick();
+  assert.equal(pendingControlToasts.length, 4, "继续录音等待期间再次点击也应提示");
+  assert.deepEqual(
+    pendingControlsPage.recorderActions.map(({ action }) => action),
+    ["start", "pause", "resume"],
+    "锁定时不得额外发送原生命令",
+  );
+  pendingControlsPage.dispose();
+
+  const occupiedAfterStartPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/occupied-after-start.mp3" },
+  );
+  occupiedAfterStartPage.render();
+  let occupiedAfterStartTree = occupiedAfterStartPage.render();
+  await byClass(occupiedAfterStartTree, "record-button").props.onClick();
+  occupiedAfterStartPage.recorderHandlers.Start();
+  occupiedAfterStartPage.recorderHandlers.Error({ errMsg: "operateRecorder:fail is recording or paused" });
+  await occupiedAfterStartPage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/occupied-after-start.mp3",
+    duration: 1000,
+    fileSize: 4096,
+  });
+  assert.equal(occupiedAfterStartPage.savedRecordings.length, 1, "占用错误后迟到的 onStop 仍须保存已录内容");
+  assert.equal(
+    occupiedAfterStartPage.savedRecordings[0].context.practiceId,
+    buildBookPracticeBundle("22").practices[0].id,
+    "占用错误后的录音必须保存到原训练页",
+  );
+  occupiedAfterStartPage.dispose();
+
+  const occupiedSwitchPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/occupied-switch.mp3" },
+  );
+  occupiedSwitchPage.render();
+  let occupiedSwitchTree = occupiedSwitchPage.render();
+  await byClass(occupiedSwitchTree, "record-button").props.onClick();
+  occupiedSwitchPage.recorderHandlers.Start();
+  occupiedSwitchPage.recorderHandlers.Error({ errMsg: "operateRecorder:fail is recording or paused" });
+  occupiedSwitchTree = occupiedSwitchPage.render();
+  await byClass(occupiedSwitchTree, "practice-navigation__button--primary").props.onClick();
+  occupiedSwitchPage.render();
+  await occupiedSwitchPage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/occupied-switch.mp3",
+    duration: 1000,
+    fileSize: 4096,
+  });
+  assert.equal(occupiedSwitchPage.savedRecordings.length, 1, "占用错误后切页仍须保存迟到的录音");
+  assert.equal(occupiedSwitchPage.savedRecordings[0].context.practiceIndex, firstAudioPageIndex, "迟到录音不得误归到新训练页");
+  occupiedSwitchPage.dispose();
+
+  const occupiedUnloadPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { savedFilePath: "/saved/occupied-unload.mp3" },
+  );
+  occupiedUnloadPage.render();
+  let occupiedUnloadTree = occupiedUnloadPage.render();
+  await byClass(occupiedUnloadTree, "record-button").props.onClick();
+  occupiedUnloadPage.recorderHandlers.Start();
+  occupiedUnloadPage.recorderHandlers.Error({ errMsg: "operateRecorder:fail is recording or paused" });
+  occupiedUnloadPage.unload();
+  await occupiedUnloadPage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/occupied-unload.mp3",
+    duration: 1000,
+    fileSize: 4096,
+  });
+  assert.equal(occupiedUnloadPage.savedRecordings.length, 1, "页面卸载后仍须保存占用错误前录到的文件");
+  assert.equal(occupiedUnloadPage.savedRecordings[0].context.practiceIndex, firstAudioPageIndex, "卸载后的迟到录音须归属原训练页");
+  occupiedUnloadPage.dispose();
+
+  const synchronousOccupiedPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { recorderActionOutcomes: { start: ["throw-busy"] } },
+  );
+  synchronousOccupiedPage.render();
+  let synchronousOccupiedTree = synchronousOccupiedPage.render();
+  await byClass(synchronousOccupiedTree, "record-button").props.onClick();
+  synchronousOccupiedTree = synchronousOccupiedPage.render();
+  assert.match(synchronousOccupiedPage.modalCalls.at(-1).content, /结束微信通话或其他录音/, "同步占用错误应立即说明恢复方法");
+  assert.equal(byClass(synchronousOccupiedTree, "record-button"), undefined, "同步占用错误后不应显示立即重试入口");
+  assert.equal(byClass(synchronousOccupiedTree, "record-button--check-recovery"), undefined, "热态占用错误不要求用户手动放弃旧录音");
+  assert.equal(synchronousOccupiedPage.recorderActions.filter(({ action }) => action === "start").length, 1);
+  synchronousOccupiedPage.dispose();
+
+  const synchronousStopOccupiedPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { recorderActionOutcomes: { stop: ["throw-busy"] }, savedFilePath: "/saved/stop-occupied.mp3" },
+  );
+  synchronousStopOccupiedPage.render();
+  let synchronousStopOccupiedTree = synchronousStopOccupiedPage.render();
+  await byClass(synchronousStopOccupiedTree, "record-button").props.onClick();
+  synchronousStopOccupiedPage.recorderHandlers.Start();
+  synchronousStopOccupiedTree = synchronousStopOccupiedPage.render();
+  byClass(synchronousStopOccupiedTree, "record-button--stop").props.onClick();
+  synchronousStopOccupiedTree = synchronousStopOccupiedPage.render();
+  assert.equal(byClass(synchronousStopOccupiedTree, "record-button--stop"), undefined, "同步停止占用错误后不应继续提供无效停止按钮");
+  await synchronousStopOccupiedPage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/stop-occupied.mp3",
+    duration: 1000,
+    fileSize: 4096,
+  });
+  assert.equal(synchronousStopOccupiedPage.savedRecordings.length, 1, "同步停止占用错误后的迟到结果仍须保存");
+  synchronousStopOccupiedPage.dispose();
+
   const restoredContext = buildBookPracticeBundle("22").practices[0];
   const oldPending = {
     requestId: "oldpending0123456789abcdef01234567",
@@ -1092,6 +1774,83 @@ async function testRoutes() {
     status: "local",
     updatedAtMs: 1,
   };
+
+  const reentrantReplacement = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      pendingItems: [oldPending],
+      recorderActionOutcomes: { start: ["start-then-throw"] },
+      savedFilePath: "/saved/reentrant-replacement.mp3",
+    },
+  );
+  reentrantReplacement.render();
+  reentrantReplacement.render();
+  await settle();
+  let reentrantReplacementTree = reentrantReplacement.render();
+  const reRecord = elements(reentrantReplacementTree).find((node) => node.type === "Button" && textOf(node) === "重新录制");
+  assert.ok(reRecord, "已有录音时应提供重录入口");
+  await reRecord.props.onClick();
+  reentrantReplacementTree = reentrantReplacement.render();
+  assert.equal(byClass(reentrantReplacementTree, "record-button--stop"), undefined, "onStart 后抛错要进入等待态，不能显示无效结束按钮");
+  assert.match(textOf(reentrantReplacementTree), /正在自动恢复录音设备/, "旧录音仍在时重入异常应告知用户自动恢复");
+  await byClass(reentrantReplacementTree, "practice-navigation__button--primary").props.onClick();
+  reentrantReplacementTree = reentrantReplacement.render();
+  await reentrantReplacement.recorderHandlers.Stop({
+    tempFilePath: "/tmp/reentrant-replacement.mp3", duration: 1900, fileSize: 4300,
+  });
+  assert.equal(reentrantReplacement.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex, "有旧录音时重入 start 的新文件仍须归原页");
+
+  const recordedLockTimers = createFakeTimers();
+  const recordedLockToasts = [];
+  const recordedLockPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      pendingItems: [oldPending],
+      recorderActionOutcomes: { start: ["throw-busy", "throw-busy"] },
+      showToast: value => recordedLockToasts.push(value),
+      setTimeout: recordedLockTimers.setTimeout,
+      clearTimeout: recordedLockTimers.clearTimeout,
+    },
+  );
+  recordedLockPage.render();
+  recordedLockPage.render();
+  await settle();
+  let recordedLockTree = recordedLockPage.render();
+  const firstRetry = elements(recordedLockTree).find((node) => node.type === "Button" && textOf(node) === "重新录制");
+  await firstRetry.props.onClick();
+  recordedLockTree = recordedLockPage.render();
+  const lockedRetry = elements(recordedLockTree).find((node) => node.type === "Button" && textOf(node) === "重新录制");
+  assert.equal(lockedRetry.props["aria-disabled"], true, "原生录音器状态未确认时，应锁住已有录音的重录按钮");
+  await lockedRetry.props.onClick();
+  assert.equal(recordedLockToasts.at(-1)?.title, "正在自动恢复录音设备，请稍候…", "锁住重录时说明正在自动恢复");
+  assert.match(textOf(recordedLockTree), /正在自动恢复录音设备/);
+  recordedLockPage.setRecorderPhase("idle");
+  recordedLockTimers.advance(300);
+  recordedLockTree = recordedLockPage.render();
+  assert.equal(
+    elements(recordedLockTree).find((node) => node.type === "Button" && textOf(node) === "重新录制").props["aria-disabled"],
+    true,
+    "未确认结束的持久录音记录不能仅凭协调器 idle 自动解除重录锁",
+  );
+  assert.equal(recordedLockPage.recordingSessionJournal.read()?.stage, "starting", "原生 start 未确认时必须保留持久归属记录");
+  await byClass(recordedLockTree, "practice-navigation__button--primary").props.onClick();
+  recordedLockTree = recordedLockPage.render();
+  const crossPageLockedRetry = elements(recordedLockTree).find((node) => node.type === "Button" && textOf(node) === "重新录制");
+  assert.equal(crossPageLockedRetry?.props["aria-disabled"], true, "翻到 B 页后仍须锁住未完成录音的重录入口");
+  await crossPageLockedRetry.props.onClick();
+  assert.equal(recordedLockToasts.at(-1)?.title, "正在自动恢复录音设备，请稍候…", "点击锁定的重录按钮应给出操作提示");
+  assert.match(textOf(recordedLockTree), /正在自动恢复录音设备/, "B 页不得出现可点但无反应的录音按钮");
+  recordedLockPage.setRecorderPhase("idle");
+  recordedLockTimers.advance(300);
+  recordedLockTree = recordedLockPage.render();
+  assert.equal(
+    elements(recordedLockTree).find((node) => node.type === "Button" && textOf(node) === "重新录制")?.props["aria-disabled"],
+    true,
+    "B 页必须等待旧会话确认结束或用户明确放弃后重启",
+  );
+  recordedLockPage.dispose();
 
   const lateStopPage = createPage(
     "src/pages/Practice/Practice.tsx",
@@ -1320,40 +2079,184 @@ async function testRoutes() {
   const recordingDuringSwitch = elements(switchingRemovalTree).find(
     (node) => node.type === "Button" && textOf(node) === "重新录制",
   );
-  await recordingDuringSwitch.props.onClick();
+  assert.ok(recordingDuringSwitch, "B 页应保留 A 页未完成录音的重录入口");
+  assert.equal(
+    elements(switchingRemovalTree).some((node) => node.type === "Button" && textOf(node) === "回听录音"),
+    true,
+    "B 页应保留 A 页未完成录音的回听入口",
+  );
+  assert.ok(byClass(switchingRemovalTree, "check-in-button"), "B 页应保留完成 A 页练习的入口");
+  await byClass(switchingRemovalTree, "check-in-button").props.onClick();
+  assert.equal(switchingRemovalPage.completedPending[0]?.requestId, oldPending.requestId, "B 页完成的仍是 A 页录音");
+  switchingRemovalTree = switchingRemovalPage.render();
+  const newPageRecord = byClass(switchingRemovalTree, "record-button");
+  assert.ok(newPageRecord, "完成 A 页录音后，B 页应展示自己的首次录音入口");
+  await newPageRecord.props.onClick();
   assert.equal(
     switchingRemovalPage.recorderActions.length,
     1,
-    "翻页保留录音后仍可在目标训练重新录制",
+    "B 页可独立开始录音",
+  );
+  switchingRemovalPage.recorderHandlers.Start();
+  switchingRemovalTree = switchingRemovalPage.render();
+  byClass(switchingRemovalTree, "record-button--stop").props.onClick();
+  await switchingRemovalPage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/page-b.mp3", duration: 1700, fileSize: 3200,
+  });
+  assert.equal(switchingRemovalPage.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex + 1);
+  assert.equal(pageTurnRemovalCalls, 0, "B 页新录音不能把 A 页已完成录音作为替换备份删除");
+  switchingRemovalTree = switchingRemovalPage.render();
+  await byClass(switchingRemovalTree, "practice-navigation__button").props.onClick();
+  switchingRemovalPage.render();
+  await settle();
+  switchingRemovalTree = switchingRemovalPage.render();
+  assert.match(textOf(byClass(switchingRemovalTree, "practice-header__progress")), progress22(0));
+  assert.equal(
+    switchingRemovalPage.stateValues().some((value) => value?.requestId === oldPending.requestId && value.localPath === oldPending.localPath),
+    false,
+    "完成后的 A 页录音不应重新变成未完成草稿",
   );
 
-  const delayedRemovalBeforeSubmit = deferred();
+  let removalDuringSwitch = 0;
   const submitDuringSwitchPage = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "22", practice: "0" },
     {
       pendingItems: [oldPending],
-      pendingRemove: () => delayedRemovalBeforeSubmit.promise,
+      pendingRemove: async () => { removalDuringSwitch += 1; return true; },
     },
   );
   let submitDuringSwitchTree = submitDuringSwitchPage.render();
   submitDuringSwitchTree = submitDuringSwitchPage.render();
   await settle();
   submitDuringSwitchTree = submitDuringSwitchPage.render();
-  const submitSwitchAttempt = byClass(
+  await byClass(
     submitDuringSwitchTree,
     "practice-navigation__button--primary",
   ).props.onClick();
   await settle();
   submitDuringSwitchTree = submitDuringSwitchPage.render();
+  assert.ok(byClass(submitDuringSwitchTree, "check-in-button"), "B 页应保留完成 A 页录音的入口");
   await byClass(submitDuringSwitchTree, "check-in-button").props.onClick();
+  assert.equal(submitDuringSwitchPage.completedPending[0]?.requestId, oldPending.requestId, "跨页完成须保存 A 页录音的完成状态");
   assert.equal(
     submitDuringSwitchPage.submittedPending.length,
     0,
-    "切页删除旧 pending 期间不得并发提交同一条录音",
+    "跨页完成练习不得发起云端提交",
   );
-  delayedRemovalBeforeSubmit.resolve(true);
-  await submitSwitchAttempt;
+  assert.equal(removalDuringSwitch, 0, "翻页不能删除 A 页录音");
+
+  for (const failure of ["invalid-result", "save-error"]) {
+    const removedIds = [];
+    const failedReplacementAcrossPages = createPage(
+      "src/pages/Practice/Practice.tsx",
+      { bookId: "22", practice: "0" },
+      {
+        pendingItems: [oldPending],
+        savedFilePath: `/saved/b-after-${failure}.mp3`,
+        pendingRemove: async (requestId) => { removedIds.push(requestId); return true; },
+        ...(failure === "save-error" ? {
+          saveRecording: async (input) => {
+            if (input.context.practiceIndex === firstAudioPageIndex) throw new Error("A 页保存失败");
+            return {
+              item: {
+                ...oldPending,
+                requestId: "newpageb0123456789abcdef01234567",
+                localPath: `/saved/b-after-${failure}.mp3`,
+                context: input.context,
+              },
+              persisted: true,
+              message: "",
+            };
+          },
+        } : {}),
+      },
+    );
+    failedReplacementAcrossPages.render();
+    failedReplacementAcrossPages.render();
+    await settle();
+    let failureTree = failedReplacementAcrossPages.render();
+    await elements(failureTree).find((node) => node.type === "Button" && textOf(node) === "重新录制").props.onClick();
+    failedReplacementAcrossPages.recorderHandlers.Start();
+    failureTree = failedReplacementAcrossPages.render();
+    await byClass(failureTree, "practice-navigation__button--primary").props.onClick();
+    failureTree = failedReplacementAcrossPages.render();
+    byClass(failureTree, "record-button--stop").props.onClick();
+    await failedReplacementAcrossPages.recorderHandlers.Stop({
+      ...(failure === "save-error" ? { tempFilePath: "/tmp/a-save-error.mp3" } : {}),
+      duration: 1800, fileSize: 3900,
+    });
+    failureTree = failedReplacementAcrossPages.render();
+    assert.equal(failedReplacementAcrossPages.recordingSessionJournal.read(), null, `A 页重录 ${failure} 后应清理失败的新录音状态`);
+    assert.ok(byClass(failureTree, "check-in-button"), `A 页重录 ${failure} 后，B 页应保留旧录音的完成入口`);
+    assert.ok(
+      elements(failureTree).some((node) => node.type === "Button" && textOf(node) === "重新录制"),
+      `A 页重录 ${failure} 后，B 页应保留旧录音的重录入口`,
+    );
+    assert.ok(
+      elements(failureTree).some((node) => node.type === "Button" && textOf(node) === "删除录音"),
+      `A 页重录 ${failure} 后，B 页应保留旧录音的删除入口`,
+    );
+    assert.equal(
+      failedReplacementAcrossPages.stateValues().some((value) => value?.requestId === oldPending.requestId),
+      true,
+      `A 页重录 ${failure} 后，B 页显示的仍应是 A 页旧文件`,
+    );
+    assert.deepEqual(removedIds, [], `A 页重录 ${failure} 后不得删除仍可恢复的旧录音`);
+  }
+
+  const bPractice = buildFullBookPracticeBundle("22").practices[firstAudioPageIndex + 1];
+  const pendingOnB = {
+    ...oldPending,
+    requestId: "existingb0123456789abcdef01234567",
+    localPath: "/saved/b-existing.mp3",
+    context: {
+      ...oldPending.context,
+      practiceId: bPractice.id,
+      practiceIndex: firstAudioPageIndex + 1,
+      pageNumber: bPractice.pageNumber,
+      sectionTitle: bPractice.sectionTitle,
+      imageUrl: bPractice.imageUrl,
+    },
+  };
+  const returnBeforeLateStop = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    { pendingItems: [pendingOnB], savedFilePath: "/saved/a-late-return.mp3" },
+  );
+  returnBeforeLateStop.render();
+  let returnBeforeLateStopTree = returnBeforeLateStop.render();
+  await byClass(returnBeforeLateStopTree, "record-button").props.onClick();
+  returnBeforeLateStop.recorderHandlers.Start();
+  returnBeforeLateStopTree = returnBeforeLateStop.render();
+  await byClass(returnBeforeLateStopTree, "practice-navigation__button--primary").props.onClick();
+  returnBeforeLateStop.recorderHandlers.Error(new Error("A 页原生停止状态不明"));
+  returnBeforeLateStop.render();
+  await settle();
+  returnBeforeLateStopTree = returnBeforeLateStop.render();
+  assert.equal(
+    returnBeforeLateStop.stateValues().some((value) => value?.localPath === pendingOnB.localPath),
+    true,
+    "等待 A 页迟到 onStop 时，B 页原有录音仍应可见",
+  );
+  await byClass(returnBeforeLateStopTree, "practice-navigation__button").props.onClick();
+  returnBeforeLateStopTree = returnBeforeLateStop.render();
+  assert.match(textOf(byClass(returnBeforeLateStopTree, "practice-header__progress")), progress22(0));
+  await returnBeforeLateStop.recorderHandlers.Stop({
+    tempFilePath: "/tmp/a-late-return.mp3", duration: 2000, fileSize: 4100,
+  });
+  returnBeforeLateStopTree = returnBeforeLateStop.render();
+  assert.equal(returnBeforeLateStop.savedRecordings[0]?.context.practiceIndex, firstAudioPageIndex);
+  assert.equal(
+    returnBeforeLateStop.stateValues().some((value) => value?.localPath === pendingOnB.localPath),
+    true,
+    "返回 A 页后才到达的 onStop，应保留正在显示的 B 页未完成录音",
+  );
+  assert.equal(
+    returnBeforeLateStop.savedRecordings.some((value) => value.context.practiceId === bPractice.id),
+    false,
+    "迟到 A 页文件不得覆盖 B 页录音",
+  );
 
   const uploadBeforeSwitch = deferred();
   let removalCallsDuringUpload = 0;
@@ -1409,6 +2312,14 @@ async function testRoutes() {
   await byClass(discardedStopErrorTree, "practice-navigation__button--primary").props.onClick();
   discardedStopErrorPage.recorderHandlers.Error(new Error("旧训练停止失败"));
   discardedStopErrorTree = discardedStopErrorPage.render();
+  assert.equal(byClass(discardedStopErrorTree, "record-button"), undefined, "未知错误后仍须等待旧会话 onStop，不能立即开新录音");
+  await discardedStopErrorPage.recorderHandlers.Stop({
+    tempFilePath: "/tmp/old-after-error.mp3",
+    duration: 1500,
+    fileSize: 4700,
+  });
+  await settle();
+  discardedStopErrorTree = discardedStopErrorPage.render();
   await byClass(discardedStopErrorTree, "record-button").props.onClick();
   discardedStopErrorPage.recorderHandlers.Start();
   discardedStopErrorTree = discardedStopErrorPage.render();
@@ -1421,19 +2332,29 @@ async function testRoutes() {
   await settle();
   assert.equal(
     discardedStopErrorPage.savedRecordings.length,
-    1,
-    "训练 A 的废弃 stop 返回 onError 后，训练 B 的新录音仍必须正常保存",
+    2,
+    "训练 A 的未知错误收口后，训练 B 的新录音仍必须正常保存",
   );
   assert.equal(
     discardedStopErrorPage.savedRecordings[0].context.practiceIndex,
+    firstAudioPageIndex,
+    "旧录音迟到结果必须留在训练 A",
+  );
+  assert.equal(
+    discardedStopErrorPage.savedRecordings[1].context.practiceIndex,
     firstAudioPageIndex + 1,
     "旧 stop 错误不能让训练 B 的录音误贴或丢失",
   );
 
+  const discardedStopTimeoutTimers = createFakeTimers();
   const discardedStopTimeoutPage = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "22", practice: "0" },
-    { savedFilePath: "/saved/after-discard-timeout.mp3" },
+    {
+      savedFilePath: "/saved/after-discard-timeout.mp3",
+      setTimeout: discardedStopTimeoutTimers.setTimeout,
+      clearTimeout: discardedStopTimeoutTimers.clearTimeout,
+    },
   );
   let discardedStopTimeoutTree = discardedStopTimeoutPage.render();
   discardedStopTimeoutTree = discardedStopTimeoutPage.render();
@@ -1444,22 +2365,11 @@ async function testRoutes() {
   discardedStopTimeoutPage.recorderHandlers.OperationTimeout("stop");
   discardedStopTimeoutPage.recorderHandlers.DrainTimeout();
   discardedStopTimeoutTree = discardedStopTimeoutPage.render();
-  await byClass(discardedStopTimeoutTree, "record-button").props.onClick();
-  discardedStopTimeoutPage.recorderHandlers.Start();
-  discardedStopTimeoutTree = discardedStopTimeoutPage.render();
-  byClass(discardedStopTimeoutTree, "record-button--stop").props.onClick();
-  await discardedStopTimeoutPage.recorderHandlers.Stop({
-    tempFilePath: "/tmp/after-discard-timeout.mp3",
-    duration: 1750,
-    fileSize: 5200,
-  });
-  await settle();
-  assert.equal(
-    discardedStopTimeoutPage.savedRecordings.length,
-    1,
-    "训练 A 的废弃 stop 超时且无 terminal 时，解锁后训练 B 的新录音仍必须正常保存",
-  );
-  assert.equal(discardedStopTimeoutPage.savedRecordings[0].context.practiceIndex, firstAudioPageIndex + 1);
+  assert.equal(byClass(discardedStopTimeoutTree, "record-button"), undefined, "原生 stop 未确认时不能再次录音");
+  assert.equal(byClass(discardedStopTimeoutTree, "record-button--check-recovery"), undefined, "超时旧录音由页面自动放弃");
+  discardedStopTimeoutTimers.advance(1500);
+  assert.equal(discardedStopTimeoutPage.recordingSessionJournal.read(), null, "超时后自动清除旧录音记录");
+  assert.equal(discardedStopTimeoutPage.recorderActions.filter(({ action }) => action === "start").length, 1, "没有终止回调就不能向原生发出新 start");
 
   const hiddenPermission = deferred();
   const hiddenPermissionPage = createPage(
@@ -1509,7 +2419,7 @@ async function testRoutes() {
   const insufficientPage = createPage(
     "src/pages/Practice/Practice.tsx",
     { bookId: "22", practice: "0" },
-    { pendingItems: [oldPending], capacityCheck: async () => ({ allowed: false, message: "本地录音空间不足，请先清理历史录音" }) },
+    { pendingItems: [oldPending], capacityCheck: async () => ({ allowed: false, reason: "local-recordings-full", message: "本地录音空间不足，请到“我的录音”删除不需要的本地录音后重试" }) },
   );
   let insufficientTree = insufficientPage.render();
   insufficientTree = insufficientPage.render();
@@ -1519,6 +2429,8 @@ async function testRoutes() {
   assert.equal(insufficientPage.recorderActions.length, 0, "容量不足不得开麦");
   assert.equal(insufficientPage.permissionChecks.length, 0, "容量不足无需请求麦克风权限");
   assert.equal(insufficientPage.stateValues().some((value) => value?.requestId === oldPending.requestId), true, "容量不足必须保留旧录音");
+  assert.equal(insufficientPage.modalCalls.at(-1).confirmText, "整理录音", "容量不足应提供直接整理入口");
+  assert.equal(insufficientPage.navigations.at(-1), "/pages/MyCheckIns/MyCheckIns");
   insufficientPage.dispose();
 
   const replacedOwnerPermission = deferred();
@@ -1706,6 +2618,7 @@ async function testRoutes() {
   leavingPage.recorderHandlers.Start();
   await byClass(leavingTree, "check-in-navigation__home").props.onClick();
   await settle();
+  assert.match(leavingPage.modalCalls.at(-1)?.content || "", /结束并保存/, "离页提示必须说明录音会保存到本地");
   assert.equal(leavingPage.navigationMethods.at(-1), "reLaunch", "活动录音点击房子必须离开到首页");
   assert.equal(leavingPage.navigations.at(-1), "/pages/Home/Home");
   assert.equal(leavingPage.recorderActions.at(-1).action, "stop", "确认离开后应先停止活动录音");
@@ -1720,23 +2633,47 @@ async function testRoutes() {
     "function",
     "卸载活动录音时必须托管一次 terminal sink",
   );
-  assert.equal(leavingTimers.size, 0, "页面不得再用 8 秒硬截止撤销唯一 stop 消费器");
+  assert.equal(leavingTimers.size, 2, "隐藏和卸载各安排幂等退出收尾计时，不再额外调用 stop");
   leavingTimers.advance(9000);
-  await leavingPage.recorderHandlers.Stop({
-    tempFilePath: "/tmp/leaving.mp3",
-    duration: 2300,
-    fileSize: 8192,
+  assert.equal(leavingPage.recordingSessionJournal.read(), null, "退出后长期无结束回调应放弃未完成录音并清除锁");
+  assert.equal(leavingPage.savedRecordings.length, 0, "没有原生结束文件时不可凭空保存录音");
+
+  const lateExitTimers = createFakeTimers();
+  const lateExitCallbacks = {};
+  const lateExitNative = {
+    onStart(callback) { lateExitCallbacks.start = callback; },
+    onStop(callback) { lateExitCallbacks.stop = callback; },
+    onError(callback) { lateExitCallbacks.error = callback; },
+    start() {}, stop() {},
+  };
+  const lateExitCoordinator = createRecorderCoordinator({
+    getRecorderManager: () => lateExitNative,
+    scheduler: lateExitTimers,
+    quietWindowMs: 10,
+    abandonQuietWindowMs: 10,
   });
-  await settle();
-  assert.equal(leavingPage.savedRecordings.length, 1, "离页 stop 结果仍必须进入本地待上传队列");
-  assert.equal(leavingPage.savedRecordings[0].durationMs, 2300);
-  assert.equal(leavingPage.savedRecordings[0].context.bookId, "22", "离页保存必须保留原教材");
-  assert.equal(leavingPage.savedRecordings[0].context.practiceIndex, firstAudioPageIndex, "离页保存必须保留原训练页");
-  assert.equal(
-    typeof leavingPage.recorderTerminalOutcomes[0]?.then,
-    "function",
-    "terminal sink 必须把异步本地持久化 Promise 交还协调器等待",
+  const lateExitPage = createPage(
+    "src/pages/Practice/Practice.tsx",
+    { bookId: "22", practice: "0" },
+    {
+      recorderCoordinator: lateExitCoordinator,
+      setTimeout: lateExitTimers.setTimeout,
+      clearTimeout: lateExitTimers.clearTimeout,
+    },
   );
+  let lateExitTree = lateExitPage.render();
+  lateExitTree = lateExitPage.render();
+  await byClass(lateExitTree, "record-button").props.onClick();
+  lateExitCallbacks.start();
+  lateExitTree = lateExitPage.render();
+  await byClass(lateExitTree, "check-in-navigation__home").props.onClick();
+  lateExitPage.hide();
+  lateExitPage.unload();
+  lateExitTimers.advance(9000);
+  assert.equal(lateExitPage.recordingSessionJournal.read(), null, "录音器长期无结束回调后要清除旧录音锁");
+  lateExitCallbacks.stop({ tempFilePath: "/tmp/late-exit.mp3", duration: 2300, fileSize: 8192 });
+  await settle();
+  assert.equal(lateExitPage.savedRecordings.length, 0, "超时后经协调器到达的旧 onStop 不得再保存录音");
 
   const pausedLeavingPage = createPage(
     "src/pages/Practice/Practice.tsx",
@@ -1860,7 +2797,7 @@ async function testHistory(fields, valid, overrides = {}) {
   assert.equal(page.navigations.at(-1), valid ? `/pages/Practice/Practice?bookId=${encodeURIComponent(fields.bookId)}&page=${expectedPage}` : "/pages/BookLibrary/BookLibrary");
 }
 
-module.exports = { createPage, elements, textOf, byClass, buildBookPracticeBundle, load };
+module.exports = { createPage, createFakeTimers, elements, textOf, byClass, buildBookPracticeBundle, load };
 if (require.main === module) {
   testRoutes()
     .catch((error) => { console.error(error); process.exitCode = 1; })

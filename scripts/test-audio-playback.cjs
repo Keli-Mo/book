@@ -927,8 +927,9 @@ async function testBookPlaybackLifecycle() {
   tree = page.render();
   assert.equal(recording.events.filter((event) => event === "stop").length, previousStops, "打开目录不能停止录音回听");
   await elements(tree).find((node) => node.type?.name === "PracticeDirectory").props.onSelect(audioPages[2].imageIndex);
-  assert.equal(recording.events.includes("destroy"), false, "教材翻页应保留当前录音回听会话");
-  assert.ok(elements(page.render()).some((node) => node.type === "Button" && textOf(node) === "停止回听"), "翻页后应继续显示当前录音的停止回听按钮");
+  assert.equal(recording.events.includes("destroy"), true, "翻页应结束正在播放的本地回听会话");
+  assert.equal(elements(page.render()).some((node) => node.type === "Button" && textOf(node) === "停止回听"), false, "新页的回听按钮应恢复为未播放状态");
+  assert.ok(byClass(page.render(), "check-in-button"), "新页仍显示这段未完成录音的操作区");
 
   tree = page.render();
   byClass(tree, "audio-hotspot").props.onClick();

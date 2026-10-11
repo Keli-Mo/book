@@ -78,6 +78,8 @@ export type SavePendingRecordingInput = {
   context: CheckInContext;
   durationMs: number;
   fileSizeBytes: number;
+  /** 与录音会话日志共用 ID，使冷启动重试不会重复保存同一段录音。 */
+  recordingSessionId?: string;
 };
 
 export type SavePendingRecordingResult = {
@@ -176,7 +178,14 @@ const isQuotaFailure = (error: unknown) => {
   return /quota|storage.?full|space/i.test(text);
 };
 
-const capacityMessage = () => "本地录音空间不足，请先整理历史录音";
+const isDeviceStorageFailure = (error: unknown) => {
+  const details = error as { code?: unknown; errCode?: unknown; errno?: unknown; errMsg?: unknown; message?: unknown };
+  const text = `${details?.code || ""} ${details?.errCode || ""} ${details?.errno || ""} ${details?.errMsg || ""} ${details?.message || ""}`;
+  return /\bENOSPC\b|no space left on device|device storage full|设备存储空间不足/i.test(text);
+};
+
+const capacityMessage = () => "本地录音空间不足，请到“我的录音”删除不需要的本地录音后重试";
+const deviceStorageMessage = "设备存储空间不足，请清理手机存储空间后重试";
 const capacityUnknownMessage = "无法检查本地录音空间，请稍后重试";
 const capacityCalibrationUnknownMessage = "录音已保存，但无法核实本地录音空间，请先整理历史录音";
 
@@ -446,6 +455,9 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     if (!isPositiveInteger(input.fileSizeBytes)) {
       throw new Error("fileSizeBytes 必须为有效原生文件大小");
     }
+    if (input.recordingSessionId !== undefined && !isRequestId(input.recordingSessionId)) {
+      throw new Error("recordingSessionId 必须是 32 位十六进制值");
+    }
   };
 
   const createItem = (
@@ -457,8 +469,8 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     if (!isText(localPath)) throw new Error("localPath 必须为有效路径");
 
     let requestId = "";
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const candidate = adapters.random.hex();
+    for (let attempt = 0; attempt < (input.recordingSessionId ? 1 : 3); attempt += 1) {
+      const candidate = input.recordingSessionId?.toLowerCase() ?? adapters.random.hex();
       if (!isRequestId(candidate)) {
         throw new Error("requestId 必须是 32 位十六进制随机值");
       }
@@ -511,10 +523,10 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
     try {
       return await readUsageBytes() <= RECORDING_START_USED_BYTES
         ? { allowed: true, message: "" }
-        : { allowed: false, message: capacityMessage() };
+        : { allowed: false, reason: "local-recordings-full" as const, message: capacityMessage() };
     } catch (error) {
       diagnose("capacity.read.failed", { error });
-      return { allowed: false, message: capacityUnknownMessage };
+      return { allowed: false, reason: "capacity-check-failed" as const, message: capacityUnknownMessage };
     }
   };
 
@@ -524,7 +536,22 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
   ): Promise<SavePendingRecordingResult> => {
     // 先校验原生录音结果，避免为了“修复”无效数据而猜测时长或文件大小。
     validateRecordingInput(input);
-    await cleanupInternal();
+    // 历史文件逐个 access 只用于刷新回听状态；新文件落盘不能排在全部历史探针之后。
+    await ready();
+    await flushDirtyMetadata();
+    const sessionId = input.recordingSessionId?.toLowerCase();
+    if (sessionId) retryItem = retryItem ?? temporaryItems.get(sessionId);
+    if (sessionId && metadataReadable) {
+      const existing = persistedItems.find(item => item.requestId.toLowerCase() === sessionId);
+      if (existing) {
+        // 重复 onStop / 冷启动恢复只需核查对应的一个文件，不能误把失踪文件报作已保存。
+        try { existing.fileAvailability = await adapters.file.exists(existing.localPath) ? "available" : "missing"; }
+        catch (error) { existing.fileAvailability = "unavailable"; diagnose("save.existing.access.failed", { requestId: sessionId, error }); }
+        const persisted = existing.fileAvailability === "available";
+        return { item: freezeItem(existing), persisted,
+          message: persisted ? "" : "已保存的录音文件暂时无法访问，请稍后重试" };
+      }
+    }
     if (!metadataReadable || !journalReadable) {
       const item = retryItem || createItem(input, input.tempFilePath, false);
       return createTemporaryResult(item, "无法读取本地录音索引，请重试，现有录音不会被覆盖", "failed");
@@ -569,14 +596,16 @@ export const createPendingCheckInStore = (adapters: PendingCheckInAdapters) => {
       try {
         saved = await adapters.file.save(input.tempFilePath, checkpoint);
       } catch (error) {
+        if (isDeviceStorageFailure(error)) {
+          return createTemporaryResult(initialItem, deviceStorageMessage);
+        }
         if (isQuotaFailure(error)) {
-          await cleanupInternal();
           try {
             saved = await adapters.file.save(input.tempFilePath, checkpoint);
-          } catch (_retryError) {
+          } catch (retryError) {
             return createTemporaryResult(
               initialItem,
-              "录音无法持久保存，关闭小程序后可能无法恢复",
+              isDeviceStorageFailure(retryError) ? deviceStorageMessage : capacityMessage(),
             );
           }
         } else {

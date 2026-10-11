@@ -14,6 +14,7 @@ const compiled = ts.transpileModule(
 const launchApp = (audioError) => {
   let onLaunch;
   let cloudInitializations = 0;
+  let recordingRecoveryChecks = 0;
   const audioOptions = [];
   const warnings = [];
   const taro = {
@@ -31,6 +32,9 @@ const launchApp = (audioError) => {
     require: (request) => {
       if (request === "@tarojs/taro") return { __esModule: true, default: taro, ...taro };
       if (request === "@/cloud") return { initCloudHosting: () => { cloudInitializations += 1; } };
+      if (request === "@/features/listeningPractice/recordingSessionRecovery") {
+        return { resumeUnfinishedRecordingOnLaunch: () => { recordingRecoveryChecks += 1; } };
+      }
       if (request.endsWith(".scss")) return {};
       throw new Error(`Unexpected dependency: ${request}`);
     },
@@ -38,13 +42,14 @@ const launchApp = (audioError) => {
   const children = {};
   assert.equal(loaded.exports.default({ children }), children, "启动配置不能阻断页面渲染");
   onLaunch();
-  return { audioOptions, warnings, cloudInitializations };
+  return { audioOptions, warnings, cloudInitializations, recordingRecoveryChecks };
 };
 
 test("冷启动统一允许静音模式下播放，无需先打开旧教材页", async () => {
   const app = launchApp();
   assert.equal(app.audioOptions.length, 1, "应用启动时必须设置全局音频选项");
   assert.equal(app.audioOptions[0].obeyMuteSwitch, false, "用户主动播放不应被 iOS 静音模式静默屏蔽");
+  assert.equal(app.recordingRecoveryChecks, 1, "冷启动必须先检查上次未完成的录音");
   assert.equal(app.cloudInitializations, 1, "保留云环境初始化");
   await Promise.resolve();
   assert.equal(app.warnings.length, 0);

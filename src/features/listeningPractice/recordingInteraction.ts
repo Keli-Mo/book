@@ -63,29 +63,28 @@ export const parseNativeRecordingResult = (
   };
 };
 
-/** 保留微信原始错误；未知录音失败不能一律归因为麦克风权限。 */
+/** 仅生成界面文案；原始错误仍保留在录音状态中供诊断。 */
+export const RECORDER_OCCUPIED_GUIDANCE =
+  "微信录音设备仍被占用。请先结束微信通话或其他录音，返回本页重试；若仍无法恢复，再关闭并重新打开微信。";
+
 export const getRecordingErrorMessage = (error: unknown): string => {
-  const details =
-    error && typeof error === "object"
-      ? (error as {
-          errMsg?: string;
-          message?: string;
-          errCode?: string | number;
-          errno?: string | number;
-          code?: string | number;
-        })
-      : undefined;
-  const message =
-    (typeof details?.errMsg === "string" ? details.errMsg : "") ||
-    (typeof details?.message === "string" ? details.message : "") ||
-    (typeof error === "string" ? error : "");
-  const candidateCode = details?.errCode ?? details?.errno ?? details?.code;
-  const code =
-    typeof candidateCode === "string" || typeof candidateCode === "number"
-      ? candidateCode
-      : undefined;
-  const reason = message || "微信未返回具体原因，请重新进入小程序后重试。";
-  return code === undefined ? reason : `${reason}\n错误码：${code}`;
+  const details = error && typeof error === "object"
+    ? error as { errMsg?: unknown; message?: unknown; errCode?: unknown; errno?: unknown; code?: unknown }
+    : undefined;
+  const description = [typeof error === "string" ? error : "", details?.errMsg, details?.message,
+    details?.errCode, details?.errno, details?.code]
+    .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
+    .join(" ");
+  if (/is recording or paused|audio is recording/i.test(description)) {
+    return RECORDER_OCCUPIED_GUIDANCE;
+  }
+  if (/\bENOSPC\b|no space left on device|device storage full|设备存储空间不足/i.test(description)) {
+    return "设备存储空间不足，请清理手机存储空间后重试";
+  }
+  if (/本地录音空间不足|quota|storage[\s_-]?full/i.test(description)) {
+    return "本地录音空间不足，请到“我的录音”删除不需要的本地录音后重试";
+  }
+  return "录音操作失败，请稍后重试";
 };
 
 /** 从零开始记录本轮实际录音时长。 */

@@ -485,7 +485,7 @@ for (const route of routes) {
     } finally { page.dispose(); }
   });
 
-  test(`${route.name}：后台旋转遇到零尺寸，回到前台会重新测量且不重挂会话`, async () => {
+  test(`${route.name}：后台旋转遇到零尺寸，回到前台重新测量并重获录音器`, async () => {
     const context = fixture(route, modes[0]);
     const { page, slot } = context;
     try {
@@ -499,7 +499,7 @@ for (const route of routes) {
       page.show();
       await settle();
       assertImageSize(page, slot, modes[1], "后台旋转恢复后");
-      assert.equal(page.acquireAttempts, acquireAttempts);
+      assert.equal(page.acquireAttempts, acquireAttempts + 1, "后台页面交还 owner 后，回前台需重新获取");
       assert.equal(progress(page), initialProgress);
       assert.equal(page.savedRecordings.length, 1);
       assert.ok(byClass(render(page), "practice-recorder__retry"), "恢复前台后仍保留已录草稿");
@@ -668,7 +668,7 @@ test("Pad 竖屏：打开和关闭页内放大保持示范音频与活动录音"
     assert.ok(byClass(render(recordingContext.page), "record-button--pause"), "关闭预览后仍须保持录音中");
 
     recordingContext.page.hide();
-    assert.equal(recordingContext.page.recorderActions.at(-1).action, "pause", "真正隐藏训练页时仍须暂停录音");
+    assert.equal(recordingContext.page.recorderActions.at(-1).action, "stop", "真正隐藏训练页时须结束录音并交还录音器");
   } finally {
     cleanup(recordingContext.page);
   }
@@ -724,7 +724,7 @@ test("Pad 竖屏：打开和关闭页内预览保持活动录音", async () => {
     assert.ok(byClass(tree, "record-button--pause"), "关闭页内预览后应继续录音");
 
     context.appHide();
-    assert.equal(context.page.recorderActions.at(-1).action, "pause", "真正切后台仍须暂停活动录音");
+    assert.equal(context.page.recorderActions.at(-1).action, "stop", "真正切后台须结束活动录音");
   } finally {
     cleanup(context.page);
   }
@@ -755,7 +755,7 @@ test("Pad 竖屏：打开和关闭页内预览保持录音回听", async () => {
   }
 });
 
-test("Pad 竖屏：页内预览打开时真实切后台仍停止音频并暂停录音", async () => {
+test("Pad 竖屏：页内预览打开时真实切后台仍停止音频和录音", async () => {
   const audioRoute = { ...routes[0], params: { bookId: "22", practice: "0" } };
   const audioContext = fixture(audioRoute, modes[2]);
   try {
@@ -775,10 +775,10 @@ test("Pad 竖屏：页内预览打开时真实切后台仍停止音频并暂停�
     await begin(recordingContext.page);
     await byClass(render(recordingContext.page), "practice-book-expand").props.onClick();
     recordingContext.appHide();
-    assert.equal(recordingContext.page.recorderActions.at(-1).action, "pause", "App.onHide 必须暂停活动录音");
+    assert.equal(recordingContext.page.recorderActions.at(-1).action, "stop", "App.onHide 必须停止活动录音");
     const actionCountAfterAppHide = recordingContext.page.recorderActions.length;
     recordingContext.page.hide();
-    assert.equal(recordingContext.page.recorderActions.length, actionCountAfterAppHide, "App.onHide 与 Page.onHide 反序到达不得重复暂停");
+    assert.equal(recordingContext.page.recorderActions.length, actionCountAfterAppHide, "App.onHide 与 Page.onHide 反序到达不得重复停止");
   } finally {
     cleanup(recordingContext.page);
   }

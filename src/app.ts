@@ -1,6 +1,7 @@
 import { PropsWithChildren } from "react";
 import Taro, { useLaunch } from "@tarojs/taro";
 import { CLOUD_ENV_ID, initCloudHosting } from "@/cloud";
+import { resumeUnfinishedRecordingOnLaunch } from "@/features/listeningPractice/recordingSessionRecovery";
 
 import "taro-ui/dist/style/index.scss"; // 全局引入一次即可
 import "@taroify/icons/index.scss";
@@ -11,6 +12,7 @@ export { CLOUD_ENV_ID };
 
 function App({ children }: PropsWithChildren<any>) {
   useLaunch(() => {
+    resumeUnfinishedRecordingOnLaunch();
     // 全局配置覆盖示范听音和录音回听，避免 iOS 静音模式下播放无声。
     void Taro.setInnerAudioOption({ obeyMuteSwitch: false }).catch((error) => {
       const errMsg = typeof error === "object" && error !== null && "errMsg" in error

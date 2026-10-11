@@ -53,9 +53,13 @@ assert.match(source, /\.release\s*\(\s*\{[\s\S]*?terminalSink\s*:/, "页面卸�
 assert.doesNotMatch(source, /取消上传并保留录音|uploadLabel|cancelSubmission/, "训练页不应残留不可达上传界面");
 assert.match(
   source,
-  /useUnload\(\(\) => \{[\s\S]*?requestRecorderTeardown\([\s\S]*?terminalSink/,
-  "页面卸载时必须先更新录音状态，再把 stop 结果交给持久化 sink",
+  /const detachRecorderOwner = useCallback\(\(\) => \{[\s\S]*?requestRecorderTeardown\([\s\S]*?owner\.release\(\{ terminalSink:/,
+  "统一清理入口必须先更新录音状态，再把 stop 结果交给持久化 sink",
 );
+assert.match(source, /useUnload\(\(\) => \{[\s\S]*?detachRecorderOwner\(\)/, "离页必须调用统一清理入口");
+assert.match(source, /return \(\) => \{[\s\S]{0,300}?mountedRef\.current = false;\s*detachRecorderOwner\(\)/, "组件重挂或卸载也必须调用统一清理入口");
 assert.doesNotMatch(source, /RECORDER_TEARDOWN_TIMEOUT_MS|teardownReleaseTimerRef/, "页面不得用固定 8 秒截止丢弃迟到录音");
+assert.doesNotMatch(source, /完整关闭微信|重启微信|放弃并重启/, "录音恢复界面不得要求用户重启微信");
+assert.match(source, /abandonUnconfirmedRecording\s*\(/, "用户放弃无回调录音后应在当前小程序内解除旧会话锁");
 
 console.log("训练页录音接线测试通过：状态机、切页竞态、本地完成与详情路由已进入生产路径。");

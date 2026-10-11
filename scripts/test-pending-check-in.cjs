@@ -155,13 +155,17 @@ const createBarrier = () => {
   assert.equal(boundaryResult.allowed, true, "恰好 82MiB 仍可开麦");
   assert.equal(boundaryResult.message, "");
   const overStartBoundary = createPendingCheckInStore(createAdapters({ usageBehavior: () => 82 * MIB + 1 }).adapters);
-  assert.equal((await overStartBoundary.checkCanStartRecording()).allowed, false, "超过 82MiB 一字节必须拦截开麦");
+  const fullLibrary = await overStartBoundary.checkCanStartRecording();
+  assert.equal(fullLibrary.allowed, false, "超过 82MiB 一字节必须拦截开麦");
+  assert.equal(fullLibrary.reason, "local-recordings-full", "本小程序录音库占用达到上限时应提供整理入口所需的原因");
+  assert.match(fullLibrary.message, /删除.*本地录音/);
 
   for (const invalidUsage of [() => { throw new Error("stat failed"); }, () => -1, () => 1.5, () => NaN]) {
     const unknown = createPendingCheckInStore(createAdapters({ usageBehavior: invalidUsage }).adapters);
     const result = await unknown.checkCanStartRecording();
     assert.equal(result.allowed, false, "统计失败或大小无效不能按 0 处理");
     assert.match(result.message, /无法检查本地录音空间/);
+    assert.equal(result.reason, "capacity-check-failed");
   }
 
   const manyRecords = Array.from({ length: 501 }, (_, index) => pending({ requestId: hex(index + 1000), localPath: `/saved/many-${index}.mp3`, fileSizeBytes: 1 }));
@@ -172,7 +176,7 @@ const createBarrier = () => {
   const orphanUsage = createPendingCheckInStore(createAdapters({ records: [], usageBehavior: () => 90 * MIB }).adapters);
   const orphanBlocked = await orphanUsage.saveRecording(recording({ fileSizeBytes: 1 }));
   assert.equal(orphanBlocked.persisted, false, "未被索引引用的实际文件仍须计入容量");
-  assert.match(orphanBlocked.message, /整理历史录音/);
+  assert.match(orphanBlocked.message, /删除.*本地录音/);
 
   const pathSwitch = createAdapters({ existingPaths: ["/tmp/current.mp3"] });
   const store = createPendingCheckInStore(pathSwitch.adapters);
@@ -328,7 +332,7 @@ const createBarrier = () => {
   );
   assert.equal(over.persisted, false);
   assert.equal(over.item.recoverable, false);
-  assert.match(over.message, /整理历史录音/);
+  assert.match(over.message, /删除.*本地录音/);
   assert.equal(exactCapacity.calls.save.length, 1, "预判容量超限不得移动临时文件");
 
   const countBoundary = createAdapters({
@@ -365,6 +369,45 @@ const createBarrier = () => {
   assert.equal(await cleanupStore.remove(hex(11)), true, "用户显式删除旧录音仍生效");
   assert.deepEqual(cleanup.calls.remove, ["/saved/eight-days.mp3"]);
   assert.equal(cleanupStore.list().some((item) => item.requestId === hex(12)), true);
+
+  const manyHistory = createAdapters({
+    records: Array.from({ length: 40 }, (_, index) => pending({
+      requestId: hex(1000 + index),
+      localPath: `/saved/history-${index}.mp3`,
+      fileSizeBytes: 1,
+    })),
+    usageBehavior: () => 40,
+  });
+  const historyProbe = createBarrier();
+  manyHistory.adapters.file.exists = async () => {
+    await historyProbe.wait;
+    return true;
+  };
+  const promptStore = createPendingCheckInStore(manyHistory.adapters);
+  const promptSave = promptStore.saveRecording(recording({ fileSizeBytes: 1 }));
+  let promptTimer;
+  const promptResult = await Promise.race([
+    promptSave,
+    new Promise((resolve) => { promptTimer = setTimeout(() => resolve("blocked"), 500); }),
+  ]);
+  clearTimeout(promptTimer);
+  historyProbe.release();
+  assert.notEqual(promptResult, "blocked", "保存新录音不应串行等待所有历史文件的 access 回调");
+  assert.equal(promptResult.persisted, true);
+  assert.equal(promptStore.list().length, 41, "跳过历史探针不得丢失或删除旧录音索引");
+
+  const missingSessionId = hex(2000);
+  const missingSession = createAdapters({
+    records: [pending({ requestId: missingSessionId, localPath: "/saved/gone.mp3" })],
+    existingPaths: [],
+  });
+  const missingSessionStore = createPendingCheckInStore(missingSession.adapters);
+  const repeatedMissing = await missingSessionStore.saveRecording(recording({
+    recordingSessionId: missingSessionId,
+  }));
+  assert.equal(repeatedMissing.persisted, false, "相同录音会话的旧文件失踪时不得误报已保存");
+  assert.equal(repeatedMissing.item.fileAvailability, "missing");
+  assert.equal(missingSession.calls.save.length, 0, "相同会话不得重复移动临时文件");
 
   const removeFails = createAdapters({
     now: cleanupNow,
@@ -524,6 +567,20 @@ const createBarrier = () => {
   const quotaSaved = await quotaStore.saveRecording(recording());
   assert.equal(quotaSaved.persisted, true, "配额失败清理后只能重试一次且可成功");
   assert.equal(quotaSaves, 2);
+
+  const exhaustedQuota = createPendingCheckInStore(createAdapters({
+    saveBehavior: async () => { const error = new Error("storage quota full"); error.code = "QUOTA_EXCEEDED"; throw error; },
+  }).adapters);
+  const quotaFailure = await exhaustedQuota.saveRecording(recording());
+  assert.equal(quotaFailure.persisted, false);
+  assert.match(quotaFailure.message, /删除.*本地录音/, "小程序录音库配额不足应给出清理建议");
+
+  const deviceFull = createPendingCheckInStore(createAdapters({
+    saveBehavior: async () => { const error = new Error("no space left on device"); error.code = "ENOSPC"; throw error; },
+  }).adapters);
+  const deviceFailure = await deviceFull.saveRecording(recording());
+  assert.equal(deviceFailure.persisted, false);
+  assert.match(deviceFailure.message, /设备存储空间不足/, "明确的设备空间错误不应误报为小程序录音库配额不足");
 
   const lifecycle = createAdapters({ existingPaths: ["/tmp/lifecycle.mp3"] });
   const lifecycleStore = createPendingCheckInStore(lifecycle.adapters);

@@ -45,6 +45,107 @@ async function fixture({ route = routes[0], orientation = "portrait", confirm = 
   return { page, removed, toasts, click: () => button(page.render(), "删除录音").props.onClick() };
 }
 
+for (const orientation of ["portrait", "landscape"]) {
+  test(`${orientation}：结束录音到收尾结束期间重录入口保持可读且不能误启动`, async t => {
+    const gate = deferred();
+    let saveInput;
+    const toasts = [];
+    const page = createPage(routes[0].file, routes[0].params, {
+      overrides: { "@/hooks/useDeviceLayout": { useDeviceLayout: () => ({
+        isPad: false, isSplit: false, orientation,
+        windowWidth: orientation === "portrait" ? 360 : 844,
+        windowHeight: orientation === "portrait" ? 780 : 390,
+        contentMaxWidth: null, statusBarHeight: 20, safeAreaBottom: 0,
+      }) } },
+      saveRecording: input => { saveInput = input; return gate.promise; },
+      showToast: value => toasts.push(value),
+    });
+    t.after(() => page.dispose());
+    page.render();
+    await button(page.render(), "开始跟读录音").props.onClick();
+    page.recorderHandlers.Start();
+    button(page.render(), "结束录音").props.onClick();
+    const stopping = page.recorderHandlers.Stop({ tempFilePath: "/tmp/retry-visibility.mp3", duration: 2000, fileSize: 4096 });
+
+    let retry = button(page.render(), "重新录制");
+    assert.ok(retry, "保存期间应保留重录入口位置");
+    assert.equal(retry.props.disabled, undefined, "避免微信原生禁用样式把按钮文字淡到不可见");
+    assert.equal(retry.props["aria-disabled"], true);
+    await retry.props.onClick();
+    assert.equal(toasts.at(-1)?.title, "录音正在保存，请稍候", "锁定的重录按钮应解释保存状态");
+    assert.equal(page.recorderActions.filter(item => item.action === "start").length, 1);
+
+    page.setRecorderPhase("draining");
+    gate.resolve({
+      item: {
+        requestId: "0123456789abcdef0123456789abcdef",
+        localPath: "/saved/retry-visibility.mp3",
+        recoverable: true,
+        context: saveInput.context,
+        durationMs: saveInput.durationMs,
+        fileSizeBytes: saveInput.fileSizeBytes,
+        cloudFileId: "",
+        status: "local",
+        updatedAtMs: 1,
+      },
+      persisted: true,
+      message: "",
+    });
+    await stopping;
+    retry = button(page.render(), "重新录制");
+    assert.ok(retry);
+    assert.equal(retry.props.disabled, undefined);
+    assert.equal(retry.props["aria-disabled"], true);
+    await retry.props.onClick();
+    assert.equal(toasts.at(-1)?.title, "录音正在收尾，请稍候", "收尾期间点击重录应给出反馈");
+    assert.equal(page.recorderActions.filter(item => item.action === "start").length, 1);
+
+    page.setRecorderPhase("idle");
+    retry = button(page.render(), "重新录制");
+    assert.equal(retry.props["aria-disabled"], false);
+    await retry.props.onClick();
+    assert.equal(page.recorderActions.filter(item => item.action === "start").length, 2, "收尾完成后应能正常重录");
+  });
+}
+
+test("收尾在渲染与 effect 间结束时重录按钮最终解除锁定", async t => {
+  let page;
+  let endDrainBeforeEffects = false;
+  let nextTimerId = 0;
+  const timers = new Map();
+  page = createPage(routes[0].file, routes[0].params, {
+    savedFilePath: "/saved/retry-race.mp3",
+    setTimeout: (callback, delay) => {
+      const id = ++nextTimerId;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearTimeout: id => timers.delete(id),
+    beforeEffects: () => {
+      if (!endDrainBeforeEffects) return;
+      endDrainBeforeEffects = false;
+      page.setRecorderPhase("idle");
+    },
+  });
+  t.after(() => page.dispose());
+  page.render();
+  await button(page.render(), "开始跟读录音").props.onClick();
+  page.recorderHandlers.Start();
+  button(page.render(), "结束录音").props.onClick();
+  await page.recorderHandlers.Stop({ tempFilePath: "/tmp/retry-race.mp3", duration: 2000, fileSize: 4096 });
+  page.setRecorderPhase("draining");
+  endDrainBeforeEffects = true;
+  const scheduledBeforeRender = nextTimerId;
+  assert.equal(button(page.render(), "重新录制").props["aria-disabled"], true);
+  const unlockCheck = [...timers.entries()].find(([id, timer]) => id > scheduledBeforeRender && timer.delay === 300);
+  assert.ok(unlockCheck, "渲染所见的 draining 必须安排一次空闲状态复查");
+  const stateBeforeCheck = page.stateValues();
+  timers.delete(unlockCheck[0]);
+  unlockCheck[1].callback();
+  assert.notDeepEqual(page.stateValues(), stateBeforeCheck, "空闲复查必须触发页面状态更新");
+  assert.equal(button(page.render(), "重新录制").props["aria-disabled"], false);
+});
+
 for (const route of routes) {
   for (const orientation of ["portrait", "landscape"]) {
     test(`${route.name} ${orientation}：确认删除当前录音后可重新开始录音`, async t => {
@@ -84,7 +185,20 @@ test("取消删除保留当前录音与回听", async t => {
   assert.equal(h.removed.length, 0);
   assert.equal(audio.events.includes("destroy"), false);
   assert.ok(button(h.page.render(), "停止回听"));
-  assert.equal(button(h.page.render(), "删除录音").props.disabled, false);
+  assert.equal(button(h.page.render(), "删除录音").props["aria-disabled"], false);
+});
+
+test("会话日志无法清除时不删除已保存文件，避免下次启动把旧录音再次保存", async t => {
+  const h = await fixture();
+  t.after(() => h.page.dispose());
+  h.page.recordingSessionJournal.read = () => ({ id: "0123456789abcdef0123456789abcdef",
+    stage: "terminal", context: { practiceId: "p" },
+    terminal: { tempFilePath: "/tmp/delete-current.mp3", durationMs: 2000, fileSizeBytes: 4096 } });
+  h.page.recordingSessionJournal.clear = () => { throw new Error("journal write failed"); };
+  await h.click();
+  assert.equal(h.removed.length, 0, "留下的旧会话日志仍可能触发恢复，必须先清日志再删文件");
+  assert.ok(button(h.page.render(), "回听录音"));
+  assert.equal(h.toasts.at(-1).title, "删除失败，请稍后重试");
 });
 
 for (const outcome of ["false", "throw"]) {
@@ -115,18 +229,24 @@ test("删除期间重复点击、重录、完成、回听和翻页不能并发�
   const progress = textOf(byClass(tree, "practice-header__progress"));
   const deletion = h.click();
   await settle();
+  const deletingTree = h.page.render();
+  assert.equal(button(deletingTree, "删除录音").props.disabled, undefined, "删除中按钮仍须能接收点击反馈");
+  assert.equal(button(deletingTree, "删除录音").props["aria-disabled"], true);
+  assert.equal(button(deletingTree, "回听录音").props["aria-disabled"], true);
+  assert.equal(button(deletingTree, "完成练习").props["aria-disabled"], true);
   await h.click();
-  await button(tree, "重新录制").props.onClick();
-  await button(tree, "完成练习").props.onClick();
-  button(tree, "回听录音").props.onClick();
-  await byClass(tree, "practice-navigation__button--primary").props.onClick();
+  await button(deletingTree, "重新录制").props.onClick();
+  await button(deletingTree, "完成练习").props.onClick();
+  button(deletingTree, "回听录音").props.onClick();
+  assert.deepEqual(h.toasts.slice(-4).map(item => item.title), Array(4).fill("正在删除录音，请稍候"), "删除期间的锁定按钮都应解释当前状态");
+  await byClass(deletingTree, "practice-navigation__button--primary").props.onClick();
   assert.equal(h.page.modalCalls.length, 1);
   assert.equal(h.removed.length, 1);
   assert.equal(h.page.recorderActions.filter(item => item.action === "start").length, 1);
   assert.equal(h.page.completedPending.length, 0);
   assert.equal(h.page.audios.length, 0);
   assert.equal(textOf(byClass(h.page.render(), "practice-header__progress")), progress);
-  assert.equal(button(h.page.render(), "删除录音").props.disabled, true);
+  assert.equal(button(h.page.render(), "删除录音").props["aria-disabled"], true);
   gate.resolve(true);
   await deletion;
   assert.ok(button(h.page.render(), "开始跟读录音"));

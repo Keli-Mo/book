@@ -50,6 +50,25 @@ let accessError = null;
 const removedPaths = [];
 const removalMethods = [];
 const logs = [];
+const pendingTimers = new Map();
+let nextTimerId = 0;
+const fakeSetTimeout = (callback, delayMs) => {
+  assert.equal(delayMs, 15_000, "本地文件 API 最多等待 15 秒");
+  const id = ++nextTimerId;
+  pendingTimers.set(id, callback);
+  return id;
+};
+const fakeClearTimeout = (id) => pendingTimers.delete(id);
+const expirePendingTimers = () => {
+  assert.ok(pendingTimers.size > 0, "必须存在等待中的原生文件 API");
+  const callbacks = [...pendingTimers.values()];
+  pendingTimers.clear();
+  callbacks.forEach(callback => callback());
+};
+const waitUntil = async (predicate) => {
+  for (let attempt = 0; attempt < 100 && !predicate(); attempt += 1) await Promise.resolve();
+  assert.ok(predicate(), "等待的原生调用没有开始");
+};
 const diagnosticConsole = {
   info: (...args) => logs.push(args),
   warn: (...args) => logs.push(args),
@@ -61,6 +80,15 @@ let saveError = null;
 let storageError = null;
 let savedFileListError = null;
 let savedFileEntries = [];
+let hangSaveFile = false;
+let completeLateSaveFile = null;
+let hangSavedFileList = false;
+let hangAccess = false;
+let hangFileInfo = false;
+let hangRemoveSavedFile = false;
+let waitingAccess = false;
+let waitingFileInfo = false;
+let waitingRemoveSavedFile = false;
 let devicePlatform = "devtools";
 const wx = {
   getDeviceInfo: () => ({ platform: devicePlatform }),
@@ -76,12 +104,22 @@ const wx = {
     if (saveError) return fail(saveError);
     saveCount += 1;
     const savedFilePath = `wxfile://store/${saveCount}.mp3`;
+    if (hangSaveFile) {
+      completeLateSaveFile = () => {
+        files.delete(tempFilePath);
+        files.add(savedFilePath);
+        success({ savedFilePath });
+        return savedFilePath;
+      };
+      return;
+    }
     files.delete(tempFilePath);
     files.add(savedFilePath);
     success({ savedFilePath });
   },
   removeSavedFile({ filePath, success, fail }) {
     removalMethods.push("removeSavedFile");
+    if (hangRemoveSavedFile) { waitingRemoveSavedFile = true; return; }
     if (disappearDuringRemove) files.delete(filePath);
     if (removeError) return fail(removeError);
     removedPaths.push(filePath);
@@ -94,14 +132,17 @@ const wx = {
         infoPaths.push(filePath);
         assert.equal(files.has(filePath), true, "读取指纹时必须已完成 saveFile");
         assert.equal(digestAlgorithm, "sha1");
+        if (hangFileInfo) { waitingFileInfo = true; return; }
         if (infoError) fail(infoError);
         else success({ size: 4107, digest: "A".repeat(40) });
       },
       getSavedFileList({ success, fail }) {
+        if (hangSavedFileList) return;
         if (savedFileListError) fail(savedFileListError);
         else success({ fileList: savedFileEntries });
       },
       access({ path: filePath, success, fail }) {
+        if (hangAccess) { waitingAccess = true; return; }
         if (accessError) fail(accessError);
         else if (files.has(filePath)) success({});
         else fail({ errCode: 1300002, errMsg: `access:fail no such file or directory ${filePath}` });
@@ -126,7 +167,7 @@ const runtime = compile(
     "./recordingRecovery": compile("src/features/listeningPractice/recordingRecovery.ts", { "./pendingCheckInStore": storeExports }),
     "../../services/cloudCheckIn": cloudExports,
   },
-  { wx, console: diagnosticConsole },
+  { wx, console: diagnosticConsole, setTimeout: fakeSetTimeout, clearTimeout: fakeClearTimeout },
 );
 
 (async () => {
@@ -267,7 +308,7 @@ const runtime = compile(
   const restartedRuntime = compile("src/features/listeningPractice/pendingCheckInRuntime.ts", {
     "./pendingCheckInStore": storeExports, "../../services/cloudCheckIn": cloudExports,
     "./recordingRecovery": compile("src/features/listeningPractice/recordingRecovery.ts", { "./pendingCheckInStore": storeExports }),
-  }, { wx, console: diagnosticConsole });
+  }, { wx, console: diagnosticConsole, setTimeout: fakeSetTimeout, clearTimeout: fakeClearTimeout });
   assert.equal(await restartedRuntime.getPendingCheckInStore().remove(restartRecord.item.requestId), true);
   assert.equal(removalMethods.at(-1), "removeSavedFile");
   assert.equal(files.has(restartRecord.item.localPath), false);
@@ -359,6 +400,67 @@ const runtime = compile(
     assert.equal(saved.get(storeExports.PENDING_CHECK_IN_STORAGE_KEY).length, 0);
     accessError = null;
   }
+
+  // 原生文件 API 若不回调，保存队列必须能继续处理后续操作。
+  hangSavedFileList = true;
+  const stalledUsage = runtime.getLocalRecordingUsageBytes();
+  await waitUntil(() => pendingTimers.size > 0);
+  expirePendingTimers();
+  await assert.rejects(stalledUsage, error => error.code === "ETIMEDOUT", "容量查询必须在 15 秒后结束");
+  hangSavedFileList = false;
+
+  const stalledTempPath = "wxfile://tmp/stalled-save.mp3";
+  files.add(stalledTempPath);
+  hangSaveFile = true;
+  const stalledSave = first.saveRecording({ ...input, tempFilePath: stalledTempPath });
+  await waitUntil(() => completeLateSaveFile !== null);
+  expirePendingTimers();
+  const timedOutSave = await stalledSave;
+  assert.equal(timedOutSave.persisted, false, "saveFile 不回调时必须返回可处理的未保存结果");
+  await first.cleanup();
+  const indexedBeforeLateCallback = saved.get(storeExports.PENDING_CHECK_IN_STORAGE_KEY).length;
+  const journalBeforeLateCallback = JSON.stringify(saved.get(storeExports.PENDING_RECORDING_JOURNAL_KEY));
+  hangSaveFile = false;
+  const orphanPath = completeLateSaveFile();
+  completeLateSaveFile = null;
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(files.has(orphanPath), false, "迟到的 saveFile 成功只清理孤儿文件");
+  assert.equal(saved.get(storeExports.PENDING_CHECK_IN_STORAGE_KEY).length, indexedBeforeLateCallback, "迟到回调不能写主索引");
+  assert.equal(JSON.stringify(saved.get(storeExports.PENDING_RECORDING_JOURNAL_KEY)), journalBeforeLateCallback, "迟到回调不能写保存检查点");
+  assert.equal(await first.remove(timedOutSave.item.requestId), true);
+
+  const infoTempPath = "wxfile://tmp/stalled-info.mp3";
+  files.add(infoTempPath);
+  hangFileInfo = true;
+  const stalledInfo = first.saveRecording({ ...input, tempFilePath: infoTempPath });
+  await waitUntil(() => waitingFileInfo && pendingTimers.size > 0);
+  expirePendingTimers();
+  const infoFallback = await stalledInfo;
+  assert.equal(infoFallback.persisted, true, "读取指纹超时仍保留已完成 saveFile 的路径");
+  assert.equal(infoFallback.item.contentSha1, undefined);
+  hangFileInfo = false;
+  waitingFileInfo = false;
+
+  hangAccess = true;
+  const stalledCleanup = first.cleanup();
+  await waitUntil(() => waitingAccess && pendingTimers.size > 0);
+  expirePendingTimers();
+  await stalledCleanup;
+  assert.equal(first.list().find(item => item.requestId === infoFallback.item.requestId).fileAvailability, "unavailable",
+    "access 超时不能把已有录音误判为不存在");
+  hangAccess = false;
+  waitingAccess = false;
+
+  hangRemoveSavedFile = true;
+  const stalledRemoval = first.remove(infoFallback.item.requestId);
+  await waitUntil(() => waitingRemoveSavedFile && pendingTimers.size > 0);
+  expirePendingTimers();
+  assert.equal(await stalledRemoval, false, "删除 API 超时后必须释放队列并保留引用");
+  hangRemoveSavedFile = false;
+  waitingRemoveSavedFile = false;
+  assert.equal(await first.remove(infoFallback.item.requestId), true);
+  assert.equal(pendingTimers.size, 0, "运行时不应留下文件 API 计时器");
 
   console.log("待上传录音运行时测试通过：跨页面单例、saveFile 路径切换与删除正确。");
 })().catch((error) => {

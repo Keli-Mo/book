@@ -3,6 +3,8 @@ import Taro, { useDidHide, useDidShow, useUnload } from "@tarojs/taro";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { getPendingCheckInStore, logRecordingDiagnostic } from "@/features/listeningPractice/pendingCheckInRuntime";
+import { getRecorderCoordinator } from "@/features/listeningPractice/recorderCoordinator";
+import { getRecordingSessionJournal } from "@/features/listeningPractice/recordingSessionJournal";
 import { mergeRecordingLibrary } from "@/features/listeningPractice/recordingLibraryView";
 import { getCheckInSubmissionCoordinator } from "@/features/listeningPractice/checkInSubmissionRuntime";
 import { listMyCheckIns, removeCheckIn, type CheckInSummary } from "@/services/cloudCheckIn";
@@ -91,6 +93,21 @@ export default function MyCheckIns() {
       if (submissionCoordinator.isSubmitting(localId)) {
         logRecordingDiagnostic("delete.blocked_sharing", { requestId: localId });
         return;
+      }
+      // 录音已落盘但会话日志尚未清理时，先撤销恢复资格，再删除文件。
+      // 否则下次冷启动可能从旧日志把用户已删除的录音重新保存。
+      const journal = getRecordingSessionJournal();
+      const entry = journal.read();
+      if (entry?.id.toLowerCase() === localId.toLowerCase()) {
+        const coordinator = getRecorderCoordinator();
+        if (coordinator.getPhase() !== "idle" && !coordinator.abandonUnconfirmedRecording()) {
+          if (isCurrent()) Taro.showToast({ title: "录音正在处理，请稍后重试", icon: "none" });
+          return;
+        }
+        if (!journal.clear(entry.id)) {
+          if (isCurrent()) Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });
+          return;
+        }
       }
       if (!await pendingStore.remove(localId)) {
         if (isCurrent()) Taro.showToast({ title: "删除失败，请稍后重试", icon: "none" });

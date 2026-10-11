@@ -51,6 +51,48 @@ test('saved recording survives an index failure and process restart without movi
   assert.equal(f.calls.saves, 1); assert.deepEqual(f.calls.removes, []);
 });
 
+test('the same recording session is saved once across process restart, while a new session creates a new item', async () => {
+  const f = fixture();
+  const firstSession = 'c'.repeat(32);
+  const secondSession = 'd'.repeat(32);
+  const first = await f.start().saveRecording({ tempFilePath: '/tmp/new', context,
+    durationMs: 1200, fileSizeBytes: 100, recordingSessionId: firstSession });
+  assert.equal(first.persisted, true);
+  assert.equal(first.item.requestId, firstSession);
+  const restarted = f.start();
+  const repeated = await restarted.saveRecording({ tempFilePath: '/tmp/new', context,
+    durationMs: 1200, fileSizeBytes: 100, recordingSessionId: firstSession });
+  assert.equal(repeated.persisted, true);
+  assert.equal(repeated.item.requestId, first.item.requestId);
+  assert.equal(repeated.item.localPath, first.item.localPath);
+  assert.equal(f.calls.saves, 1, 'recovery must not move the same temporary recording again');
+  assert.equal(restarted.list().length, 1);
+  const distinct = await restarted.saveRecording({ tempFilePath: '/tmp/next', context,
+    durationMs: 1400, fileSizeBytes: 100, recordingSessionId: secondSession });
+  assert.equal(distinct.persisted, true);
+  assert.equal(distinct.item.requestId, secondSession);
+  assert.equal(f.calls.saves, 2);
+  assert.equal(restarted.list().length, 2);
+});
+
+test('retrying a session after metadata failure reuses its saved file in the same process', async () => {
+  const f = fixture();
+  const sessionId = 'e'.repeat(32);
+  const input = { tempFilePath: '/tmp/new', context, durationMs: 1200,
+    fileSizeBytes: 100, recordingSessionId: sessionId };
+  const store = f.start();
+  f.failIndex(true);
+  const first = await store.saveRecording(input);
+  assert.equal(first.persisted, false);
+  assert.equal(first.item.requestId, sessionId);
+  f.failIndex(false);
+  const retried = await store.saveRecording(input);
+  assert.equal(retried.persisted, true);
+  assert.equal(retried.item.localPath, first.item.localPath);
+  assert.equal(f.calls.saves, 1);
+  assert.equal(store.list().length, 1);
+});
+
 test('continuing index failure leaves a visible retry record after restart', async () => {
   const f = fixture(); f.failIndex(true); const result = await save(f.start());
   const restarted = f.start(); await restarted.ready();

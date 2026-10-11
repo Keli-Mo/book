@@ -141,38 +141,41 @@ assert.equal(
 assert.equal(
   typeof getRecordingErrorMessage,
   "function",
-  "录音错误必须保留原始原因，不能全部归因为麦克风权限"
+  "录音错误必须提供用户可读提示"
 );
 assert.equal(
   getRecordingErrorMessage({ errMsg: "operateRecorder:fail audio is recording" }),
-  "operateRecorder:fail audio is recording"
+  "微信录音设备仍被占用。请先结束微信通话或其他录音，返回本页重试；若仍无法恢复，再关闭并重新打开微信。"
 );
 assert.equal(
-  getRecordingErrorMessage({ errMsg: "operateRecorder:fail", errno: 103 }),
-  "operateRecorder:fail\n错误码：103"
+  getRecordingErrorMessage({ errMsg: "operateRecorder:fail is recording or paused" }),
+  "微信录音设备仍被占用。请先结束微信通话或其他录音，返回本页重试；若仍无法恢复，再关闭并重新打开微信。",
+  "截图中的原生占用错误须保留准确中文提示",
 );
-assert.equal(
-  getRecordingErrorMessage(new Error("native recorder unavailable")),
-  "native recorder unavailable"
-);
-assert.equal(
-  getRecordingErrorMessage({ errCode: 0, message: "recorder failed" }),
-  "recorder failed\n错误码：0"
-);
-assert.equal(
-  getRecordingErrorMessage({ message: "device disconnected", code: "EIO" }),
-  "device disconnected\n错误码：EIO",
-  "通用 code 也必须显示给用户，便于真机诊断"
-);
-assert.equal(
-  getRecordingErrorMessage({ message: "recorder failed", errCode: 0, errno: 1, code: "EIO" }),
-  "recorder failed\n错误码：0",
-  "errCode、errno、code 的优先级必须稳定且保留 0"
-);
-for (const error of [undefined, null, {}, { errMsg: "" }]) {
-  assert.match(getRecordingErrorMessage(error), /未返回具体原因/);
-  assert.doesNotMatch(getRecordingErrorMessage(error), /权限|\[object Object\]/);
+for (const error of [
+  { errMsg: "operateRecorder:fail", errno: 103 },
+  new Error("native recorder unavailable"),
+  { errCode: 0, message: "recorder failed" },
+  { message: "device disconnected", code: "EIO" },
+  undefined, null, {}, { errMsg: "" },
+]) {
+  assert.equal(getRecordingErrorMessage(error), "录音操作失败，请稍后重试", "未知原生错误不得直接显示英文、错误码或误判为权限故障");
 }
+assert.equal(
+  getRecordingErrorMessage({ errMsg: "saveFile:fail ENOSPC: no space left on device", errno: 28 }),
+  "设备存储空间不足，请清理手机存储空间后重试",
+  "明确的设备空间不足应说明清理手机空间",
+);
+assert.equal(
+  getRecordingErrorMessage({ code: "ENOSPC" }),
+  "设备存储空间不足，请清理手机存储空间后重试",
+  "原生接口仅返回 ENOSPC 错误码时也应说明设备空间",
+);
+assert.equal(
+  getRecordingErrorMessage({ errMsg: "saveFile:fail quota exceeded" }),
+  "本地录音空间不足，请到“我的录音”删除不需要的本地录音后重试",
+  "本地录音配额满应说明清理录音",
+);
 
 const completeCapabilities = detectRecordingCapabilities({
   hasRecorderManager: true,
@@ -402,8 +405,12 @@ assert.deepEqual(JSON.parse(JSON.stringify(currentError.lastError)), {
 });
 assert.equal(
   getRecordingErrorMessage(currentError.lastError),
-  "operateRecorder:fail\n错误码：7001"
+  "录音操作失败，请稍后重试"
 );
+assert.deepEqual(JSON.parse(JSON.stringify(currentError.lastError)), {
+  errMsg: "operateRecorder:fail",
+  errCode: 7001,
+}, "界面文案脱敏后，原始错误仍须保留在状态中供诊断");
 
 const disposed = disposeRecordingMachine(nextStart.machine);
 assert.equal(disposed.mounted, false);

@@ -433,6 +433,12 @@
 
     &::after { border: 0; }
 
+    &--locked {
+      border-color: #cbd8d3;
+      background: #f1f6f4;
+      color: #496158;
+    }
+
     &.practice-recorder__delete {
       border-color: rgba(189, 80, 59, 0.38);
       background: rgba(189, 80, 59, 0.08);
@@ -466,6 +472,7 @@
   &--stop { background: #e85d3d; color: #ffffff; }
   &--pause { background: #fff0dd; color: #a9651f; }
   &--resume { background: #e4f3ed; color: #2f765f; }
+  &--locked { background: #f4eeeb; color: #815c4d; }
   &__dot {
     width: 20rpx;
     height: 20rpx;
@@ -527,6 +534,12 @@
 }
 
 .check-in-button { background: #2f896c; color: #ffffff; }
+.record-actions__secondary--locked,
+.check-in-button--locked {
+  border-color: #cbd8d3;
+  background: #f1f6f4;
+  color: #496158;
+}
 
 .upload-cancel-button {
   min-height: 44PX;

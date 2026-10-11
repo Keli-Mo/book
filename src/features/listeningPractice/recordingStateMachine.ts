@@ -430,6 +430,22 @@ export const resetRecordingMachine = (
       }
     : machine;
 
+/** 用户明确放弃未确认的原生录音后，结束页面的 pending 状态。 */
+export const abandonRecordingMachine = (
+  machine: RecordingMachine,
+  hasSavedRecording: boolean,
+): RecordingMachine => machine.mounted
+  ? {
+      ...machine,
+      state: hasSavedRecording ? "recorded" : machine.capabilities?.canRecord ? "idle" : "checking",
+      pendingAction: null,
+      pauseReason: null,
+      needsManualResume: false,
+      clockFrozen: false,
+      lastError: null,
+    }
+  : machine;
+
 /** 卸载后不再接受任何原生回调，避免旧页面覆盖新会话。 */
 export const disposeRecordingMachine = (
   machine: RecordingMachine,
