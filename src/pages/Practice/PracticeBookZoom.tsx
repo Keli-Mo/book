@@ -109,8 +109,7 @@ export function PracticeBookZoom({
         scale
         scaleMin={1}
         scaleMax={4}
-        // 仅初始化倍率；原生捏合自己更新位置和倍率，不能将延迟事件再写回原生。
-        scaleValue={1}
+        // 倍率使用微信原生默认值；绑定固定 scale-value 会在重绘时覆盖捏合结果。
         animation={false}
         inertia={false}
         outOfBounds={false}

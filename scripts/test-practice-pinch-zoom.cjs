@@ -94,7 +94,7 @@ function scaleTo(page, scale) {
 
 function assertDisplayScale(tree, scale, message) {
   const { view } = activeZoom(tree);
-  assert.equal(view.props.scaleValue, 1, "原生倍率参数只负责初始化，不能回写手势倍率");
+  assert.equal(Object.hasOwn(view.props, "scaleValue"), false, "不能向微信原生视图回写固定倍率");
   const hotspot = byClass(view, "audio-hotspot");
   if (hotspot) {
     assert.equal(hotspot.props.style.transform, "translate(-50%, -50%)",
@@ -122,6 +122,19 @@ function bookSrc(tree) {
   return byClass(activeZoom(tree).view, "practice-book-page__image").props.src;
 }
 
+test("微信原生捏合不绑定固定倍率，父组件重绘也不把书页重置为 1 倍", () => {
+  const { page } = fixture(routes[0], phonePortrait);
+  try {
+    let tree = render(page);
+    assert.equal(Object.hasOwn(activeZoom(tree).view.props, "scaleValue"), false,
+      "默认 1 倍由微信原生组件负责，不能持续向它下发固定值");
+    activeZoom(tree).view.props.onTouchStart({ touches: [touch(1), touch(2)] });
+    tree = render(page);
+    assert.equal(Object.hasOwn(activeZoom(tree).view.props, "scaleValue"), false,
+      "双指触摸引起父组件重绘后，仍不得下发固定倍率");
+  } finally { page.unload(); page.dispose(); }
+});
+
 for (const route of routes) {
   for (const mode of modes) {
     test(`${route.name}·${mode.name}：初次挂载即启用双向拖动，缩放前后不更改原生方向`, () => {
@@ -145,7 +158,7 @@ for (const route of routes) {
         assert.equal(view.props.scale, true);
         assert.equal(view.props.scaleMin, 1);
         assert.equal(view.props.scaleMax, 4);
-        assert.equal(view.props.scaleValue, 1);
+        assert.equal(Object.hasOwn(view.props, "scaleValue"), false);
         assert.equal(area.props.onTouchStart, undefined, "触摸识别应直接绑定原生 MovableView");
         assert.equal(typeof view.props.onTouchStart, "function", "直接监听移动图层上的触摸");
         const ancestors = ancestorPath(tree, view);
@@ -187,7 +200,7 @@ for (const route of routes) {
     try {
       let tree = render(page);
       let { swiper, view } = activeZoom(tree);
-      assert.equal(view.props.scaleValue, 1);
+      assert.equal(Object.hasOwn(view.props, "scaleValue"), false);
       assert.equal(swiper.props.disableTouch, false, "原始倍率允许滑动翻页");
       const initialScroll = byClass(view, "practice-book-scroll");
       if (initialScroll) assert.equal(initialScroll.props.scrollY, true, "原始倍率允许横屏纵向阅读");
@@ -203,7 +216,7 @@ for (const route of routes) {
 
       tree = scaleTo(page, 1);
       ({ swiper, view } = activeZoom(tree));
-      assert.equal(view.props.scaleValue, 1);
+      assert.equal(Object.hasOwn(view.props, "scaleValue"), false);
       assert.equal(swiper.props.disableTouch, false, "缩回原始倍率恢复滑动翻页");
       const restoredScroll = byClass(view, "practice-book-scroll");
       if (restoredScroll) assert.equal(restoredScroll.props.scrollY, true, "缩回原始倍率恢复纵向阅读");
@@ -495,7 +508,7 @@ for (const route of routes) {
       for (const scale of [1.03, 1.4, 1.8, 2.3, 2]) {
         tree = scaleTo(page, scale);
         const { view } = activeZoom(tree);
-        assert.equal(view.props.scaleValue, 1, "旧事件不能回写倍率打断原生捏合");
+        assert.equal(Object.hasOwn(view.props, "scaleValue"), false, "旧事件不能回写倍率打断原生捏合");
         assert.equal(view.props.animation, false, "关闭程序参数变更引起的补间动画");
         assert.equal(view.props.direction, initialDirection, "同次捏合期间移动方向稳定");
         assertDisplayScale(tree, 1, "手势中热点保持随书页缩放");
@@ -610,7 +623,7 @@ for (const route of routes) {
       tree = render(page);
       assert.notEqual(byClass(tree, "practice-book-page__image").props.src, originalSrc,
         "录音已启动后按钮应能提交下一页");
-      assert.equal(activeZoom(tree).view.props.scaleValue, 1, "成功切页重置书页倍率");
+      assert.equal(Object.hasOwn(activeZoom(tree).view.props, "scaleValue"), false, "新页不得继承受控倍率");
       assert.equal(activeZoom(tree).swiper.props.disableTouch, false, "成功切页恢复手势翻页");
     } finally { page.unload(); page.dispose(); }
   });
@@ -633,7 +646,7 @@ test("设备旋转只重置教材倍率，保留当前页及音频播放", () =>
 
     tree = rotate(landscape);
     assert.equal(byClass(tree, "practice-book-page__image").props.src, originalSrc);
-    assert.equal(activeZoom(tree).view.props.scaleValue, 1, "旋转后倍率恢复原始值");
+    assert.equal(Object.hasOwn(activeZoom(tree).view.props, "scaleValue"), false, "旋转后仍使用原生默认倍率");
     assert.equal(activeZoom(tree).swiper.props.disableTouch, false);
     assert.deepEqual(playingAudio.events, audioEvents, "旋转不能停止或重启示范音频");
   } finally { page.unload(); page.dispose(); }

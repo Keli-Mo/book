@@ -317,6 +317,7 @@ assert.equal(trackAudios[1].events.at(-1), "destroy", "结束后应释放音频�
 
 const loopingAudios = [];
 const loopingTrackIds = [];
+const loopingPlaybackStates = [];
 const loopingController = createTrackAudioController(
   () => {
     const audio = createFakeTrackAudio();
@@ -325,11 +326,56 @@ const loopingController = createTrackAudioController(
   },
   (trackId) => loopingTrackIds.push(trackId),
   undefined,
-  {},
+  {
+    onPlay: () => loopingPlaybackStates.push("playing"),
+    onPause: () => loopingPlaybackStates.push("paused"),
+  },
   { sameTrackAction: "pause", loop: true },
 );
 loopingController.toggle("looping-track", "looping.mp3");
+loopingAudios[0].duration = 10;
+loopingAudios[0].currentTime = 10;
+loopingAudios[0].paused = true;
+const playsBeforeLoopBoundary = loopingAudios[0].events.filter((event) => event === "play").length;
+loopingAudios[0].emitPause();
+assert.equal(
+  loopingAudios[0].events.filter((event) => event === "play").length,
+  playsBeforeLoopBoundary + 1,
+  "循环边界只收到原生 Pause、尚未收到 Ended 时，也应立即续播",
+);
 loopingAudios[0].emitEnded();
+assert.equal(
+  loopingAudios[0].events.filter((event) => event === "play").length,
+  playsBeforeLoopBoundary + 1,
+  "迟到的 Ended 不应让已续播的原生循环再重启一次",
+);
+assert.equal(
+  loopingPlaybackStates.includes("paused"),
+  false,
+  "循环边界的原生 Pause 不能把仍有播放意图的音轨显示成暂停",
+);
+loopingAudios[0].paused = false;
+loopingAudios[0].emitPlay();
+loopingAudios[0].currentTime = 10;
+loopingAudios[0].emitEnded();
+loopingAudios[0].currentTime = 0;
+loopingAudios[0].paused = true;
+const playsBeforeLatePause = loopingAudios[0].events.filter((event) => event === "play").length;
+loopingAudios[0].emitPause();
+assert.equal(
+  loopingAudios[0].events.filter((event) => event === "play").length,
+  playsBeforeLatePause + 1,
+  "Ended 后迟到的原生 Pause 也不能中断下一轮循环",
+);
+loopingController.toggle("looping-track", "looping.mp3");
+const playsAfterUserPause = loopingAudios[0].events.filter((event) => event === "play").length;
+loopingAudios[0].emitPause();
+loopingAudios[0].emitEnded();
+assert.equal(
+  loopingAudios[0].events.filter((event) => event === "play").length,
+  playsAfterUserPause,
+  "用户主动暂停后，迟到的 Ended 不得擅自续播",
+);
 assert.equal(
   loopingTrackIds.at(-1),
   "looping-track",
@@ -341,6 +387,26 @@ assert.equal(
   "原生循环音轨发出 Ended 时不能销毁仍需循环的实例",
 );
 loopingController.dispose();
+
+const unknownDurationAudio = createFakeTrackAudio();
+const unknownDurationController = createTrackAudioController(
+  () => unknownDurationAudio,
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+unknownDurationController.toggle("unknown-duration", "unknown.mp3");
+unknownDurationAudio.paused = true;
+unknownDurationAudio.emitPause();
+const playsBeforeUnknownDurationEnded = unknownDurationAudio.events.filter((event) => event === "play").length;
+unknownDurationAudio.emitEnded();
+assert.equal(
+  unknownDurationAudio.events.filter((event) => event === "play").length,
+  playsBeforeUnknownDurationEnded + 1,
+  "客户端暂未返回音频时长时，Ended 仍应识别自然结束并恢复循环",
+);
+unknownDurationController.dispose();
 
 const interruptedAudios = [];
 const interruptedController = createTrackAudioController(

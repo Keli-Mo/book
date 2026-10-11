@@ -87,6 +87,7 @@ export const createTrackAudioController = (
     generation: number;
     trackId: string;
     wantsToPlay: boolean;
+    userPaused: boolean;
     waiting: boolean;
   } | null = null;
 
@@ -109,6 +110,15 @@ export const createTrackAudioController = (
 
   const startTrack = (trackId: string, url: string) => {
     const audio = createAudio();
+    let loopEndedRecently = false;
+    const isAtLoopBoundary = () =>
+      options.loop && Number.isFinite(audio.duration) && audio.duration > 0 &&
+      audio.currentTime >= audio.duration - 0.25;
+    const resumeLoopIfPaused = () => {
+      if (!audio.paused) return;
+      audio.seek(0);
+      audio.play();
+    };
     const sessionGeneration = generation + 1;
     generation = sessionGeneration;
     activeSession = {
@@ -116,6 +126,7 @@ export const createTrackAudioController = (
       generation: sessionGeneration,
       trackId,
       wantsToPlay: true,
+      userPaused: false,
       waiting: false,
     };
     audio.loop = options.loop ?? false;
@@ -129,8 +140,17 @@ export const createTrackAudioController = (
     };
 
     audio.onEnded(() => {
-      // 原生 loop 会自行回到开头；部分客户端仍会派发 Ended，不能把循环会话误判为结束。
-      if (options.loop) return;
+      if (!isCurrentSession(sessionGeneration) || !activeSession) return;
+      if (options.loop) {
+        // 微信客户端可能先派发 Pause 再派发 Ended，也可能原生循环后仍派发 Ended。
+        // 保留会话；若原生未自动续播，主动回到开头播放。
+        loopEndedRecently = true;
+        if (!activeSession.userPaused && !interruptionActive) {
+          activeSession.wantsToPlay = true;
+          resumeLoopIfPaused();
+        }
+        return;
+      }
       finishCurrentSession();
     });
     audio.onStop(finishCurrentSession);
@@ -145,6 +165,14 @@ export const createTrackAudioController = (
     });
     audio.onPause(() => {
       if (!isCurrentSession(sessionGeneration) || !activeSession) return;
+      if (options.loop && activeSession.wantsToPlay && !interruptionActive &&
+        (isAtLoopBoundary() || loopEndedRecently)) {
+        // 有的微信客户端只发 Pause，不发 Ended。循环边界若真的暂停，
+        // 立即回到开头续播；迟到的 Ended 发现已播放时不会重复启动。
+        loopEndedRecently = true;
+        resumeLoopIfPaused();
+        return;
+      }
       // 某些真机会在恢复播放之后才补发中断期间的 Pause。
       // 原生实例仍在播放时，该迟到事件不能覆盖新的播放态。
       if (activeSession.wantsToPlay && !interruptionActive && !audio.paused) return;
@@ -158,6 +186,7 @@ export const createTrackAudioController = (
     });
     audio.onTimeUpdate(() => {
       if (!isCurrentSession(sessionGeneration)) return;
+      if (audio.currentTime > 0.5 && !isAtLoopBoundary()) loopEndedRecently = false;
       hooks.onTimeUpdate?.(audio.currentTime, audio.duration);
     });
     audio.onWaiting?.(() => {
@@ -193,10 +222,12 @@ export const createTrackAudioController = (
         if (options.sameTrackAction === "pause") {
           if (activeSession.wantsToPlay) {
             activeSession.wantsToPlay = false;
+            activeSession.userPaused = true;
             activeSession.waiting = false;
             activeSession.audio.pause();
           } else {
             activeSession.wantsToPlay = true;
+            activeSession.userPaused = false;
             if (!interruptionActive) activeSession.audio.play();
           }
         } else {

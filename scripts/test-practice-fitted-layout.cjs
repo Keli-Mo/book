@@ -114,7 +114,7 @@ const scaleTo = (page, scale) => {
 };
 const assertCommittedScale = (tree, scale, message = "书页保持已提交倍率") => {
   const { view } = activeBookZoom(tree);
-  assert.equal(view.props.scaleValue, 1, `${message}：原生初始倍率不得回写手势结果`);
+  assert.equal(Object.hasOwn(view.props, "scaleValue"), false, `${message}：不能回写固定倍率覆盖原生手势`);
   assert.equal(view.props.animation, false, `${message}：不使用原生回写动画`);
   const hotspots = elements(view).filter((node) => hasClass(node, "audio-hotspot"));
   // 全页阅读允许空音频页；验证放大后的显示倍率必须选用真实音频页。
