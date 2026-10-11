@@ -2048,6 +2048,9 @@ export function PracticeSession({
     </Button>
   ) : null;
 
+  // 当前图层在 Swiper 同级接收手势；微信不支持 Swiper.disableTouch。
+  let activeBookZoomLayer: ReactNode = null;
+
   return (
     <View className={`practice-page ${layoutClassName}${isFittedLayout ? " practice-page--fitted" : ""}${layout.orientation === "landscape" ? " practice-page--landscape" : ""}`}>
       <PageMeta pageStyle={isDirectoryOpen ? "overflow: hidden;" : ""} />
@@ -2209,7 +2212,7 @@ export function PracticeSession({
                   const canZoom = Boolean(isActiveSlide && bookViewportSize &&
                     bookViewportSize.width > 0 && bookViewportSize.height > 0 &&
                     (!isLandscapeLayout || fittedBookSize));
-                  const renderSlidePage = (zoomScale: number, inZoomLayer: boolean, showHotspots: boolean) => (
+                  const renderSlidePage = (inZoomLayer: boolean, showHotspots: boolean) => (
                       <PracticeBookPage
                         scrollable={isLandscapeLayout && isSlideRetained && !inZoomLayer}
                         sized={isLandscapeLayout && inZoomLayer}
@@ -2279,7 +2282,7 @@ export function PracticeSession({
                                 style={{
                                   left: hotspot.left,
                                   top: hotspot.top,
-                                  transform: `translate(-50%, -50%) scale(${1 / zoomScale})`,
+                                  transform: "translate(-50%, -50%)",
                                 }}
                                 onClick={() => {
                                   if (!hotspotGestureBlockedRef.current) {
@@ -2300,32 +2303,37 @@ export function PracticeSession({
                         ) : null}
                       </PracticeBookPage>
                   );
+                  if (canZoom) {
+                    activeBookZoomLayer = (
+                      <PracticeBookZoom
+                        key={`${item.id}:${layout.orientation}`}
+                        viewportSize={bookViewportSize!}
+                        contentSize={isLandscapeLayout ? fittedBookSize! : bookViewportSize!}
+                        renderContent={() => renderSlidePage(true, true)}
+                        onZoomActiveChange={setBookZoomActive}
+                        onHotspotGestureBlockChange={(blocked) => {
+                          hotspotGestureBlockedRef.current = blocked;
+                        }}
+                        onVerticalMove={() => setBookScrollHintDismissed(true)}
+                        onEdgeTurn={(direction) => {
+                          void requestPracticeSwitch(practiceContextRef.current.practiceIndex + direction);
+                        }}
+                      />
+                    );
+                  }
                   return (
                     <SwiperItem
                       key={item.id}
                       className={`practice-book-slide${stablePortraitCanvasNaturalSize ? " practice-book-slide--stable-canvas" : ""}`}
                     >
                       <View className={`practice-book-static${canZoom ? " practice-book-static--covered" : ""}`}>
-                        {renderSlidePage(1, false, !canZoom)}
+                        {renderSlidePage(false, !canZoom)}
                       </View>
-                      {canZoom ? (
-                        <PracticeBookZoom
-                          key={`${item.id}:${layout.orientation}`}
-                          viewportSize={bookViewportSize!}
-                          contentSize={isLandscapeLayout ? fittedBookSize! : bookViewportSize!}
-                          landscape={isLandscapeLayout}
-                          renderContent={(scale) => renderSlidePage(scale, true, true)}
-                          onZoomActiveChange={setBookZoomActive}
-                          onHotspotGestureBlockChange={(blocked) => {
-                            hotspotGestureBlockedRef.current = blocked;
-                          }}
-                          onVerticalMove={() => setBookScrollHintDismissed(true)}
-                        />
-                      ) : null}
                     </SwiperItem>
                   );
                 })}
               </Swiper>
+              {activeBookZoomLayer}
               {isLandscapeLayout && !bookScrollHintDismissed && fittedBookSize && fittedBookSize.height > bookBounds.height && (
                 <Text className='practice-book-scroll-hint'>上下滑动阅读</Text>
               )}
@@ -2530,51 +2538,6 @@ export function PracticeSession({
         onClose={() => setIsDirectoryOpen(false)}
         onSelect={(nextIndex) => requestPracticeSwitch(nextIndex, { animate: false })}
       />
-      {bookZoomActive && !isFittedLayout && (
-        <View className='practice-zoom-recorder'>
-          {recordingState === "idle" && (
-            <Button className='practice-zoom-recorder__button practice-zoom-recorder__start device-touch-target' onClick={startRecording}>
-              开始跟读录音
-            </Button>
-          )}
-          {recordingState === "recording" && (
-            <>
-              {recordingMachine.capabilities?.canPause && recordingMachine.capabilities.canResume && (
-                <Button className='practice-zoom-recorder__button practice-zoom-recorder__pause device-touch-target' onClick={pauseRecording}>暂停录音</Button>
-              )}
-              <Button className='practice-zoom-recorder__button practice-zoom-recorder__stop device-touch-target' onClick={stopRecording}>结束录音</Button>
-            </>
-          )}
-          {recordingState === "paused" && (
-            <>
-              {recordingMachine.capabilities?.canResume && (
-                <Button className='practice-zoom-recorder__button practice-zoom-recorder__resume device-touch-target' onClick={resumeRecording}>继续录音</Button>
-              )}
-              <Button className='practice-zoom-recorder__button practice-zoom-recorder__stop device-touch-target' onClick={stopRecording}>结束录音</Button>
-            </>
-          )}
-          {recordingState === "recorded" && !isSavingRecording && pendingCheckIn && (
-            <>
-              {!pendingCheckIn.recoverable && (
-                <Button className='practice-zoom-recorder__button device-touch-target' disabled={isDeletingRecording} onClick={retrySaveRecording}>重试保存</Button>
-              )}
-              <Button className='practice-zoom-recorder__button device-touch-target' disabled={isDeletingRecording} onClick={playRecording}>
-                {isPlayingRecording ? "停止回听" : "回听录音"}
-              </Button>
-              <Button className='practice-zoom-recorder__button practice-zoom-recorder__finish device-touch-target' disabled={isDeletingRecording} onClick={submitCheckIn}>完成练习</Button>
-            </>
-          )}
-          {recordingState === "error" && (
-            <Button className='practice-zoom-recorder__button practice-zoom-recorder__start device-touch-target' onClick={startRecording}>重新尝试录音</Button>
-          )}
-          {(["checking", "starting", "stopping", "uploading"].includes(recordingState) || isSavingRecording) && (
-            <Text className='practice-zoom-recorder__status'>录音处理中…</Text>
-          )}
-          {recordingState === "unsupported" && (
-            <Text className='practice-zoom-recorder__status'>当前设备暂不支持录音</Text>
-          )}
-        </View>
-      )}
     </View>
   );
 }

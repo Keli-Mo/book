@@ -204,46 +204,6 @@
   min-width: 0;
 }
 
-.practice-zoom-recorder {
-  position: fixed;
-  z-index: 50;
-  right: 12PX;
-  bottom: 8PX;
-  bottom: calc(8PX + env(safe-area-inset-bottom));
-  display: flex;
-  max-width: calc(100vw - 24PX);
-  min-height: 56PX;
-  align-items: center;
-  gap: 6PX;
-  padding: 6PX;
-  box-sizing: border-box;
-  border: 1PX solid rgba(47, 137, 108, 0.22);
-  border-radius: 14PX;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 6PX 24PX rgba(36, 54, 47, 0.2);
-
-  &__button {
-    min-width: 44PX;
-    min-height: 44PX;
-    margin: 0;
-    padding: 0 10PX;
-    border: 0;
-    border-radius: 9PX;
-    background: #e4f3ed;
-    color: #276c58;
-    font-size: 13PX;
-    line-height: 44PX;
-    white-space: nowrap;
-
-    &::after { border: 0; }
-  }
-
-  &__start,
-  &__finish { background: #2f896c; color: #ffffff; }
-  &__stop { background: #e85d3d; color: #ffffff; }
-  &__status { padding: 0 10PX; color: #496158; font-size: 13PX; }
-}
-
 // 宽 Pad 保留左右两栏；两栏按自然高度展开，不让录音内容参与教材缩放。
 .device-layout--split .practice-workspace {
   display: grid;
@@ -1281,7 +1241,7 @@ button[disabled] { opacity: 0.5; }
   .practice-navigation { gap: 6PX; margin-top: 6PX; }
   .practice-navigation__button { min-width: 0; padding: 0 4PX; font-size: 12PX; }
 
-  // 横屏宽度不应放大热点的视觉图标，点击范围仍为 44px。
+  // 原始点击范围为 44px；捏合后热点与书页一同缩放。
   .audio-hotspot__visual { box-sizing: border-box; width: 26PX; height: 26PX; flex-basis: 26PX; border-width: 2PX; }
   .audio-hotspot__icon { margin-left: 1PX; font-size: 10PX; }
   .audio-hotspot__number { right: -4PX; bottom: -4PX; width: 13PX; height: 13PX; font-size: 9PX; }

@@ -112,6 +112,18 @@ const scaleTo = (page, scale) => {
   view.props.onScale({ detail: { scale } });
   return render(page);
 };
+const assertCommittedScale = (tree, scale, message = "书页保持已提交倍率") => {
+  const { view } = activeBookZoom(tree);
+  assert.equal(view.props.scaleValue, 1, `${message}：原生初始倍率不得回写手势结果`);
+  assert.equal(view.props.animation, false, `${message}：不使用原生回写动画`);
+  const hotspots = elements(view).filter((node) => hasClass(node, "audio-hotspot"));
+  // 全页阅读允许空音频页；验证放大后的显示倍率必须选用真实音频页。
+  assert.ok(hotspots.length > 0 || scale === 1, `${message}：放大测试页必须有热点以观察显示倍率`);
+  for (const hotspot of hotspots) {
+    assert.equal(hotspot.props.style.transform, "translate(-50%, -50%)",
+      `${message}：热点跟随书页缩放，不抵消 ${scale} 倍倍率`);
+  }
+};
 
 const fitToBounds = (bounds, imageNatural) => {
   const scale = Math.min(bounds.width / imageNatural.width, bounds.height / imageNatural.height);
@@ -207,13 +219,13 @@ function assertControls(page, mode) {
   const { area, view } = activeBookZoom(tree);
   assert.equal(area.props.scaleArea, true);
   assert.equal(view.props.scale, true);
-  assert.equal(view.props.scaleValue, 1);
+  assertCommittedScale(tree, 1, "原始图面");
   if (mode.orientation === "landscape") {
-    assert.equal(view.props.direction, "vertical", "横屏原始倍率仍可沿书页纵向阅读");
+    assert.equal(view.props.direction, "all", "横屏初始即启用拖动，仍可沿书页纵向阅读");
     assert.equal(activeBookScroll(tree), undefined, "活动页交由可缩放图层处理纵向阅读");
   } else {
     assert.equal(byClass(tree, "practice-book-scroll"), undefined, "竖屏不增加书内滚动容器");
-    assert.equal(view.props.direction, "none", "竖屏原始倍率仍将单指手势交给翻页层");
+    assert.equal(view.props.direction, "all", "竖屏初始即启用拖动，原始倍率由边界限制位移");
   }
 }
 
@@ -282,7 +294,7 @@ for (const route of routes) {
       assert.deepEqual(viewport.props.style, { width: `${slot.width}px`, height: `${slot.height}px` });
       const { area, view } = activeBookZoom(tree);
       assert.deepEqual(area.props.style, { width: `${slot.width}px`, height: `${slot.height}px` });
-      assert.equal(view.props.direction, "vertical");
+      assert.equal(view.props.direction, "all");
       assert.ok(Number.parseFloat(view.props.style.height) > slot.height,
         "按宽显示的长页应可在固定视口内纵向阅读");
     } finally { cleanup(page); }
@@ -295,19 +307,19 @@ for (const route of routes) {
         const initial = assertImageSize(page, slot, mode);
         assertControls(page, mode);
         scaleTo(page, 2);
-        assert.equal(activeBookZoom(render(page)).view.props.scaleValue, 2, "测试先放大书页");
+        assertCommittedScale(render(page), 2, "测试先放大书页");
         await begin(page);
         loadAgain(page);
         assert.deepEqual(assertImageSize(page, slot, mode, "录音中"), initial);
-        assert.equal(activeBookZoom(render(page)).view.props.scaleValue, 2, "录音中保持倍率");
+        assertCommittedScale(render(page), 2, "录音中保持倍率");
         pause(page);
         loadAgain(page);
         assert.deepEqual(assertImageSize(page, slot, mode, "暂停后"), initial);
-        assert.equal(activeBookZoom(render(page)).view.props.scaleValue, 2, "暂停不能复位倍率");
+        assertCommittedScale(render(page), 2, "暂停不能复位倍率");
         await finish(page);
         loadAgain(page);
         assert.deepEqual(assertImageSize(page, slot, mode, "保存后"), initial);
-        assert.equal(activeBookZoom(render(page)).view.props.scaleValue, 2, "保存不能复位倍率");
+        assertCommittedScale(render(page), 2, "保存不能复位倍率");
         assert.equal(page.savedRecordings.length, 1);
         assert.ok(selectors.length > 0);
         assert.ok(selectors.every((selector) => selector === ".practice-workspace__book"), "所有尺寸应来自同一个书图区");
@@ -326,7 +338,7 @@ for (const route of routes) {
         assertImageSize(page, slot, mode);
         if (mode.orientation === "landscape") {
           assert.equal(scroll, undefined, "活动页不创建与缩放手势竞争的 ScrollView");
-          assert.equal(view.props.direction, "vertical", "原始倍率仍可纵向阅读");
+          assert.equal(view.props.direction, "all", "原始倍率仍可纵向阅读");
         } else {
           assert.equal(scroll, undefined, "Pad 竖屏整页显示无需纵向滚动");
         }
@@ -364,12 +376,12 @@ for (const route of routes) {
         const inactiveA = imageContainer(nextTree, "practice-book-scroll", imageA);
         assert.ok(inactiveA, "相邻旧页仍保留在 Swiper 中");
         assert.equal(inactiveA.props.scrollTop, 0, "非活动预载页的滚动位置归零");
-        assert.equal(activeBookZoom(nextTree).view.props.scaleValue, 1, "翻页后的新页从原始倍率开始");
+        assertCommittedScale(nextTree, 1, "翻页后的新页从原始倍率开始");
         assert.notEqual(progress(page), initialProgress);
         await byClass(page.render(), "practice-navigation__button").props.onClick();
         const backTree = render(page);
         assert.equal(byClass(backTree, "practice-book-page__image").props.src, imageA);
-        assert.equal(activeBookZoom(backTree).view.props.scaleValue, 1, "返回旧页也从原始倍率开始");
+        assertCommittedScale(backTree, 1, "返回旧页也从原始倍率开始");
         const inactiveB = imageContainer(backTree, "practice-book-scroll", imageB);
         assert.ok(inactiveB, "刚离开的下一页仍预载在 Swiper 中");
         assert.equal(inactiveB.props.scrollTop, 0);
@@ -421,9 +433,11 @@ for (const route of routes) {
         const saved = page.savedRecordings[0];
         const initialProgress = progress(page);
         const acquireAttempts = page.acquireAttempts;
+        assertCommittedScale(scaleTo(page, 2), 2, "旋转前放大当前书页");
         context.rotate(landscape);
         assertImageSize(page, slot, landscape, "旋转横屏后");
         assertControls(page, landscape);
+        assertCommittedScale(scaleTo(page, 3), 3, "横屏再次放大当前书页");
         context.rotate(portrait);
         assertImageSize(page, slot, portrait, "回到竖屏后");
         assertControls(page, portrait);
@@ -498,6 +512,11 @@ for (const route of routes) {
     try {
       const originalImage = byClass(render(page), "practice-book-page__image").props.src;
       await byClass(page.render(), "practice-navigation__button--primary").props.onClick();
+      for (let skipped = 0; skipped < 8 && !byClass(activeBookZoom(render(page)).view, "audio-hotspot"); skipped++) {
+        await byClass(page.render(), "practice-navigation__button--primary").props.onClick();
+      }
+      assert.ok(byClass(activeBookZoom(render(page)).view, "audio-hotspot"),
+        "后续当前页应有真实热点，用于验证缩放显示倍率");
       assert.notEqual(byClass(render(page), "practice-book-page__image").props.src, originalImage);
       await begin(page);
       await finish(page);
@@ -507,7 +526,7 @@ for (const route of routes) {
       const actions = [...page.recorderActions];
       let zoomTree = scaleTo(page, 2);
       const { view } = activeBookZoom(zoomTree);
-      assert.equal(view.props.scaleValue, 2);
+      assertCommittedScale(zoomTree, 2);
       assert.equal(byClass(view, "practice-book-page__image").props.src, imageUrl,
         "缩放的是当前书页本身");
       assert.ok(byClass(view, "practice-book-page__hotspots"), "示范音频热点图层与图片一起缩放");
@@ -515,7 +534,7 @@ for (const route of routes) {
       assert.equal(previews.length, 0, "缩放不得调用微信原生图片预览");
       assert.deepEqual(page.recorderActions, actions);
       zoomTree = scaleTo(page, 1);
-      assert.equal(activeBookZoom(zoomTree).view.props.scaleValue, 1);
+      assertCommittedScale(zoomTree, 1);
       assert.equal(progress(page), initialProgress);
       assert.equal(page.savedRecordings.length, 1);
       assert.ok(byClass(render(page), "practice-recorder__retry"));
@@ -624,8 +643,9 @@ test("Pad 竖屏：放大和缩回保持示范音频与活动录音", async () =
       eventsBeforeZoom,
       "书页放大不得停止示范音频",
     );
-    assert.equal(activeBookZoom(tree).view.props.scaleValue, 2);
+    assertCommittedScale(tree, 2);
     tree = scaleTo(audioContext.page, 1);
+    assertCommittedScale(tree, 1);
     assert.deepEqual(modelAudio.events, eventsBeforeZoom, "缩回原始倍率也不得停止示范音频");
     assert.ok(byClass(tree, "practice-model-player"), "缩回后播放器仍须保留");
 
@@ -640,13 +660,14 @@ test("Pad 竖屏：放大和缩回保持示范音频与活动录音", async () =
     await begin(recordingContext.page);
     const actionsBeforeZoom = [...recordingContext.page.recorderActions];
     const zoomTree = scaleTo(recordingContext.page, 2);
+    assertCommittedScale(zoomTree, 2);
     assert.deepEqual(
       recordingContext.page.recorderActions,
       actionsBeforeZoom,
       "放大书页不得暂停或停止活动录音",
     );
     assert.ok(byClass(zoomTree, "record-button--pause"), "放大时仍须保持录音中");
-    scaleTo(recordingContext.page, 1);
+    assertCommittedScale(scaleTo(recordingContext.page, 1), 1);
     assert.ok(byClass(render(recordingContext.page), "record-button--pause"), "缩回后仍须保持录音中");
 
     recordingContext.page.hide();
@@ -671,7 +692,7 @@ test("Pad 竖屏：书页缩放不触发图片预览生命周期", async () => {
 
     tree = scaleTo(context.page, 2);
 
-    assert.equal(activeBookZoom(tree).view.props.scaleValue, 2, "当前书页应在原位放大");
+    assertCommittedScale(tree, 2, "当前书页应在原位放大");
     assert.equal(byClass(tree, "practice-book-preview"), undefined, "不得覆盖录音区");
     assert.equal(context.previews.length, 0, "不得调用会触发 App/Page hide 的原生 previewImage");
     assert.deepEqual(modelAudio.events, eventsBeforeZoom, "放大不得停止示范音频");
@@ -693,13 +714,13 @@ test("Pad 竖屏：缩放过程保持活动录音和录音按钮", async () => {
     const actionsBeforeZoom = [...context.page.recorderActions];
 
     let tree = scaleTo(context.page, 2);
-    assert.equal(activeBookZoom(tree).view.props.scaleValue, 2);
+    assertCommittedScale(tree, 2);
     assert.equal(context.previews.length, 0, "活动录音中不得进入微信原生图片预览层");
     assert.deepEqual(context.page.recorderActions, actionsBeforeZoom, "放大不得暂停或停止录音");
     assert.ok(byClass(tree, "record-button--pause"), "放大后录音状态仍为 recording");
 
     tree = scaleTo(context.page, 1);
-    assert.equal(activeBookZoom(tree).view.props.scaleValue, 1);
+    assertCommittedScale(tree, 1);
     assert.deepEqual(context.page.recorderActions, actionsBeforeZoom, "缩回不得改变录音状态");
     assert.ok(byClass(tree, "record-button--pause"), "缩回后应继续录音");
 
@@ -725,8 +746,10 @@ test("Pad 竖屏：放大和缩回保持录音回听", async () => {
     const eventsBeforeZoom = [...recordingAudio.events];
 
     tree = scaleTo(context.page, 2);
+    assertCommittedScale(tree, 2);
     assert.deepEqual(recordingAudio.events, eventsBeforeZoom, "放大不得停止录音回听");
     tree = scaleTo(context.page, 1);
+    assertCommittedScale(tree, 1);
     assert.deepEqual(recordingAudio.events, eventsBeforeZoom, "缩回不得停止录音回听");
   } finally {
     cleanup(context.page);
@@ -774,7 +797,7 @@ test("Pad 竖屏：重复缩放始终只保留当前书页的一个缩放层", (
     const modelAudio = context.page.audios.find((audio) => audio.src);
     const eventsBeforeZoom = [...modelAudio.events];
 
-    scaleTo(context.page, 2);
+    assertCommittedScale(scaleTo(context.page, 2), 2);
     scaleTo(context.page, 3);
     tree = render(context.page);
     assert.equal(context.previews.length, 0, "重复缩放也不得创建原生预览请求");
@@ -783,7 +806,7 @@ test("Pad 竖屏：重复缩放始终只保留当前书页的一个缩放层", (
       1,
       "重复缩放保持单个活动书页图层",
     );
-    assert.equal(activeBookZoom(tree).view.props.scaleValue, 3);
+    assertCommittedScale(tree, 3);
     assert.deepEqual(modelAudio.events, eventsBeforeZoom, "重复缩放不得打断示范音频");
   } finally {
     cleanup(context.page);
