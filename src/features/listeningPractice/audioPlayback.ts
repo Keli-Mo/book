@@ -11,7 +11,6 @@ interface TrackAudioError {
 interface TrackAudio {
   src: string;
   loop: boolean;
-  startTime: number;
   currentTime: number;
   duration: number;
   paused: boolean;
@@ -94,7 +93,9 @@ export const createTrackAudioController = (
     waiting: boolean;
     pendingPosition: number | null;
     pendingSeek: boolean;
-    initialStartTimePending: boolean;
+    rateRestartPending: boolean;
+    rateRestartInFlight: boolean;
+    rateRestartTimer: ReturnType<typeof setTimeout> | null;
   } | null = null;
 
   const isCurrentSession = (sessionGeneration: number) =>
@@ -108,6 +109,7 @@ export const createTrackAudioController = (
       return false;
     }
 
+    if (session.rateRestartTimer !== null) clearTimeout(session.rateRestartTimer);
     // 先让会话失效再销毁；destroy 同步触发的旧回调也会被代次检查拦截。
     session.audio.destroy();
     if (notify) onTrackChange(null);
@@ -117,7 +119,6 @@ export const createTrackAudioController = (
   const startTrack = (
     trackId: string,
     url: string,
-    resume?: { position: number; wantsToPlay: boolean; userPaused: boolean },
   ) => {
     const audio = createAudio();
     let loopEndedRecently = false;
@@ -128,20 +129,16 @@ export const createTrackAudioController = (
       generation: sessionGeneration,
       trackId,
       url,
-      wantsToPlay: resume?.wantsToPlay ?? true,
-      userPaused: resume?.userPaused ?? false,
+      wantsToPlay: true,
+      userPaused: false,
       waiting: false,
-      pendingPosition: resume ? resume.position : null,
+      pendingPosition: null,
       pendingSeek: false,
-      initialStartTimePending: Boolean(resume?.position),
+      rateRestartPending: false,
+      rateRestartInFlight: false,
+      rateRestartTimer: null,
     };
     activeSession = session;
-    const clearInitialStartTime = () => {
-      if (!session.initialStartTimePending) return;
-      session.initialStartTimePending = false;
-      // 接续位置只用于这次起播；下一轮循环必须从音轨开头开始。
-      audio.startTime = 0;
-    };
     const isAtLoopBoundary = () =>
       options.loop && Number.isFinite(audio.duration) && audio.duration > 0 &&
       audio.currentTime >= audio.duration - 0.25;
@@ -149,17 +146,13 @@ export const createTrackAudioController = (
       if (!audio.paused) return;
       session.pendingPosition = null;
       session.pendingSeek = false;
-      clearInitialStartTime();
       audio.seek(0);
       audio.play();
     };
-    audio.loop = options.loop ?? false;
-    if (playbackRate !== 1) audio.playbackRate = playbackRate;
-    if (resume?.position) audio.startTime = resume.position;
-
     const finishCurrentSession = () => {
       if (!isCurrentSession(sessionGeneration)) return;
       activeSession = null;
+      if (session.rateRestartTimer !== null) clearTimeout(session.rateRestartTimer);
       audio.destroy();
       onTrackChange(null);
     };
@@ -187,12 +180,32 @@ export const createTrackAudioController = (
         audio.pause();
         return;
       }
-      clearInitialStartTime();
+      if (!session.rateRestartPending) session.rateRestartInFlight = false;
       activeSession.waiting = false;
       hooks.onPlay?.();
     });
     audio.onPause(() => {
       if (!isCurrentSession(sessionGeneration) || !activeSession) return;
+      if (session.rateRestartInFlight) {
+        // 只接收这次主动 pause 的首次确认。续播尚未发出 onPlay 时，
+        // 迟到的 Pause 不能重复请求 play，也不能把播放意图改成暂停。
+        if (!session.rateRestartPending || !audio.paused) return;
+        if (session.rateRestartTimer !== null) clearTimeout(session.rateRestartTimer);
+        session.rateRestartTimer = null;
+        session.rateRestartPending = false;
+        if (session.wantsToPlay && !interruptionActive) {
+          // 部分微信真机要到下一次 play 才应用新的倍速。沿用同一实例可保留播放位置。
+          audio.playbackRate = playbackRate;
+          if (!isCurrentSession(sessionGeneration)) return;
+          if (options.loop && (isAtLoopBoundary() || loopEndedRecently)) {
+            resumeLoopIfPaused();
+          } else if (audio.paused) {
+            audio.play();
+          }
+          return;
+        }
+        session.rateRestartInFlight = false;
+      }
       if (options.loop && activeSession.wantsToPlay && !interruptionActive &&
         (isAtLoopBoundary() || loopEndedRecently)) {
         // 有的微信客户端只发 Pause，不发 Ended。循环边界若真的暂停，
@@ -214,7 +227,7 @@ export const createTrackAudioController = (
     });
     audio.onTimeUpdate(() => {
       if (!isCurrentSession(sessionGeneration)) return;
-      // 接续或拖动尚未确认时，忽略新实例加载期的零进度，即使时长已知。
+      // 拖动尚未确认时，忽略原生播放器报告的旧进度。
       if (session.pendingPosition !== null) {
         if (!Number.isFinite(audio.currentTime) ||
           (session.pendingSeek && Math.abs(audio.currentTime - session.pendingPosition) > 0.01) ||
@@ -222,7 +235,6 @@ export const createTrackAudioController = (
         session.pendingPosition = null;
         session.pendingSeek = false;
       }
-      if (resume && audio.currentTime === 0 && audio.duration === 0) return;
       if (audio.currentTime > 0.5 && !isAtLoopBoundary()) loopEndedRecently = false;
       hooks.onTimeUpdate?.(audio.currentTime, audio.duration);
     });
@@ -250,6 +262,7 @@ export const createTrackAudioController = (
     audio.onError((error) => {
       if (!isCurrentSession(sessionGeneration)) return;
       activeSession = null;
+      if (session.rateRestartTimer !== null) clearTimeout(session.rateRestartTimer);
       audio.destroy();
       onTrackChange(null);
       onPlaybackError?.(error);
@@ -257,7 +270,12 @@ export const createTrackAudioController = (
 
     audio.src = url;
     if (!isCurrentSession(sessionGeneration)) return;
-    if (!resume) onTrackChange(trackId);
+    // 新音轨起播前设置循环与当前选择的倍速。
+    audio.loop = options.loop ?? false;
+    if (!isCurrentSession(sessionGeneration)) return;
+    if (playbackRate !== 1) audio.playbackRate = playbackRate;
+    if (!isCurrentSession(sessionGeneration)) return;
+    onTrackChange(trackId);
     if (!interruptionActive && activeSession?.wantsToPlay) audio.play();
   };
 
@@ -269,6 +287,12 @@ export const createTrackAudioController = (
             activeSession.wantsToPlay = false;
             activeSession.userPaused = true;
             activeSession.waiting = false;
+            activeSession.rateRestartPending = false;
+            activeSession.rateRestartInFlight = false;
+            if (activeSession.rateRestartTimer !== null) {
+              clearTimeout(activeSession.rateRestartTimer);
+              activeSession.rateRestartTimer = null;
+            }
             activeSession.audio.pause();
           } else {
             activeSession.wantsToPlay = true;
@@ -295,7 +319,6 @@ export const createTrackAudioController = (
         : nonNegativeSeconds;
       session.pendingPosition = boundedSeconds;
       session.pendingSeek = true;
-      if (session.initialStartTimePending) audio.startTime = boundedSeconds;
       audio.seek(boundedSeconds);
       // 同步完成的定位无需继续压住进度；异步定位则保留用户请求的位置。
       if (Number.isFinite(audio.currentTime) &&
@@ -313,12 +336,31 @@ export const createTrackAudioController = (
       playbackRate = nextRate;
       const session = activeSession;
       if (!session) return;
-      const { audio, trackId, url, wantsToPlay, userPaused } = session;
-      const position = session.pendingPosition ?? (Number.isFinite(audio.currentTime)
-        ? Math.max(0, audio.currentTime)
-        : 0);
-      releaseActiveSession(false);
-      startTrack(trackId, url, { position, wantsToPlay, userPaused });
+      const { audio } = session;
+      audio.playbackRate = nextRate;
+      if (!isCurrentSession(session.generation)) return;
+      if (session.wantsToPlay && !interruptionActive && !audio.paused &&
+        !session.rateRestartInFlight) {
+        session.rateRestartPending = true;
+        session.rateRestartInFlight = true;
+        session.rateRestartTimer = setTimeout(() => {
+          if (!isCurrentSession(session.generation) || !session.rateRestartPending) return;
+          session.rateRestartPending = false;
+          session.rateRestartTimer = null;
+          if (!session.wantsToPlay || interruptionActive) {
+            session.rateRestartInFlight = false;
+            return;
+          }
+          audio.playbackRate = playbackRate;
+          if (!isCurrentSession(session.generation)) return;
+          if (options.loop && Number.isFinite(audio.duration) && audio.duration > 0 &&
+            audio.currentTime >= audio.duration - 0.25) {
+            audio.seek(0);
+          }
+          audio.play();
+        }, 350);
+        audio.pause();
+      }
     },
 
     handleInterruptionBegin() {

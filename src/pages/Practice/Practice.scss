@@ -49,6 +49,8 @@
     &--audio-active {
       justify-content: flex-start;
       gap: 6PX;
+
+      .practice-header__progress { min-width: 5em; }
     }
   }
   &__progress { flex: none; color: #2f876b; font-size: 25rpx; font-weight: 600; }
