@@ -10,6 +10,7 @@ import {
   createTrackAudioController,
   stopPracticePlayback,
 } from "@/features/listeningPractice/audioPlayback";
+import { shouldUseOhOsWebAudio } from "@/features/listeningPractice/audioRuntime";
 import {
   type BookPracticeBundle,
   type ListeningPractice,
@@ -804,7 +805,9 @@ export function PracticeSession({
 
   useEffect(() => {
     const modelAudioController = createTrackAudioController(
-      () => Taro.createInnerAudioContext(),
+      () => shouldUseOhOsWebAudio()
+        ? Taro.createInnerAudioContext({ useWebAudioImplement: true })
+        : Taro.createInnerAudioContext(),
       (trackId) => {
         if (trackId === null) setPlaybackScreenAwake(false);
         if (mountedRef.current && !pageHiddenRef.current) {
