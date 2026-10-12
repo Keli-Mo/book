@@ -145,28 +145,37 @@ const load = (file, overrides = {}, cache = new Map()) => {
   assert.deepEqual(await pending, { mode: MOCK_APP_ENTRY_MODE });
 
   const calls = [];
-  const hosted = load(
+  const unknownVersion = load(
     "src/services/appEntry.ts",
     {
       wx: {
         cloud: {
           callContainer: async (input) => {
             calls.push(input);
-            return { data: { ok: true, mode: "practice" } };
+            return { data: { ok: true, mode: "intro" } };
           },
         },
       },
     },
     new Map(),
   );
-  assert.deepEqual(await hosted.fetchAppEntryMode(), { mode: "practice" });
-  assert.equal(calls.length, 1, "未标明版本时仍请求云托管");
-  assert.equal(calls[0].path, "/api/app-entry");
-  assert.equal(calls[0].method, "GET");
-  assert.equal(calls[0].header["X-WX-SERVICE"], "koa-hwx1");
-  assert.equal(calls[0].config.env, "prod-d0gxpzolg8a06fa69");
-  assert.equal(calls[0].timeout, undefined);
-  assert.equal(calls[0].dataType, undefined);
+  assert.deepEqual(await unknownVersion.fetchAppEntryMode(), { mode: "practice" }, "无法识别版本时应按正式版进入书架");
+  assert.equal(calls.length, 0, "无法识别版本时不得让云托管 intro 覆盖正式版入口");
+
+  const unreadableVersionCalls = [];
+  const unreadableVersion = load("src/services/appEntry.ts", {
+    wx: {
+      getAccountInfoSync: () => { throw new Error("account info unavailable"); },
+      cloud: {
+        callContainer: async (input) => {
+          unreadableVersionCalls.push(input);
+          return { data: { mode: "intro" } };
+        },
+      },
+    },
+  }, new Map());
+  assert.deepEqual(await unreadableVersion.fetchAppEntryMode(), { mode: "practice" });
+  assert.equal(unreadableVersionCalls.length, 0, "读取版本异常时不得调用入口接口");
 
   for (const envVersion of ["develop", "trial"]) {
     const versionCalls = [];
@@ -188,6 +197,12 @@ const load = (file, overrides = {}, cache = new Map()) => {
     assert.equal(versioned.usesCloudHostingEntry(), true, `${envVersion} 应走云托管`);
     assert.deepEqual(await versioned.fetchAppEntryMode(), { mode: "intro" });
     assert.equal(versionCalls.length, 1, `${envVersion} 应请求入口接口`);
+    assert.equal(versionCalls[0].path, "/api/app-entry");
+    assert.equal(versionCalls[0].method, "GET");
+    assert.equal(versionCalls[0].header["X-WX-SERVICE"], "koa-hwx1");
+    assert.equal(versionCalls[0].config.env, "prod-d0gxpzolg8a06fa69");
+    assert.equal(versionCalls[0].timeout, undefined);
+    assert.equal(versionCalls[0].dataType, undefined);
   }
 
   const releaseCalls = [];
@@ -214,6 +229,68 @@ const load = (file, overrides = {}, cache = new Map()) => {
     HOME_FALLBACK_URL,
     "正式版 practice 应进入书架",
   );
+
+  const { createPage } = require("./test-practice-book-route.cjs");
+  const releaseIntroPage = createPage("src/pages/Intro/Intro.tsx", {}, {
+    overrides: {
+      wx: {
+        getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
+      },
+    },
+  });
+  releaseIntroPage.render();
+  releaseIntroPage.show();
+  await new Promise(setImmediate);
+  assert.deepEqual(
+    releaseIntroPage.navigations,
+    [HOME_FALLBACK_URL],
+    "正式版从已打开的介绍页恢复时应回到书架",
+  );
+  releaseIntroPage.dispose();
+
+  for (const envVersion of ["develop", "trial"]) {
+    const previewCalls = [];
+    const previewIntroPage = createPage("src/pages/Intro/Intro.tsx", {}, {
+      overrides: {
+        wx: {
+          getAccountInfoSync: () => ({ miniProgram: { envVersion } }),
+          cloud: {
+            callContainer: async (input) => {
+              previewCalls.push(input);
+              return { data: { mode: "intro" } };
+            },
+          },
+        },
+      },
+    });
+    previewIntroPage.render();
+    previewIntroPage.show();
+    await new Promise(setImmediate);
+    assert.equal(previewCalls.length, 1, `${envVersion} 介绍页应重新查询模式`);
+    assert.deepEqual(previewIntroPage.navigations, [], `${envVersion} 介绍页应保持可见`);
+    previewIntroPage.dispose();
+  }
+
+  const changedModeCalls = [];
+  const changedModeIntroPage = createPage("src/pages/Intro/Intro.tsx", {}, {
+    overrides: {
+      wx: {
+        getAccountInfoSync: () => ({ miniProgram: { envVersion: "trial" } }),
+        cloud: {
+          callContainer: async (input) => {
+            changedModeCalls.push(input);
+            return { data: { mode: "practice" } };
+          },
+        },
+      },
+    },
+  });
+  changedModeIntroPage.render();
+  changedModeIntroPage.show();
+  await new Promise(setImmediate);
+  assert.equal(changedModeCalls.length, 1, "体验版重现介绍页时应重新查询模式");
+  assert.deepEqual(changedModeIntroPage.navigations, [HOME_FALLBACK_URL], "模式切到 practice 后应离开介绍页");
+  changedModeIntroPage.dispose();
 
   const appConfig = read("src/app.config.ts");
   assert.match(
@@ -247,6 +324,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
     "src/services/appEntry.ts",
     {
       wx: {
+        getAccountInfoSync: () => ({ miniProgram: { envVersion: "trial" } }),
         cloud: {
           callContainer: async () => ({ data: { ok: true, mode: "intro" } }),
         },
@@ -267,6 +345,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
     "src/services/appEntry.ts",
     {
       wx: {
+        getAccountInfoSync: () => ({ miniProgram: { envVersion: "trial" } }),
         cloud: {
           callContainer: async () => ({ data: { ok: true, mode: "practice" } }),
         },
@@ -287,6 +366,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
     "src/services/appEntry.ts",
     {
       wx: {
+        getAccountInfoSync: () => ({ miniProgram: { envVersion: "trial" } }),
         cloud: {
           callContainer: async () => {
             throw new Error("network down");
@@ -334,11 +414,9 @@ const load = (file, overrides = {}, cache = new Map()) => {
     /关注|私信|开始跟读|resolvePracticeEntryUrl|pages\/Practice\/Practice/,
     "介绍页是独立机构介绍页，不含关注私信，也不能跳到听音跟读页",
   );
-  assert.doesNotMatch(
-    intro,
-    /useAppEntryIntroGuard|fetchAppEntryMode/,
-    "介绍页已是 intro 终点，不再回跳",
-  );
+  assert.match(intro, /useDidShow/, "介绍页热启动时应重新判断入口模式");
+  assert.match(intro, /fetchAppEntryMode/, "介绍页应使用与冷启动相同的模式来源");
+  assert.doesNotMatch(intro, /useAppEntryIntroGuard/, "介绍页不应使用只跳往介绍页的子页守卫");
 
   assert.equal(
     fs.existsSync(path.join(projectRoot, "src/pages/Launch/Launch.config.ts")),

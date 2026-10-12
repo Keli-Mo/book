@@ -14,7 +14,7 @@ export const CLOUD_HOSTING_SERVICE = "koa-hwx1";
 export const APP_ENTRY_PATH = "/api/app-entry";
 export { CLOUD_ENV_ID, CLOUD_RUN_ENV_ID, initCloudHosting };
 
-/** 仅 Node 测试或没有 wx.cloud 时使用；真机/开发者工具走 haisha-server。 */
+/** Node 测试及开发/体验版缺少 wx.cloud 时使用；正式版固定进入书架。 */
 export const MOCK_APP_ENTRY_MODE: AppEntryMode = "intro";
 
 const MOCK_NETWORK_DELAY_MS = 180;
@@ -91,7 +91,7 @@ const delay = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
-/** 正式版不走云托管，固定为书架。开发版和体验版才请求入口接口。 */
+/** 读取微信运行环境版本；读取失败时返回空串。 */
 export const readMiniProgramEnvVersion = (): string => {
   try {
     if (typeof wx === "undefined" || typeof wx.getAccountInfoSync !== "function") return "";
@@ -102,14 +102,19 @@ export const readMiniProgramEnvVersion = (): string => {
   }
 };
 
+/** 只有明确识别为开发版或体验版时才请求入口接口。 */
 export const usesCloudHostingEntry = (envVersion = readMiniProgramEnvVersion()): boolean =>
-  envVersion !== "release";
+  envVersion === "develop" || envVersion === "trial";
 
 /**
  * 按微信云托管官方示例调用 GET /api/app-entry。
- * 线上 release 不调用容器，直接返回 practice。
+ * 只有明确识别为 develop/trial 才调用容器；其他真机环境直接返回 practice。
  */
 export async function fetchAppEntryMode(): Promise<AppEntryResponse> {
+  if (typeof wx === "undefined") {
+    await delay(MOCK_NETWORK_DELAY_MS);
+    return { mode: MOCK_APP_ENTRY_MODE };
+  }
   if (!usesCloudHostingEntry()) return { mode: "practice" };
 
   const cloud = initCloudHosting() as

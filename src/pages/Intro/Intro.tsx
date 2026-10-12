@@ -1,8 +1,9 @@
 import { Text, View } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import Taro, { useDidShow } from "@tarojs/taro";
 import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavigation";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
+import { fetchAppEntryMode, HOME_FALLBACK_URL } from "@/services/appEntry";
 
 import "./Intro.scss";
 
@@ -21,6 +22,12 @@ const SYSTEM_POINTS = [
 ] as const;
 
 export default function Intro() {
+  useDidShow(() => {
+    void fetchAppEntryMode()
+      .then(({ mode }) => mode === "practice" ? Taro.reLaunch({ url: HOME_FALLBACK_URL }) : undefined)
+      .catch(() => undefined);
+  });
+
   const layout = useDeviceLayout();
   const layoutClassName = buildDeviceLayoutClassName({
     ...layout,
