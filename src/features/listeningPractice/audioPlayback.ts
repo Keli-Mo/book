@@ -11,6 +11,7 @@ interface TrackAudioError {
 interface TrackAudio {
   src: string;
   loop: boolean;
+  startTime: number;
   currentTime: number;
   duration: number;
   paused: boolean;
@@ -24,6 +25,7 @@ interface TrackAudio {
   onError: (callback: (error: TrackAudioError) => void) => void;
   onPause: (callback: () => void) => void;
   onPlay: (callback: () => void) => void;
+  onSeeked?: (callback: () => void) => void;
   onStop: (callback: () => void) => void;
   onTimeUpdate: (callback: () => void) => void;
   onWaiting?: (callback: () => void) => void;
@@ -86,9 +88,13 @@ export const createTrackAudioController = (
     audio: TrackAudio;
     generation: number;
     trackId: string;
+    url: string;
     wantsToPlay: boolean;
     userPaused: boolean;
     waiting: boolean;
+    pendingPosition: number | null;
+    pendingSeek: boolean;
+    initialStartTimePending: boolean;
   } | null = null;
 
   const isCurrentSession = (sessionGeneration: number) =>
@@ -108,29 +114,48 @@ export const createTrackAudioController = (
     return true;
   };
 
-  const startTrack = (trackId: string, url: string) => {
+  const startTrack = (
+    trackId: string,
+    url: string,
+    resume?: { position: number; wantsToPlay: boolean; userPaused: boolean },
+  ) => {
     const audio = createAudio();
     let loopEndedRecently = false;
+    const sessionGeneration = generation + 1;
+    generation = sessionGeneration;
+    const session = {
+      audio,
+      generation: sessionGeneration,
+      trackId,
+      url,
+      wantsToPlay: resume?.wantsToPlay ?? true,
+      userPaused: resume?.userPaused ?? false,
+      waiting: false,
+      pendingPosition: resume ? resume.position : null,
+      pendingSeek: false,
+      initialStartTimePending: Boolean(resume?.position),
+    };
+    activeSession = session;
+    const clearInitialStartTime = () => {
+      if (!session.initialStartTimePending) return;
+      session.initialStartTimePending = false;
+      // 接续位置只用于这次起播；下一轮循环必须从音轨开头开始。
+      audio.startTime = 0;
+    };
     const isAtLoopBoundary = () =>
       options.loop && Number.isFinite(audio.duration) && audio.duration > 0 &&
       audio.currentTime >= audio.duration - 0.25;
     const resumeLoopIfPaused = () => {
       if (!audio.paused) return;
+      session.pendingPosition = null;
+      session.pendingSeek = false;
+      clearInitialStartTime();
       audio.seek(0);
       audio.play();
     };
-    const sessionGeneration = generation + 1;
-    generation = sessionGeneration;
-    activeSession = {
-      audio,
-      generation: sessionGeneration,
-      trackId,
-      wantsToPlay: true,
-      userPaused: false,
-      waiting: false,
-    };
     audio.loop = options.loop ?? false;
     if (playbackRate !== 1) audio.playbackRate = playbackRate;
+    if (resume?.position) audio.startTime = resume.position;
 
     const finishCurrentSession = () => {
       if (!isCurrentSession(sessionGeneration)) return;
@@ -145,6 +170,8 @@ export const createTrackAudioController = (
         // 微信客户端可能先派发 Pause 再派发 Ended，也可能原生循环后仍派发 Ended。
         // 保留会话；若原生未自动续播，主动回到开头播放。
         loopEndedRecently = true;
+        session.pendingPosition = null;
+        session.pendingSeek = false;
         if (!activeSession.userPaused && !interruptionActive) {
           activeSession.wantsToPlay = true;
           resumeLoopIfPaused();
@@ -160,6 +187,7 @@ export const createTrackAudioController = (
         audio.pause();
         return;
       }
+      clearInitialStartTime();
       activeSession.waiting = false;
       hooks.onPlay?.();
     });
@@ -186,7 +214,24 @@ export const createTrackAudioController = (
     });
     audio.onTimeUpdate(() => {
       if (!isCurrentSession(sessionGeneration)) return;
+      // 接续或拖动尚未确认时，忽略新实例加载期的零进度，即使时长已知。
+      if (session.pendingPosition !== null) {
+        if (!Number.isFinite(audio.currentTime) ||
+          (session.pendingSeek && Math.abs(audio.currentTime - session.pendingPosition) > 0.01) ||
+          (!session.pendingSeek && session.pendingPosition > 0 && audio.currentTime <= 0)) return;
+        session.pendingPosition = null;
+        session.pendingSeek = false;
+      }
+      if (resume && audio.currentTime === 0 && audio.duration === 0) return;
       if (audio.currentTime > 0.5 && !isAtLoopBoundary()) loopEndedRecently = false;
+      hooks.onTimeUpdate?.(audio.currentTime, audio.duration);
+    });
+    audio.onSeeked?.(() => {
+      if (!isCurrentSession(sessionGeneration) || !session.pendingSeek ||
+        session.pendingPosition === null || !Number.isFinite(audio.currentTime) ||
+        Math.abs(audio.currentTime - session.pendingPosition) > 0.1) return;
+      session.pendingPosition = null;
+      session.pendingSeek = false;
       hooks.onTimeUpdate?.(audio.currentTime, audio.duration);
     });
     audio.onWaiting?.(() => {
@@ -212,8 +257,8 @@ export const createTrackAudioController = (
 
     audio.src = url;
     if (!isCurrentSession(sessionGeneration)) return;
-    onTrackChange(trackId);
-    if (!interruptionActive) audio.play();
+    if (!resume) onTrackChange(trackId);
+    if (!interruptionActive && activeSession?.wantsToPlay) audio.play();
   };
 
   return {
@@ -241,20 +286,39 @@ export const createTrackAudioController = (
     },
 
     seek(seconds) {
-      const audio = activeSession?.audio;
+      const session = activeSession;
+      const audio = session?.audio;
       if (!audio || !Number.isFinite(seconds)) return false;
       const nonNegativeSeconds = Math.max(0, seconds);
       const boundedSeconds = Number.isFinite(audio.duration) && audio.duration > 0
         ? Math.min(nonNegativeSeconds, audio.duration)
         : nonNegativeSeconds;
+      session.pendingPosition = boundedSeconds;
+      session.pendingSeek = true;
+      if (session.initialStartTimePending) audio.startTime = boundedSeconds;
       audio.seek(boundedSeconds);
+      // 同步完成的定位无需继续压住进度；异步定位则保留用户请求的位置。
+      if (Number.isFinite(audio.currentTime) &&
+        Math.abs(audio.currentTime - boundedSeconds) <= 0.01) {
+        session.pendingPosition = null;
+        session.pendingSeek = false;
+      }
       return true;
     },
 
     setPlaybackRate(rate) {
       if (!Number.isFinite(rate)) return;
-      playbackRate = Math.min(2, Math.max(0.5, rate));
-      if (activeSession) activeSession.audio.playbackRate = playbackRate;
+      const nextRate = Math.min(2, Math.max(0.5, rate));
+      if (nextRate === playbackRate) return;
+      playbackRate = nextRate;
+      const session = activeSession;
+      if (!session) return;
+      const { audio, trackId, url, wantsToPlay, userPaused } = session;
+      const position = session.pendingPosition ?? (Number.isFinite(audio.currentTime)
+        ? Math.max(0, audio.currentTime)
+        : 0);
+      releaseActiveSession(false);
+      startTrack(trackId, url, { position, wantsToPlay, userPaused });
     },
 
     handleInterruptionBegin() {

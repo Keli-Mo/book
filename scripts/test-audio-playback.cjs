@@ -91,6 +91,7 @@ const createFakeTrackAudio = ({ eventsOnDestroy = [] } = {}) => {
     error: [],
     pause: [],
     play: [],
+    seeked: [],
     stop: [],
     timeUpdate: [],
     waiting: [],
@@ -131,6 +132,7 @@ const createFakeTrackAudio = ({ eventsOnDestroy = [] } = {}) => {
     onError: (listener) => listeners.error.push(listener),
     onPause: (listener) => listeners.pause.push(listener),
     onPlay: (listener) => listeners.play.push(listener),
+    onSeeked: (listener) => listeners.seeked.push(listener),
     onStop: (listener) => listeners.stop.push(listener),
     onTimeUpdate: (listener) => listeners.timeUpdate.push(listener),
     onWaiting: (listener) => listeners.waiting.push(listener),
@@ -139,6 +141,7 @@ const createFakeTrackAudio = ({ eventsOnDestroy = [] } = {}) => {
     emitError: () => listeners.error.forEach((listener) => listener({ errCode: 1, errMsg: "old" })),
     emitPause: () => listeners.pause.forEach((listener) => listener()),
     emitPlay: () => listeners.play.forEach((listener) => listener()),
+    emitSeeked: () => listeners.seeked.forEach((listener) => listener()),
     emitStop: () => listeners.stop.forEach((listener) => listener()),
     emitTimeUpdate: () => listeners.timeUpdate.forEach((listener) => listener()),
     emitWaiting: () => listeners.waiting.forEach((listener) => listener()),
@@ -236,8 +239,6 @@ assert.equal(trackAudios[0].currentTime, 4.5, "seek 应把当前实例定位到�
 assert.equal(trackAudios[0].events.at(-1), "seek:4.5", "seek 必须调用原生音频定位能力");
 
 assert.equal(typeof trackController.setPlaybackRate, "function", "示范音频控制器应支持设置倍速");
-trackController.setPlaybackRate(1.25);
-assert.equal(trackAudios[0].playbackRate, 1.25, "1.25× 应立即应用到正在播放的实例");
 
 trackController.toggle("track-b", "audio-b.mp3");
 assert.deepEqual(
@@ -250,7 +251,7 @@ assert.deepEqual(
   ["src:audio-b.mp3", "play"],
   "新音轨应使用独立播放会话",
 );
-assert.equal(trackAudios[1].playbackRate, 1.25, "用户选择的 1.25× 应沿用到随后播放的音轨");
+assert.equal(trackAudios[1].playbackRate, 1, "未选择倍速时，新音轨仍按原速播放");
 assert.equal(shownTrackIds.at(-1), "track-b");
 
 trackAudios[0].emitStop();
@@ -314,6 +315,338 @@ assert.equal(trackAudios[1].events.at(-1), "pause", "迟到的原生 Play 应立
 trackAudios[1].emitEnded();
 assert.equal(shownTrackIds.at(-1), null, "当前音轨结束后应恢复未播放状态");
 assert.equal(trackAudios[1].events.at(-1), "destroy", "结束后应释放音频实例");
+
+const createRateSensitiveTrackAudio = () => {
+  const audio = createFakeTrackAudio({ eventsOnDestroy: ["stop", "ended", "error"] });
+  let configuredRate = 1;
+  let configuredStartTime = 0;
+  let effectiveRate = 1;
+  Object.defineProperty(audio, "playbackRate", {
+    get: () => configuredRate,
+    set: (rate) => {
+      configuredRate = rate;
+      audio.events.push(`rate:${rate}`);
+    },
+  });
+  Object.defineProperty(audio, "startTime", {
+    get: () => configuredStartTime,
+    set: (seconds) => {
+      configuredStartTime = seconds;
+      audio.events.push(`start:${seconds}`);
+    },
+  });
+  const originalPlay = audio.play;
+  audio.play = () => {
+    effectiveRate = configuredRate;
+    if (audio.paused && configuredStartTime > 0) audio.currentTime = configuredStartTime;
+    originalPlay();
+  };
+  Object.defineProperty(audio, "effectiveRate", { get: () => effectiveRate });
+  return audio;
+};
+
+const liveRateAudios = [];
+const liveRateTrackChanges = [];
+const liveRateTimes = [];
+const liveRateErrors = [];
+const liveRateController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    liveRateAudios.push(audio);
+    return audio;
+  },
+  (trackId) => liveRateTrackChanges.push(trackId),
+  (error) => liveRateErrors.push(error),
+  { onTimeUpdate: (currentTime, duration) => liveRateTimes.push([currentTime, duration]) },
+  { sameTrackAction: "pause", loop: true },
+);
+liveRateController.toggle("live-track", "live.mp3");
+const liveRateOldAudio = liveRateAudios[0];
+liveRateOldAudio.currentTime = 4.5;
+liveRateOldAudio.duration = 10;
+liveRateOldAudio.emitTimeUpdate();
+liveRateController.setPlaybackRate(1.5);
+assert.equal(liveRateAudios.length, 2, "播放中切倍速必须创建新原生实例，不能只改当前实例属性");
+const liveRateNewAudio = liveRateAudios[1];
+assert.equal(liveRateOldAudio.events.at(-1), "destroy", "播放中切倍速应释放旧原生实例");
+assert.deepEqual(
+  liveRateNewAudio.events.slice(0, 4),
+  ["rate:1.5", "start:4.5", "src:live.mp3", "play"],
+  "新倍速与原进度必须在设置音源和播放前应用",
+);
+assert.equal(liveRateNewAudio.effectiveRate, 1.5, "新原生实例应以选定速度立即播放");
+assert.equal(liveRateNewAudio.loop, true, "切倍速后示范音频仍应循环");
+assert.deepEqual(liveRateTrackChanges, ["live-track"], "同音轨切倍速不能重新通知页面清零进度");
+assert.deepEqual(liveRateTimes, [[4.5, 10]], "切倍速时不能向页面发送零进度");
+liveRateOldAudio.emitStop();
+liveRateOldAudio.emitEnded();
+liveRateOldAudio.emitError();
+liveRateOldAudio.emitTimeUpdate();
+assert.deepEqual(liveRateTrackChanges, ["live-track"], "旧原生实例的迟到回调不能结束新会话");
+assert.deepEqual(liveRateTimes, [[4.5, 10]], "旧原生实例的迟到进度不能覆盖新进度");
+assert.equal(liveRateErrors.length, 0, "旧原生实例的迟到错误不能误报");
+
+liveRateNewAudio.emitPlay();
+liveRateNewAudio.currentTime = 0;
+liveRateNewAudio.duration = 0;
+liveRateNewAudio.emitTimeUpdate();
+assert.deepEqual(
+  liveRateTimes,
+  [[4.5, 10]],
+  "切倍速后新实例加载期返回 0/0 时，页面应继续显示切速前进度与时长",
+);
+liveRateNewAudio.duration = 10;
+liveRateNewAudio.emitTimeUpdate();
+assert.deepEqual(
+  liveRateTimes,
+  [[4.5, 10]],
+  "切倍速后新实例加载期返回 0/已知时长时，页面进度也不能闪回零",
+);
+liveRateNewAudio.currentTime = 4.75;
+liveRateNewAudio.duration = 10;
+liveRateNewAudio.emitTimeUpdate();
+assert.deepEqual(
+  liveRateTimes.at(-1),
+  [4.75, 10],
+  "新实例开始报告有效进度后，页面应正常更新进度",
+);
+
+liveRateNewAudio.currentTime = 10;
+liveRateNewAudio.paused = true;
+liveRateNewAudio.emitPause();
+assert.equal(liveRateNewAudio.currentTime, 0, "切倍速后的下一轮循环仅收到 Pause 时必须从头开始");
+assert.equal(liveRateNewAudio.startTime, 0, "循环开始前必须清掉仅用于切速接续的 startTime");
+liveRateNewAudio.currentTime = 10;
+liveRateNewAudio.paused = true;
+liveRateNewAudio.emitEnded();
+assert.equal(liveRateNewAudio.currentTime, 0, "切倍速后的下一轮循环仅收到 Ended 时也必须从头开始");
+
+const pausedRateAudios = [];
+const pausedRateController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    pausedRateAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+pausedRateController.toggle("paused-track", "paused.mp3");
+pausedRateAudios[0].currentTime = 6.25;
+pausedRateAudios[0].duration = 10;
+pausedRateController.toggle("paused-track", "paused.mp3");
+pausedRateController.setPlaybackRate(0.75);
+assert.equal(pausedRateAudios.length, 2, "暂停时切倍速也应准备新原生实例");
+assert.equal(pausedRateAudios[0].events.at(-1), "destroy", "暂停时切倍速应释放旧实例");
+assert.deepEqual(
+  pausedRateAudios[1].events.slice(0, 3),
+  ["rate:0.75", "start:6.25", "src:paused.mp3"],
+  "暂停时新实例应预置倍速、进度和音源",
+);
+assert.equal(pausedRateAudios[1].events.includes("play"), false, "暂停时切倍速不能擅自恢复播放");
+pausedRateController.toggle("paused-track", "paused.mp3");
+assert.equal(pausedRateAudios[1].events.at(-1), "play", "再次点击才从原进度继续播放");
+assert.equal(pausedRateAudios[1].currentTime, 6.25, "暂停后继续应从切速前进度开始");
+assert.equal(pausedRateAudios[1].effectiveRate, 0.75, "暂停后继续应使用新倍速");
+
+const repeatedRateAudios = [];
+const repeatedRateController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    repeatedRateAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+repeatedRateController.toggle("repeated-rate", "repeated.mp3");
+repeatedRateAudios[0].currentTime = 6.25;
+repeatedRateAudios[0].duration = 10;
+repeatedRateController.toggle("repeated-rate", "repeated.mp3");
+repeatedRateController.setPlaybackRate(0.75);
+assert.equal(repeatedRateAudios[1].startTime, 6.25, "首次暂停切速应保留原进度");
+repeatedRateController.setPlaybackRate(1.5);
+assert.equal(repeatedRateAudios.length, 3, "暂停期间连续改速应准备最终速度的新实例");
+assert.equal(repeatedRateAudios[2].startTime, 6.25, "连续切速不能因中间实例尚未播放就丢失接续位置");
+assert.equal(repeatedRateAudios[2].events.includes("play"), false, "连续切速期间仍须保持暂停");
+repeatedRateController.toggle("repeated-rate", "repeated.mp3");
+assert.equal(repeatedRateAudios[2].currentTime, 6.25, "连续切速后继续播放应保持暂停位置");
+assert.equal(repeatedRateAudios[2].effectiveRate, 1.5, "连续切速后继续播放应使用最终选择的倍速");
+
+const seekAfterRateAudios = [];
+const seekAfterRateController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    seekAfterRateAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+seekAfterRateController.toggle("seek-after-rate", "seek-after-rate.mp3");
+seekAfterRateAudios[0].currentTime = 6.25;
+seekAfterRateAudios[0].duration = 10;
+seekAfterRateController.toggle("seek-after-rate", "seek-after-rate.mp3");
+seekAfterRateController.setPlaybackRate(1.5);
+assert.equal(seekAfterRateAudios[1].startTime, 6.25, "暂停切速应预置原进度");
+seekAfterRateController.seek(8.5);
+assert.equal(seekAfterRateAudios[1].currentTime, 8.5, "暂停切速后拖动进度应定位到新位置");
+seekAfterRateController.toggle("seek-after-rate", "seek-after-rate.mp3");
+assert.equal(seekAfterRateAudios[1].currentTime, 8.5, "继续播放不能被先前 startTime 拉回切速位置");
+assert.equal(seekAfterRateAudios[1].effectiveRate, 1.5, "拖动后继续播放仍应使用所选倍速");
+
+const delayedSeekAudios = [];
+const delayedSeekController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    if (delayedSeekAudios.length === 0) {
+      // 真机 seek 可能异步完成；先记录请求，暂不更新 currentTime。
+      audio.seek = (seconds) => { audio.events.push(`seek-pending:${seconds}`); };
+    }
+    delayedSeekAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+delayedSeekController.toggle("delayed-seek", "delayed-seek.mp3");
+delayedSeekAudios[0].currentTime = 8.5;
+delayedSeekAudios[0].duration = 10;
+assert.equal(delayedSeekController.seek(0), true, "拖回开头的异步定位请求应被接受");
+assert.equal(delayedSeekAudios[0].currentTime, 8.5, "原生定位完成前 currentTime 仍可能是旧位置");
+delayedSeekController.setPlaybackRate(1.5);
+assert.equal(delayedSeekAudios.length, 2, "异步定位期间切速仍应重建会话");
+assert.equal(delayedSeekAudios[1].startTime, 0, "切速应优先使用刚请求的 seek(0)，不能回到旧的 8.5 秒");
+assert.equal(delayedSeekAudios[1].currentTime, 0, "新倍速音频应从开头播放");
+assert.equal(delayedSeekAudios[1].effectiveRate, 1.5, "异步定位后切速应使用新倍速");
+
+const nearbyDelayedSeekAudios = [];
+const nearbyDelayedSeekController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    if (nearbyDelayedSeekAudios.length === 0) {
+      // 定位到邻近秒数时，原生 onTimeUpdate 可能先报告定位前的位置。
+      audio.seek = (seconds) => { audio.events.push(`seek-pending:${seconds}`); };
+    }
+    nearbyDelayedSeekAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+nearbyDelayedSeekController.toggle("nearby-delayed-seek", "nearby-delayed-seek.mp3");
+nearbyDelayedSeekAudios[0].currentTime = 7.6;
+nearbyDelayedSeekAudios[0].duration = 10;
+assert.equal(nearbyDelayedSeekController.seek(8.5), true, "应接受邻近位置的异步定位请求");
+assert.equal(nearbyDelayedSeekAudios[0].currentTime, 7.6, "定位完成前原生位置仍是 7.6 秒");
+nearbyDelayedSeekAudios[0].emitTimeUpdate();
+nearbyDelayedSeekController.setPlaybackRate(1.5);
+assert.equal(nearbyDelayedSeekAudios.length, 2, "迟到进度事件后切速仍应重建会话");
+assert.equal(
+  nearbyDelayedSeekAudios[1].startTime,
+  8.5,
+  "邻近位置的迟到 onTimeUpdate 不能取消 seek(8.5)，新倍速应从 8.5 秒接续",
+);
+assert.equal(nearbyDelayedSeekAudios[1].currentTime, 8.5, "新实例的实际播放位置应为用户请求的 8.5 秒");
+
+const completedSeekAudios = [];
+const completedSeekController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    if (completedSeekAudios.length === 0) {
+      audio.seek = (seconds) => { audio.events.push(`seek-pending:${seconds}`); };
+    }
+    completedSeekAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+completedSeekController.toggle("completed-seek", "completed-seek.mp3");
+completedSeekAudios[0].currentTime = 7.6;
+completedSeekAudios[0].duration = 10;
+completedSeekController.seek(8.5);
+completedSeekAudios[0].currentTime = 8.5;
+completedSeekAudios[0].emitSeeked();
+completedSeekAudios[0].currentTime = 9.25;
+completedSeekController.setPlaybackRate(1.5);
+assert.equal(completedSeekAudios.length, 2, "已完成定位后切速应重建播放实例");
+assert.equal(
+  completedSeekAudios[1].startTime,
+  9.25,
+  "onSeeked 已确认定位完成后，切速应从实际播放到的 9.25 秒接续",
+);
+
+const supersededSeekAudios = [];
+const supersededSeekTimes = [];
+const supersededSeekController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    if (supersededSeekAudios.length === 0) {
+      audio.seek = (seconds) => { audio.events.push(`seek-pending:${seconds}`); };
+    }
+    supersededSeekAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  { onTimeUpdate: (currentTime, duration) => supersededSeekTimes.push([currentTime, duration]) },
+  { sameTrackAction: "pause", loop: true },
+);
+supersededSeekController.toggle("superseded-seek", "superseded-seek.mp3");
+supersededSeekAudios[0].currentTime = 2;
+supersededSeekAudios[0].duration = 10;
+supersededSeekAudios[0].emitTimeUpdate();
+assert.equal(supersededSeekController.seek(8), true, "应接受第一笔异步定位");
+assert.equal(supersededSeekController.seek(4), true, "应接受覆盖上一笔的第二笔异步定位");
+supersededSeekAudios[0].currentTime = 8;
+supersededSeekAudios[0].emitSeeked();
+assert.deepEqual(
+  supersededSeekTimes,
+  [[2, 10]],
+  "第一笔 seek(8) 的迟到 onSeeked 不能让已拖到 4 秒的页面进度跳回 8 秒",
+);
+supersededSeekController.setPlaybackRate(1.5);
+assert.equal(supersededSeekAudios.length, 2, "迟到定位回调后仍应能切换倍速");
+assert.equal(supersededSeekAudios[1].startTime, 4, "切倍速应从最新 seek(4) 的位置接续");
+assert.equal(supersededSeekAudios[1].currentTime, 4, "新实例不应从已作废的 8 秒位置播放");
+
+const interruptedRateAudios = [];
+const interruptedRateController = createTrackAudioController(
+  () => {
+    const audio = createRateSensitiveTrackAudio();
+    interruptedRateAudios.push(audio);
+    return audio;
+  },
+  () => {},
+  undefined,
+  {},
+  { sameTrackAction: "pause", loop: true },
+);
+interruptedRateController.toggle("interrupted-track", "interrupted.mp3");
+interruptedRateAudios[0].currentTime = 3.25;
+assert.equal(interruptedRateController.handleInterruptionBegin(), true, "正在播放时应记住中断前的播放意图");
+interruptedRateAudios[0].paused = true;
+interruptedRateController.setPlaybackRate(2);
+assert.equal(interruptedRateAudios.length, 2, "系统中断期间切倍速也应建立新会话");
+assert.equal(interruptedRateAudios[1].events.includes("play"), false, "系统中断期间切倍速不能提前播放");
+assert.equal(interruptedRateAudios[1].startTime, 3.25, "中断期间切速应记住原播放位置");
+assert.equal(interruptedRateController.handleInterruptionEnd(), true, "中断结束后仍应续播");
+assert.equal(interruptedRateAudios[1].events.at(-1), "play", "中断结束后应播放切速后的新会话");
+assert.equal(interruptedRateAudios[1].currentTime, 3.25, "中断结束后应从原位置继续");
+assert.equal(interruptedRateAudios[1].effectiveRate, 2, "中断结束后应使用新倍速");
 
 const loopingAudios = [];
 const loopingTrackIds = [];
@@ -832,12 +1165,23 @@ async function testBookPlaybackLifecycle() {
     ["0.75×", "1.0×", "1.25×", "1.5×", "2.0×"],
     "内联倍速菜单应严格提供 0.75×、1.0×、1.25×、1.5× 和 2.0×",
   );
+  firstModelAudio.currentTime = 5.25;
+  firstModelAudio.trigger("TimeUpdate");
   await rateOptions[2].props.onClick();
-  assert.equal(firstModelAudio.playbackRate, 1.25, "选择 1.25× 后应立即应用到当前音频");
+  assert.equal(page.audios.length, 2, "页面播放中切倍速应换用新原生实例");
+  const rateSwitchedAudio = page.audios.at(-1);
+  assert.equal(firstModelAudio.events.at(-1), "destroy", "页面切倍速应释放旧原生实例");
+  assert.equal(rateSwitchedAudio.playbackRate, 1.25, "新实例应以所选倍速播放");
+  assert.equal(rateSwitchedAudio.loop, true, "页面切倍速后仍应循环示范音频");
   tree = page.render();
   assert.equal(byClass(tree, "practice-model-player__rate-menu"), undefined, "选择倍速后应立即收起内联菜单");
   rateTrigger = byClass(tree, "practice-model-player__rate");
   assert.match(textOf(rateTrigger), /1\.25\s*[x×]/i, "选择后倍速入口应显示当前 1.25×");
+  assert.equal(
+    byClass(tree, "practice-model-player__progress").props.value,
+    5.25,
+    "切倍速后播放器进度不能归零",
+  );
 
   const progressStyle = practiceStyles.match(
     /\.practice-model-player\s*\{[\s\S]*?&__progress\s*\{([\s\S]*?)\n\s*\}/,
@@ -928,15 +1272,15 @@ async function testBookPlaybackLifecycle() {
     "能力探测误报时仍应把用户选择的 2× 写入真实音频实例",
   );
 
-  const pausesBeforePageTurn = firstModelAudio.events.filter((event) => event === "pause").length;
+  const pausesBeforePageTurn = rateSwitchedAudio.events.filter((event) => event === "pause").length;
   byClass(tree, "practice-header__directory").props.onClick();
   tree = page.render();
-  assert.equal(firstModelAudio.events.includes("destroy"), false, "打开目录只是布局变化，不能停止示范音频");
+  assert.equal(rateSwitchedAudio.events.includes("destroy"), false, "打开目录只是布局变化，不能停止示范音频");
   const directory = elements(tree).find((node) => node.type?.name === "PracticeDirectory");
   await directory.props.onSelect(audioPages[1].imageIndex);
-  assert.equal(firstModelAudio.events.includes("destroy"), false, "目录换页后示范音频必须继续播放");
+  assert.equal(rateSwitchedAudio.events.includes("destroy"), false, "目录换页后示范音频必须继续播放");
   assert.equal(
-    firstModelAudio.events.filter((event) => event === "pause").length,
+    rateSwitchedAudio.events.filter((event) => event === "pause").length,
     pausesBeforePageTurn,
     "目录换页不能暂停示范音频",
   );
@@ -948,14 +1292,14 @@ async function testBookPlaybackLifecycle() {
   tree = page.render();
   assert.equal(textOf(byClass(tree, "practice-header__progress")), progressBeforeSwipe,
     "手势动画完成前不得提前提交当前训练页");
-  assert.equal(firstModelAudio.paused, false, "手势动画过程中示范音频应继续播放");
+  assert.equal(rateSwitchedAudio.paused, false, "手势动画过程中示范音频应继续播放");
   await elements(tree).find((node) => node.type === "Swiper").props.onAnimationFinish({
     detail: { current: 2, source: "touch" },
   });
   assert.notEqual(textOf(byClass(page.render(), "practice-header__progress")), progressBeforeSwipe,
     "手势动画结束后应真正提交目标训练页");
-  assert.equal(firstModelAudio.events.includes("destroy"), false, "手势翻页后示范音频必须继续播放");
-  assert.equal(firstModelAudio.paused, false, "手势翻页不能暂停示范音频");
+  assert.equal(rateSwitchedAudio.events.includes("destroy"), false, "手势翻页后示范音频必须继续播放");
+  assert.equal(rateSwitchedAudio.paused, false, "手势翻页不能暂停示范音频");
   tree = page.render();
   await page.recorderHandlers.Stop({ tempFilePath: "/tmp/recording.mp3", duration: 1200 });
   tree = page.render();
