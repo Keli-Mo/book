@@ -2,6 +2,7 @@ import { Button, Image, Text, View } from "@tarojs/components";
 import Taro, { useDidHide, useDidShow, useRouter, useShareAppMessage, useUnload } from "@tarojs/taro";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
+import { reserveTomorrowOnLearningStart } from "@/features/dailyReminder/wechatSubscription";
 import { createTrackAudioController, getPlaybackPositionMs } from "@/features/listeningPractice/audioPlayback";
 import { buildBookPracticeBundle, buildFullBookPracticeBundle } from "@/features/listeningPractice/bookPractice";
 import type { CheckInSubmissionHandle } from "@/features/listeningPractice/checkInSubmissionCoordinator";
@@ -104,6 +105,7 @@ export default function CheckInDetail() {
     (recordedPageNumber === 0 ? "封面" : Number.isSafeInteger(recordedPageNumber) ? `教材页 ${recordedPageNumber}` : "教材页信息缺失");
 
   const openPractice = () => {
+    if (practiceUrl) void reserveTomorrowOnLearningStart();
     const pages = Taro.getCurrentPages();
     const previousPage = pages[pages.length - 2];
     // 从刚完成的教材页进入时复用原会话，避免叠加训练页后两个页面争用同一个录音器。

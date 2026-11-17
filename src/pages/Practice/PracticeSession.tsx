@@ -6,6 +6,7 @@ import Taro, {
 } from "@tarojs/taro";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { saveFullReadingProgress } from "@/features/bookLibrary/readingProgress";
+import { currentChinaDayKey, reserveReminderOnLearningCompletion } from "@/features/dailyReminder/wechatSubscription";
 import {
   createTrackAudioController,
   stopPracticePlayback,
@@ -2574,9 +2575,12 @@ export function PracticeSession({
       return;
     }
     completionInFlightRef.current = true;
+    const completionChinaDate = currentChinaDayKey();
     let completed = false;
     try {
-      completed = await getPendingCheckInStore().complete(pending.requestId, true);
+      const recordingSaved = getPendingCheckInStore().complete(pending.requestId, true);
+      void reserveReminderOnLearningCompletion(completionChinaDate, recordingSaved);
+      completed = await recordingSaved;
     } catch (_error) {
       completed = false;
     }

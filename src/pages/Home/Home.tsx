@@ -2,6 +2,7 @@ import { Image, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useShareAppMessage } from "@tarojs/taro";
 import { useState } from "react";
 import AppIcon from "@/components/AppIcon/AppIcon";
+import { reserveTomorrowOnLearningStart } from "@/features/dailyReminder/wechatSubscription";
 import {
   BOOKS,
   BOOK_SERIES,
@@ -10,6 +11,7 @@ import {
 import { calculateHomeNavigationMetrics } from "@/features/bookLibrary/homeNavigation";
 import { readReadingProgress, resolveReadingProgressPractice, resolveReadingProgressUrl, type ReadingProgress } from "@/features/bookLibrary/readingProgress";
 import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
+import { restoreReminderSettings } from "@/features/dailyReminder/restoreReminderSettings";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import { sharedImage, sharedTitle } from "@/constant";
@@ -48,6 +50,7 @@ export default function Home() {
 
   useDidShow(() => {
     setReadingProgress(readReadingProgress());
+    void restoreReminderSettings();
   });
 
   const openLibrary = (seriesId: BookSeriesId | "all" = "all") => {
@@ -61,6 +64,7 @@ export default function Home() {
       openLibrary("all");
       return;
     }
+    void reserveTomorrowOnLearningStart();
     Taro.navigateTo({ url: progressUrl });
   };
 

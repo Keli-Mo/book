@@ -8,6 +8,7 @@ const projectRoot = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(projectRoot, file), "utf8");
 const compiled = new Map();
 const load = (file, overrides = {}, cache = new Map()) => {
+  file = file.replaceAll("\\", "/");
   if (cache.has(file)) return cache.get(file);
   if (!compiled.has(file)) {
     compiled.set(file, ts.transpileModule(read(file), {
@@ -429,10 +430,11 @@ const createPage = (file, params, options = {}) => {
       __esModule: true,
       default: (props) => ({ type: "Text", props }),
     },
-    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "Slider", "ScrollView", "Swiper", "SwiperItem", "MovableArea", "MovableView", "PageMeta"].map((name) => [name, name])),
+    "@tarojs/components": Object.fromEntries(["View", "Text", "Image", "Input", "Button", "Picker", "PickerView", "PickerViewColumn", "Switch", "Slider", "ScrollView", "Swiper", "SwiperItem", "MovableArea", "MovableView", "PageMeta"].map((name) => [name, name])),
     "@tarojs/taro": { __esModule: true, default: taro, ...taro },
     "@/constant": { sharedImage: "share.png" },
     "@/services/cloudCheckIn": {
+      listMyCheckIns: async () => [],
       getCheckInDetail: async () => options.detail,
       getReadableCloudError: (error) => error.message,
     },
@@ -446,7 +448,9 @@ const createPage = (file, params, options = {}) => {
     __clearTimeout: options.clearTimeout,
     ...options.overrides,
   };
-  const Component = load(file, overrides).default;
+  const modules = new Map();
+  const loadModule = fileName => load(fileName, overrides, modules);
+  const Component = loadModule(file).default;
   let tree;
   const renderNode = (node, location) => {
     if (Array.isArray(node)) return node.map((child, index) => renderNode(child, `${location}/${index}`));
@@ -476,7 +480,7 @@ const createPage = (file, params, options = {}) => {
     return tree;
   };
   const page = {
-    render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending, completedPending,
+    loadModule, render, navigations, navigationMethods, audios, recorderHandlers, recorderActions, permissionChecks, savedRecordings, submittedPending, completedPending,
     modalCalls, actionSheetCalls,
     recorderReleaseCalls, recorderTerminalOutcomes, recordingSessionJournal,
     get acquireAttempts() { return acquireAttempts; },

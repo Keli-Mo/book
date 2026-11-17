@@ -1,6 +1,7 @@
 import { PropsWithChildren } from "react";
 import Taro, { useLaunch } from "@tarojs/taro";
 import { CLOUD_ENV_ID, initCloudHosting } from "@/cloud";
+import { getReminderSettings } from "@/features/dailyReminder/reminderSettings";
 import { resumeUnfinishedRecordingOnLaunch } from "@/features/listeningPractice/recordingSessionRecovery";
 import { shouldUseOhOsWebAudio } from "@/features/listeningPractice/audioRuntime";
 
@@ -26,6 +27,8 @@ function App({ children }: PropsWithChildren<any>) {
     }
     // 闸门页会立刻请求云托管，启动时先固定云环境，避免打到开发者工具当前环境。
     initCloudHosting();
+    // 启动时从云端恢复开关和时间；微信订阅授权只能在用户点击时请求。
+    void getReminderSettings();
   });
 
   // children 是将要会渲染的页面

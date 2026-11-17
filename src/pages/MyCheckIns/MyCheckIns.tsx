@@ -11,6 +11,7 @@ import { listMyCheckIns, removeCheckIn, type CheckInSummary } from "@/services/c
 import { formatCheckInTime, formatRecordingDuration } from "@/utils/checkInFormat";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
+import LearningReminderSettings from "./LearningReminderSettings";
 import "./MyCheckIns.scss";
 
 const pendingStore = getPendingCheckInStore();
@@ -150,6 +151,7 @@ export default function MyCheckIns() {
 
   return (
     <View className={`my-check-ins device-layout__content ${layoutClassName}`}>
+      <LearningReminderSettings />
       <View className='my-check-ins__intro'>
         <Text className='my-check-ins__title'>我的录音</Text>
         <Text className='my-check-ins__tip'>
