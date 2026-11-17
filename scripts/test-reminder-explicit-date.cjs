@@ -25,11 +25,13 @@ async function tick(h, time, date = today) {
   }
 }
 
-test("试用触发器整十分检查，旧版任意分钟预约在下一次检查投递", async () => {
-  const config = require("../cloudfunctions/dailyReminderTrial/config.json");
+test("正式触发器整十分检查、测试触发器暂停，旧版预约在下一次检查投递", async () => {
+  const trialConfig = require("../cloudfunctions/dailyReminderTrial/config.json");
   const prodConfig = require("../cloudfunctions/dailyReminder/config.json");
-  assert.deepEqual(config.triggers.map(t => t.config), ["0 0,10,20,30,40,50 * * * * *"]);
-  assert.deepEqual(prodConfig.triggers, []);
+  assert.deepEqual(prodConfig.triggers, [{
+    name: "dailyReminderDispatch", type: "timer", config: "0 0,10,20,30,40,50 * * * * *",
+  }]);
+  assert.deepEqual(trialConfig.triggers, []);
   const h = serverHarness();
   await choose(h, today, "16:07");
   await h.main(consent(today, "16:07", "legacy-minute-at-1607"));

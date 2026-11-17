@@ -6,12 +6,14 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 const ts = require("typescript");
 
-const compiled = ts.transpileModule(
-  fs.readFileSync(path.join(__dirname, "../src/app.ts"), "utf8"),
+const compile = file => ts.transpileModule(
+  fs.readFileSync(path.join(__dirname, "../src", file), "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 } },
 ).outputText;
+const compiled = compile("app.ts");
+const compiledAudioRuntime = compile("features/listeningPractice/audioRuntime.ts");
 
-const launchApp = (audioError) => {
+const launchApp = (platform, audioError) => {
   let onLaunch;
   let cloudInitializations = 0;
   let recordingRecoveryChecks = 0;
@@ -25,6 +27,12 @@ const launchApp = (audioError) => {
     },
   };
   const loaded = { exports: {} };
+  const audioRuntime = { exports: {} };
+  vm.runInNewContext(compiledAudioRuntime, {
+    module: audioRuntime,
+    exports: audioRuntime.exports,
+    wx: { getDeviceInfo: () => ({ platform }) },
+  });
   vm.runInNewContext(compiled, {
     module: loaded,
     exports: loaded.exports,
@@ -33,6 +41,7 @@ const launchApp = (audioError) => {
       if (request === "@tarojs/taro") return { __esModule: true, default: taro, ...taro };
       if (request === "@/cloud") return { initCloudHosting: () => { cloudInitializations += 1; } };
       if (request === "@/features/dailyReminder/reminderSettings") return { getReminderSettings: async () => ({ ok: false }) };
+      if (request === "@/features/listeningPractice/audioRuntime") return audioRuntime.exports;
       if (request === "@/features/listeningPractice/recordingSessionRecovery") {
         return { resumeUnfinishedRecordingOnLaunch: () => { recordingRecoveryChecks += 1; } };
       }
@@ -46,8 +55,8 @@ const launchApp = (audioError) => {
   return { audioOptions, warnings, cloudInitializations, recordingRecoveryChecks };
 };
 
-test("冷启动统一允许静音模式下播放，无需先打开旧教材页", async () => {
-  const app = launchApp();
+test("iOS 冷启动允许静音模式下播放，无需先打开旧教材页", async () => {
+  const app = launchApp("ios");
   assert.equal(app.audioOptions.length, 1, "应用启动时必须设置全局音频选项");
   assert.equal(app.audioOptions[0].obeyMuteSwitch, false, "用户主动播放不应被 iOS 静音模式静默屏蔽");
   assert.equal(app.recordingRecoveryChecks, 1, "冷启动必须先检查上次未完成的录音");
@@ -56,9 +65,16 @@ test("冷启动统一允许静音模式下播放，无需先打开旧教材页",
   assert.equal(app.warnings.length, 0);
 });
 
+test("鸿蒙冷启动跳过与 WebAudio 不兼容的原生配置，继续恢复录音并初始化云环境", () => {
+  const app = launchApp("ohos");
+  assert.equal(app.audioOptions.length, 0);
+  assert.equal(app.recordingRecoveryChecks, 1);
+  assert.equal(app.cloudInitializations, 1);
+});
+
 test("音频配置失败被记录且不阻断启动", async () => {
   const error = { errMsg: "setInnerAudioOption:fail" };
-  const app = launchApp(error);
+  const app = launchApp("ios", error);
   await Promise.resolve();
   assert.equal(app.cloudInitializations, 1);
   assert.equal(app.warnings.length, 1, "配置失败必须有诊断日志，不能成为未处理的 Promise 拒绝");
@@ -66,7 +82,7 @@ test("音频配置失败被记录且不阻断启动", async () => {
 });
 
 test("开发者工具明确不支持全局音频配置时不输出误导性警告", async () => {
-  const app = launchApp({
+  const app = launchApp("devtools", {
     errMsg: "setInnerAudioOption:fail 开发者工具暂不支持此 API 调试，请使用真机进行开发",
   });
   await Promise.resolve();
