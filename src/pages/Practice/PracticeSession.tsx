@@ -495,7 +495,7 @@ export function PracticeSession({
     () => {
       return practice.tracks.map((track) => {
         if (imageSize.width <= 0 || imageSize.height <= 0) return track;
-        const anchorOffset = resolveHotspotAnchorOffset(bundle.book.id, bundle.book.seriesId, track.id);
+        const anchorOffset = resolveHotspotAnchorOffset(bundle.book.id, bundle.book.seriesId, track.id, track.anchor);
         const originalCenter = {
           left: Number.parseFloat(track.left),
           top: Number.parseFloat(track.top),
@@ -2985,6 +2985,7 @@ export function PracticeSession({
                             return (
                               <View
                                 key={hotspot.id}
+                                ariaLabel={hotspot.label}
                                 className={`audio-hotspot device-touch-target${
                                   isPlayingModelTrack
                                     ? " audio-hotspot--playing"

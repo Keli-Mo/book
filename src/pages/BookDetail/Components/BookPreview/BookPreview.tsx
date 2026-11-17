@@ -583,7 +583,7 @@ export const BookAudioTag: React.FC<any> = React.memo(({ audioList, currentPage,
       {
         //加入数组判断，防止当audioList.ts中对象没有2[]这个属性时报错——无法正常显示页面
         Array.isArray(audioList[getAudioPageIndex()]) && audioList[getAudioPageIndex()].map((audio) => {
-          const { offset = [], url, flag } = audio as any
+          const { offset = [], url, flag, label, anchor } = audio as any
           const [x = 0, y = 0] = offset
 
           let left = '0px';
@@ -605,10 +605,12 @@ export const BookAudioTag: React.FC<any> = React.memo(({ audioList, currentPage,
 
           return <View
             className="float-rect"
+            ariaLabel={label}
             style={{
               position: 'absolute',
               left,
               top,
+              transform: anchor === 'center' ? 'translate(-50%, -50%)' : undefined,
               width: "30px",
               height: "30px",
               // backgroundColor: "blue",

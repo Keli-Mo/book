@@ -105,7 +105,7 @@ const assertHttpsUrl = (url, message) => {
 };
 
 const { concatImages } = loadTypeScriptConstants("images.ts");
-const { allAudioList } = loadTypeScriptConstants("audioList.ts");
+const { allAudioList, legacyAudioList } = loadTypeScriptConstants("audioList.ts");
 const { catalogLists } = loadTypeScriptConstants("catalogList.ts");
 
 // 聚合三处素材断言，确保 RED 同时呈现全部已核实业务错误。
@@ -217,7 +217,7 @@ let audioSegmentCount = 0;
 
 for (const [index, bookId] of BOOK_IDS.entries()) {
   const images = concatImages[bookId];
-  const audioByPage = allAudioList[bookId];
+  const audioByPage = legacyAudioList[bookId];
   const catalog = catalogLists[bookId];
 
   assert.ok(Array.isArray(images) && images.length > 0, `教材 ${bookId} 应有图片`);
@@ -290,8 +290,8 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
   practiceCount += bookPracticeCount;
 }
 
-assert.equal(practiceCount, 1694, "全教材音频训练页数应为 1,694");
-assert.equal(audioSegmentCount, 2640, "全教材音频热点数应为 2,640");
+assert.equal(practiceCount, 1694, "历史音频索引应保留 1,694 页");
+assert.equal(audioSegmentCount, 2640, "历史音频索引应保留 2,640 个热点");
 assert.deepEqual(
   coordinateCounts,
   { pixel: 590, Cambridge: 258, Percentage: 1792 },
@@ -301,8 +301,8 @@ assert.deepEqual(
 const validationReport = validateBookData({ log: false });
 assert.equal(validationReport.books.length, 29, "校验器应逐书输出 29 本教材报告");
 assert.equal(validationReport.imageCount, 4958, "校验器应汇总 4,958 张图片");
-assert.equal(validationReport.audioSegmentCount, 2640, "校验器应汇总 2,640 个音频热点");
-assert.equal(validationReport.practicePageCount, 1694, "校验器应汇总 1,694 个音频训练页");
+assert.equal(validationReport.audioSegmentCount, 2677, "校验器应汇总 2,677 个音频热点");
+assert.equal(validationReport.practicePageCount, 1717, "校验器应汇总 1,717 个音频训练页");
 
 const {
   DEFAULT_BOOK_ID,
@@ -460,7 +460,7 @@ const fixtureBundle = (changes = {}, bookId = "3") => {
   };
   const { buildBookPracticeBundle: buildFixture } = loadBookPracticeModule({
     "@/pages/BookDetail/Components/BookPreview/constants/images": { concatImages: { [bookId]: fixture.images } },
-    "@/pages/BookDetail/Components/BookPreview/constants/audioList": { allAudioList: { [bookId]: fixture.audio } },
+    "@/pages/BookDetail/Components/BookPreview/constants/audioList": { legacyAudioList: { [bookId]: fixture.audio } },
     "@/pages/BookDetail/Components/BookPreview/constants/catalogList": { catalogLists: { [bookId]: fixture.catalog } },
   });
   return buildFixture(bookId);
@@ -576,7 +576,7 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
   builtPracticeCount += bundle.practices.length;
   builtTrackCount += bundle.practices.reduce((count, practice) => count + practice.tracks.length, 0);
   regression(`教材 ${bookId} 全部生产训练项逐一匹配原始数据`, () => {
-    const audioPages = Object.entries(allAudioList[bookId]).filter(([, tracks]) => tracks.length > 0);
+    const audioPages = Object.entries(legacyAudioList[bookId]).filter(([, tracks]) => tracks.length > 0);
     assert.deepEqual(
       bundle.practices.map((practice) => practice.imageIndex),
       audioPages.map(([audioKey]) => Number(audioKey) - 2),
@@ -593,7 +593,7 @@ for (const [index, bookId] of BOOK_IDS.entries()) {
       assert.equal(practice.pageNumber, parseImagePageNumber(practice.imageUrl));
       const precedingSections = catalogLists[bookId].filter((section) => section.page <= imageIndex);
       assert.equal(practice.sectionTitle, precedingSections.at(-1)?.name ?? "课程导入");
-      const originalTracks = allAudioList[bookId][imageIndex + 2];
+      const originalTracks = legacyAudioList[bookId][imageIndex + 2];
       assert.equal(practice.tracks.length, originalTracks.length, `第 ${practice.pageNumber} 页轨道数`);
       for (const [trackIndex, track] of practice.tracks.entries()) {
         const original = originalTracks[trackIndex];

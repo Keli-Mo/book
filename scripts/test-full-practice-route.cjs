@@ -37,7 +37,70 @@ const open = (bookId, params, options) => {
 const imageOf = (tree) => byClass(tree, "practice-book-page__image")?.props.src;
 const directoryOf = (tree) => elements(tree).find((node) => node.type?.name === "PracticeDirectory");
 
+async function checkCambridgeReading() {
+  const origin = "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la";
+  const books = [
+    { id: "7", folder: "pet", pages: [9, 11, 28, 30, 38, 52, 53, 69, 70, 77, 84, 85, 86, 88, 89, 101, 105, 113] },
+    { id: "9", folder: "ket", pages: [12, 23, 37, 40, 45, 51, 58, 59, 67, 68, 73, 74, 79, 82, 85, 93, 95, 99] },
+  ];
+  for (const { id, folder, pages } of books) {
+    const bundle = buildFullBookPracticeBundle(id);
+    const reader = open(id, { page: "0" });
+    let tree = reader.render();
+    for (const number of pages) {
+      const label = `第 ${number} 页`;
+      const index = bundle.practices.findIndex((practice) => practice.pageLabel === label);
+      assert.notEqual(index, -1, label);
+      await directoryOf(tree).props.onSelect(index);
+      reader.render();
+      tree = reader.render();
+      assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), label);
+      const practice = bundle.practices[index];
+      const layer = byClass(tree, "practice-book-page__hotspots--fitted");
+      const buttons = elements(layer).filter((node) => node.props?.className?.split(" ").includes("audio-hotspot"));
+      assert.equal(buttons.length, practice.tracks.length);
+      const split = id === "7" && [69, 105].includes(number);
+      const duplicate = id === "7" && number === 9;
+      const suffixes = split ? ["-left", "-right"] : [""];
+      const expectedUrls = duplicate ? [`${origin}/${encodeURIComponent("PET学生用书-音频")}/Track%2002.mp3`] :
+        suffixes.map((suffix) => `${origin}/cambridge-reading/${folder}/p${String(number).padStart(3, "0")}${suffix}.mp3`);
+      const tracks = duplicate ? practice.tracks : practice.tracks.filter((track) => track.url.includes("/cambridge-reading/"));
+      assert.deepEqual(tracks.map((track) => track.url), expectedUrls, `${folder} ${label}`);
+      if (split) {
+        assert.ok(parseFloat(tracks[0].left) < 50 && parseFloat(tracks[1].left) > 50, "两封邮件应分别落在左右栏");
+        assert.notEqual(tracks[0].label, tracks[1].label, "来信和回信应有各自的音轨标题");
+      }
+      for (const [trackIndex, track] of tracks.entries()) {
+        const button = buttons[practice.tracks.indexOf(track)];
+        if (!duplicate) {
+          assert.ok(track.label.trim());
+          assert.equal(track.anchor, "center");
+          const center = clampHotspotCenter({ left: parseFloat(track.left), top: parseFloat(track.top) }, {
+            width: parseFloat(layer.props.style.width), height: parseFloat(layer.props.style.height),
+          });
+          assert.ok(Math.abs(parseFloat(button.props.style.left) - center.left) < 0.001);
+          assert.ok(Math.abs(parseFloat(button.props.style.top) - center.top) < 0.001);
+        }
+        button.props.onClick();
+        const audio = reader.audios.at(-1);
+        assert.equal(audio.src, expectedUrls[trackIndex], `${folder} ${label} 的按钮应播放对应书页的音频`);
+        assert.ok(audio.events.includes("play"));
+      }
+    }
+    reader.dispose();
+  }
+
+  // 固定旧链接及对应印刷页，能检测阅读页插入后旧练习序号发生偏移。
+  for (const [bookId, practice, printed] of [["7", 1, 14], ["7", 53, 162], ["9", 9, 23], ["9", 66, 148]]) {
+    const reader = open(bookId, { practice: String(practice) });
+    reader.render();
+    assert.equal(textOf(byClass(reader.render(), "practice-header__progress")).trim(), `第 ${printed} 页`);
+    reader.dispose();
+  }
+}
+
 async function run() {
+  await checkCambridgeReading();
   assert.equal(typeof resolveHotspotAnchorOffset, "function", "热点锚点分类必须由可测试的纯函数统一维护");
   const anchorCounts = { legacyTopLeft: 0, confirmedCenter: 0, thinkCenter: 0, od6Center: 0 };
   for (const book of BOOKS) {
@@ -178,6 +241,6 @@ async function run() {
     assert.match(textOf(page.render()), /暂时无法打开训练/, `拒绝非法页索引 ${raw}`);
     page.dispose();
   }
-  console.log("全部 29 本教材全页路由、旧链接/草稿兼容、OD6 无音频练习册录音、封面回听和完成练习通过");
+  console.log("29 本教材路由、剑桥阅读 37 个新增按钮和 1 个复用按钮的播放、旧链接/草稿兼容及录音回听通过");
 }
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => opened.forEach((page) => page.dispose()));

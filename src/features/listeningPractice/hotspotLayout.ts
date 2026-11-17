@@ -28,8 +28,9 @@ export const resolveHotspotAnchorOffset = (
   bookId: string,
   seriesId: string,
   trackId: string,
+  anchor?: "center",
 ) => {
-  if (CENTER_ANCHORED_HOTSPOT_IDS.has(trackId)) {
+  if (anchor === "center" || CENTER_ANCHORED_HOTSPOT_IDS.has(trackId)) {
     return { offsetXPx: 0, offsetYPx: 0 };
   }
   const numericBookId = Number.parseInt(bookId, 10);

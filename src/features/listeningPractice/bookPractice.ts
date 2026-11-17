@@ -2,7 +2,7 @@ import {
   BOOKS,
   type BookCatalogItem,
 } from "@/features/bookLibrary/bookCatalog";
-import { allAudioList } from "@/pages/BookDetail/Components/BookPreview/constants/audioList";
+import { allAudioList, legacyAudioList } from "@/pages/BookDetail/Components/BookPreview/constants/audioList";
 import { catalogLists } from "@/pages/BookDetail/Components/BookPreview/constants/catalogList";
 import { concatImages } from "@/pages/BookDetail/Components/BookPreview/constants/images";
 import { resolveBookPageLabel } from "@/features/listeningPractice/bookPageLabel";
@@ -17,6 +17,8 @@ export const DEFAULT_BOOK_ID = "3";
 export type OriginalAudioTrack = {
   offset?: Array<number | string>;
   url: string;
+  label?: string;
+  anchor?: "center";
   flag?: "Cambridge" | "Percentage" | string;
 };
 
@@ -29,6 +31,7 @@ export type PracticeTrack = {
   id: string;
   url: string;
   label: string;
+  anchor?: "center";
   left: string;
   top: string;
   positionAdjusted: boolean;
@@ -205,14 +208,15 @@ const freezeBundle = (book: BookCatalogItem, practices: ListeningPractice[]) => 
 };
 
 /** 由教材单一数据源生成仅含示范音频页的训练模型。 */
-export const buildBookPracticeBundle = (
+const buildAudioPracticeBundle = (
   bookId: string,
+  audioLists: Record<string, unknown>,
 ): BookPracticeBundle | null => {
   const book = BOOKS.find((item) => item.id === bookId);
   if (!book) return null;
 
   const imageUrls = (concatImages as Record<string, unknown>)[bookId];
-  const rawAudioByPage = (allAudioList as Record<string, unknown>)[bookId];
+  const rawAudioByPage = audioLists[bookId];
   const rawCatalog = (catalogLists as Record<string, unknown>)[bookId];
   if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
     throw bookDataError(bookId, "图片数据：", "应为非空图片数组");
@@ -315,7 +319,8 @@ export const buildBookPracticeBundle = (
             return {
               id: `${bookId}-${pageNumber}-${trackIndex}`,
               url: track.url,
-              label: getTrackLabel(track.url, trackIndex),
+              label: track.label ?? getTrackLabel(track.url, trackIndex),
+              ...(track.anchor ? { anchor: track.anchor } : {}),
               left: `${coordinate.leftPercent.toFixed(2)}%`,
               top: `${coordinate.topPercent.toFixed(2)}%`,
               positionAdjusted: coordinate.positionAdjusted,
@@ -331,12 +336,15 @@ export const buildBookPracticeBundle = (
   return freezeBundle(book, practices);
 };
 
-/** 全页训练按原图片索引展开；旧构建器保留音频索引，供历史进度和录音定位。 */
+/** 历史进度和分享链接按原有音频页列表的下标定位。 */
+export const buildBookPracticeBundle = (bookId: string) =>
+  buildAudioPracticeBundle(bookId, legacyAudioList);
+
+/** 全页训练按图片索引展开，包含后续补录的课文。 */
 export const buildFullBookPracticeBundle = (
   bookId: string,
 ): BookPracticeBundle | null => {
-  // 沿用旧构建器的全量素材校验，已有音频页的数据和顺序也保持不变。
-  const original = buildBookPracticeBundle(bookId);
+  const original = buildAudioPracticeBundle(bookId, allAudioList);
   if (!original) return null;
 
   const images = concatImages[bookId];

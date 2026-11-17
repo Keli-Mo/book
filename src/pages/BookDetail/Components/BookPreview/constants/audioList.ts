@@ -1,3 +1,5 @@
+import type { OriginalAudioTrack } from "@/features/listeningPractice/bookPractice";
+
 // [653, 167]
 // [1122, 773]
 // [469, 606]
@@ -16022,7 +16024,7 @@ const audioList30 = {
     // printed p191 / PDF 192, Testing Practice 3
     193: [od6Track(4, "23", 78.906, 11.066)],
 };
-export const allAudioList = {
+export const legacyAudioList = {
     //广告
     '1': [],
     '2': [],
@@ -16066,6 +16068,77 @@ export const allAudioList = {
     // Oxford Discover 2e Level 6 练习册（无配套示范音频）
     '31': {},
 }
+
+const cambridgeReadingRoot = "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/cambridge-reading";
+type CambridgeReading = [printedPage: number, label: string, x: number, y: number, side?: "left" | "right"];
+
+const withCambridgeReadings = (
+    original: Record<number, OriginalAudioTrack[]>,
+    book: "ket" | "pet",
+    readings: CambridgeReading[],
+) => {
+    const pages = { ...original };
+    for (const [printedPage, label, x, y, side] of readings) {
+        // 历史音频键是图片索引 + 2；PET 的印刷页码已包含这个偏移。
+        const key = book === "pet" ? printedPage : printedPage + 2;
+        const file = `p${String(printedPage).padStart(3, "0")}${side ? "-" + side : ""}.mp3`;
+        // 追加到原页音轨末尾，保留原按钮编号与 ID。
+        pages[key] = [...(pages[key] ?? []), {
+            label,
+            url: `${cambridgeReadingRoot}/${book}/${file}`,
+            offset: [`${x}%`, `${y}%`],
+            flag: "Percentage",
+            anchor: "center",
+        }];
+    }
+    return pages;
+};
+
+export const allAudioList = {
+    ...legacyAudioList,
+    "7": withCambridgeReadings(audioList7, "pet", [
+        [11, "Sonia’s Home", 39, 14],
+        [28, "Ariana’s Hobby: Sand Sculptures", 6.7, 53],
+        [30, "Choose Your Hobby", 44, 43],
+        [38, "A blog about Shanghai", 60, 69],
+        [52, "Entertainment choices", 49, 65],
+        [53, "Turn Off the TV and Go Out!", 52.2, 16],
+        [69, "Tony’s email", 39.5, 36.9, "left"],
+        [69, "Jamie’s reply", 92, 21, "right"],
+        [70, "Four famous families", 76.5, 46],
+        [77, "A person who I admire", 69, 67],
+        [84, "Teenager Julia Ryan Talks About Sleep", 78, 21],
+        [85, "The Sleep Blog", 73, 50],
+        [86, "A snowboarding story", 89, 53],
+        [88, "Lunch at the Street Food Market", 93.5, 55.3],
+        [89, "Our Top Picks at the Street Food Market", 92, 11.8],
+        [101, "Bears and wolves", 74, 48],
+        [105, "Chloe’s email", 39, 31, "left"],
+        [105, "Leo’s reply", 89, 37, "right"],
+        [113, "A phone call in class", 89, 9],
+    ]),
+    "9": withCambridgeReadings(audioList9, "ket", [
+        [12, "Three English Teenagers", 38.4, 36.5],
+        [23, "Young Chef", 31.1, 8.1],
+        [37, "Joanna Middleton – a young gymnast", 85, 66.6],
+        [40, "Yusra Mardini", 42.5, 58.4],
+        [45, "Student Life", 86.5, 11.3],
+        [51, "Sandra’s blog", 69, 33.2],
+        [58, "Dan’s blog", 41, 38.9],
+        [59, "Three Video Makers", 93.2, 53],
+        [67, "Carl and Emma’s conversation", 32.5, 44.7],
+        [68, "Francesca and Daniel’s conversation", 42.2, 13.2],
+        [73, "Holiday Activities", 14.5, 61.5],
+        [74, "I climbed Snowdon – why don’t you?", 89, 41.7],
+        [79, "Personal Trainer", 11.8, 17.2],
+        [82, "Exercise balls in the classroom", 39.5, 39.9],
+        [85, "Do you like long car journeys?", 72.8, 60],
+        [93, "Ben’s climbing blog", 88.4, 58.5],
+        [95, "Teenage Go Player", 73.2, 7.4],
+        [99, "How do we communicate?", 42.4, 50.4],
+    ]),
+};
+
 
 // const audioList22 = {
 //   1: [],

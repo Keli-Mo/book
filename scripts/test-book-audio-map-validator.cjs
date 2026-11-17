@@ -9,9 +9,9 @@ const report = validateBookData({ log: false });
 assert.equal(report.mappingVersion, "audio-key-minus-2/v1");
 assert.equal(report.books.length, 29, "应覆盖教材 3–31");
 assert.equal(report.imageCount, 4958, "教材图片总数应为 4,958");
-assert.equal(report.practicePageCount, 1694, "接入 OD6 后音频训练页总数应为 1,694");
-assert.equal(report.audioSegmentCount, 2640, "接入 OD6 后应有 2,640 个热点");
-assert.equal(report.mappings.length, 2640, "每个音频热点都应保留一条可追踪映射");
+assert.equal(report.practicePageCount, 1717, "音频训练页总数应为 1,717");
+assert.equal(report.audioSegmentCount, 2677, "教材应有 2,677 个热点");
+assert.equal(report.mappings.length, 2677, "每个音频热点都应保留一条可追踪映射");
 assert.deepEqual(
   report.books.filter(({ bookId }) => Number(bookId) >= 26 && Number(bookId) <= 29)
     .map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) =>
@@ -273,5 +273,5 @@ assert.match(cli.stdout, /教材 31：185 张图片，0 个音频页，0 段音�
   "无音频练习册的命令行报告应明确标记无热点");
 
 console.log(
-  "教材音频映射校验器测试通过：29 本、4,958 图、1,694 页、2,640 个热点，OD6 两册和 Think 1/2 历史映射已核对，2 个历史越界仅警告。",
+  "教材音频映射校验器测试通过：29 本、4,958 图、1,717 页、2,677 个热点，OD6 两册和 Think 1/2 历史映射已核对，2 个历史越界仅警告。",
 );

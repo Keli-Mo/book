@@ -75,6 +75,7 @@ const loadPracticeWithAudio = (allAudioList) =>
     {
       "@/pages/BookDetail/Components/BookPreview/constants/audioList": {
         allAudioList,
+        legacyAudioList: allAudioList,
       },
     },
     new Map(),

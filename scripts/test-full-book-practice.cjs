@@ -180,7 +180,11 @@ for (const [bookIndex, book] of BOOKS.entries()) {
     full.practices.map((page) => page.imageIndex),
     images.map((_, index) => index).filter((imageIndex) => isBookPageVisible(book.id, imageIndex)),
   );
-  assert.deepEqual(full.practices.filter((page) => page.tracks.length > 0).map(({ pageLabel, pageTitle, ...page }) => page), original.practices,
+  const legacyPages = full.practices.map(({ pageLabel, pageTitle, ...page }) => ({
+    ...page,
+    tracks: page.tracks.filter((track) => !track.url.includes("/cambridge-reading/")),
+  })).filter((page) => page.tracks.length > 0);
+  assert.deepEqual(legacyPages, original.practices,
     "旧音频页的 ID、页号、章节、音轨及热点坐标必须原样保留");
   assert.equal(JSON.stringify(buildBookPracticeBundle(book.id)), legacySnapshot, "全页构建不得改变旧音频列表或索引");
   assert.equal(new Set(full.practices.map((page) => page.id)).size, visibleImages.length, "包括封面在内，可见页 ID 必须唯一");
@@ -210,13 +214,13 @@ for (const [bookIndex, book] of BOOKS.entries()) {
   }
   assert.ok(Object.isFrozen(full) && Object.isFrozen(full.book) && Object.isFrozen(full.practices));
   totalPages += full.practices.length;
-  totalAudioPages += original.practices.length;
+  totalAudioPages += full.practices.filter((page) => page.tracks.length > 0).length;
   totalTracks += full.practices.reduce((sum, page) => sum + page.tracks.length, 0);
 }
 assert.equal(BOOKS.length, 29);
 assert.equal(totalPages, 4932);
-assert.equal(totalAudioPages, 1694);
-assert.equal(totalTracks, 2640);
+assert.equal(totalAudioPages, 1717);
+assert.equal(totalTracks, 2677);
 assert.equal(JSON.stringify({ concatImages, allAudioList, catalogLists }), sourceBefore, "不得改写或补造源图片、音频、目录");
 for (const id of ["3", "4", "5", "6"]) {
   const casa = buildFullBookPracticeBundle(id);
@@ -241,4 +245,4 @@ for (const id of ["11", "12", "13", "14", "26", "27", "28", "29", "30", "31"]) {
 assert.deepEqual(buildBookPracticeBundle("31").practices, [], "OD6 练习册明确没有示范音频");
 assert.equal(buildFullBookPracticeBundle("31").practices.every((page) => page.tracks.length === 0), true,
   "无音频练习册的185页均可翻页和录音，不能补造学生书热点");
-console.log("全页模型验证通过：29 册、4,932 个可见页、1,694 个音频页和 2,640 段音轨，旧映射保持不变。");
+console.log("全页模型验证通过：29 册、4,932 个可见页、1,717 个音频页和 2,677 段音轨，旧映射保持不变。");
