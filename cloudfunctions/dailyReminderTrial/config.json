@@ -1,0 +1,6 @@
+{
+  "permissions": { "openapi": ["subscribeMessage.send"] },
+  "triggers": [
+    { "name": "dailyReminderTrialDispatch", "type": "timer", "config": "0 0,10,20,30,40,50 * * * * *" }
+  ]
+}

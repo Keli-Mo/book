@@ -15,7 +15,8 @@ for (const [name, source] of [["Practice", practice], ["MyCheckIns", library], [
   assert.equal(ast.parseDiagnostics.length, 0, `${name} 必须可解析`);
 }
 
-assert.match(practice, /await\s+getPendingCheckInStore\(\)\.complete\(pending\.requestId,\s*true\)/);
+assert.match(practice, /const (\w+) = getPendingCheckInStore\(\)\.complete\(pending\.requestId,\s*true\);[\s\S]*?completed = await \1;[\s\S]*?if \(!completed/,
+  "进入录音详情前必须等到当前录音的完成状态保存成功");
 assert.match(practice, /CheckInDetail\/CheckInDetail\?localId=/);
 assert.doesNotMatch(practice, /getCheckInSubmissionCoordinator\(\)\.submit\(/,
   "完成练习不能启动云端分享流水线");

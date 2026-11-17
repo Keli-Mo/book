@@ -32,6 +32,7 @@ const launchApp = (audioError) => {
     require: (request) => {
       if (request === "@tarojs/taro") return { __esModule: true, default: taro, ...taro };
       if (request === "@/cloud") return { initCloudHosting: () => { cloudInitializations += 1; } };
+      if (request === "@/features/dailyReminder/reminderSettings") return { getReminderSettings: async () => ({ ok: false }) };
       if (request === "@/features/listeningPractice/recordingSessionRecovery") {
         return { resumeUnfinishedRecordingOnLaunch: () => { recordingRecoveryChecks += 1; } };
       }

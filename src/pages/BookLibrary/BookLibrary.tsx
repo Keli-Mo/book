@@ -2,6 +2,7 @@ import { Image, Input, ScrollView, Text, View } from "@tarojs/components";
 import Taro, { useRouter, useShareAppMessage } from "@tarojs/taro";
 import { useMemo, useState } from "react";
 import AppIcon from "@/components/AppIcon/AppIcon";
+import { reserveTomorrowOnLearningStart } from "@/features/dailyReminder/wechatSubscription";
 import {
   BOOKS,
   BOOK_SERIES,
@@ -47,6 +48,7 @@ export default function BookLibrary() {
     const action = resolveBookAction(book);
 
     // 各册从原图片首页进入完整跟读页，Think 保留原阅读器路由。
+    void reserveTomorrowOnLearningStart();
     Taro.navigateTo({ url: action.url });
   };
 
