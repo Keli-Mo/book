@@ -45,6 +45,25 @@
   }
 }
 
+.voice-chat-entry {
+  display: flex;
+  min-height: 128rpx;
+  box-sizing: border-box;
+  margin-bottom: 24rpx;
+  padding: 24rpx 28rpx;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 28rpx;
+  background: #207c59;
+  color: #fff;
+  box-shadow: 0 10rpx 28rpx rgba(31, 112, 78, .18);
+
+  &__title, &__detail { display: block; }
+  &__title { font-size: 31rpx; font-weight: 800; }
+  &__detail { margin-top: 7rpx; font-size: 23rpx; opacity: .88; }
+  &__action { margin-left: 16rpx; flex: 0 0 auto; font-size: 24rpx; font-weight: 700; }
+}
+
 .continue-card {
   display: flex;
   min-height: 330rpx;

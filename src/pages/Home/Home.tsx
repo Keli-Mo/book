@@ -14,6 +14,7 @@ import { buildDeviceLayoutClassName } from "@/features/layout/deviceLayout";
 import { restoreReminderSettings } from "@/features/dailyReminder/restoreReminderSettings";
 import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
+import { readMiniProgramEnvVersion } from "@/services/appEntry";
 import { sharedImage, sharedTitle } from "@/constant";
 
 import "./Home.scss";
@@ -24,6 +25,7 @@ export default function Home() {
     () => readReadingProgress(),
   );
   const layout = useDeviceLayout();
+  const showVoiceChatPreview = ["develop", "trial"].includes(readMiniProgramEnvVersion());
   // 首页采用用户确认的单栏方案，宽 Pad 也只增加留白，不改成信息双列。
   const layoutClassName = buildDeviceLayoutClassName({
     ...layout,
@@ -72,6 +74,10 @@ export default function Home() {
     Taro.navigateTo({ url: "/pages/MyCheckIns/MyCheckIns" });
   };
 
+  const openVoiceChat = () => {
+    Taro.navigateTo({ url: "/pages/VoiceChat/VoiceChat" });
+  };
+
   return (
     <View className={`library-home ${layoutClassName}`}>
       <View
@@ -100,6 +106,13 @@ export default function Home() {
       </View>
 
       <View className='library-home__content device-layout__content'>
+        {showVoiceChatPreview && <View className='voice-chat-entry' hoverClass='is-pressed' onClick={openVoiceChat}>
+          <View>
+            <Text className='voice-chat-entry__title'>英语语音伙伴</Text>
+            <Text className='voice-chat-entry__detail'>自由聊 · 主题聊 · 英语发声与跟读</Text>
+          </View>
+          <Text className='voice-chat-entry__action'>开始聊天 ›</Text>
+        </View>}
         <View className={`continue-card ${progressBook ? "" : "continue-card--empty"}`}>
           {progressBook && progressPractice ? (
             <Image

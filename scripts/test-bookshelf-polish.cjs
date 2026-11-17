@@ -48,6 +48,7 @@ const renderHomeSummary = (seriesCount, bookCount) => {
     if (id === "@/features/layout/deviceLayout") return { buildDeviceLayoutClassName: () => "" };
     if (id === "@/hooks/useAppEntryIntroGuard") return { useAppEntryIntroGuard: noop };
     if (id === "@/hooks/useDeviceLayout") return { useDeviceLayout: () => ({}) };
+    if (id === "@/services/appEntry") return { readMiniProgramEnvVersion: () => "develop" };
     return {};
   };
   vm.runInNewContext(compiled, {

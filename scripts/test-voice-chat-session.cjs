@@ -1,0 +1,36 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const ts = require("typescript");
+
+const file = path.join(__dirname, "../src/features/voiceChat/session.ts");
+const source = fs.readFileSync(file, "utf8");
+const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
+const moduleRef = { exports: {} };
+new Function("module", "exports", compiled)(moduleRef, moduleRef.exports);
+const { createSession, selectMode, selectLevel, selectTopic, beginRequest, completeRequest, failRequest, currentTurns } = moduleRef.exports;
+
+const reply = { transcript: "I like dogs.", replyEn: "Dogs are fun. What is yours called?", replyZh: "狗很有趣。你的狗叫什么？", audioBase64: "AAAA" };
+let session = createSession();
+assert.equal(session.mode, "free");
+assert.equal(session.level, "basic");
+session = beginRequest(session, "a");
+session = completeRequest(session, "a", reply);
+assert.equal(currentTurns(session).length, 1);
+session = selectMode(session, "topic");
+assert.equal(currentTurns(session).length, 0, "主题对话不能继承自由聊天");
+session = beginRequest(session, "b");
+session = completeRequest(session, "b", reply);
+assert.equal(currentTurns(session).length, 1);
+session = selectMode(session, "free");
+assert.equal(currentTurns(session).length, 1, "切回自由聊天应恢复原上下文");
+session = selectLevel(session, "advanced");
+assert.equal(currentTurns(session).length, 1, "切换难度不清空聊天");
+session = selectMode(session, "topic");
+session = selectTopic(session, "travel");
+assert.equal(currentTurns(session).length, 0, "新主题开启新会话");
+session = beginRequest(session, "c");
+assert.equal(completeRequest(session, "stale", reply), session, "迟到结果不能写入当前会话");
+session = failRequest(session, "c");
+assert.equal(currentTurns(session).length, 0, "失败不应进入上下文");
+console.log("voice chat session checks passed");

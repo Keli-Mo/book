@@ -16,6 +16,7 @@ const appConfig = {
     "pages/BookLibrary/BookLibrary",
     "pages/ThinkBookReader/ThinkBookReader",
     "pages/Practice/Practice",
+    "pages/VoiceChat/VoiceChat",
     "pages/CheckInDetail/CheckInDetail",
     "pages/MyCheckIns/MyCheckIns",
     "pages/Intro/Intro",
