@@ -2,17 +2,45 @@ import Taro from "@tarojs/taro";
 import { CLOUD_ENV_ID } from "@/cloud";
 import { DEFAULT_DAILY_REMINDER_TIME } from "./calendarReminder";
 
-// 同一个上传包可成为体验版或正式版，按微信运行时版本判断。
-export const getReminderFunction = (): "dailyReminderTrial" | null => {
+type ReminderFunction = "dailyReminder" | "dailyReminderTrial";
+let activeFunction: ReminderFunction | null | undefined;
+let channelVersion = 0;
+let accountVerified = false;
+
+// 同一个上传包可成为体验版或正式版，按微信运行时版本选择独立通道。
+export const getReminderFunction = (): ReminderFunction | null => {
+  let next: ReminderFunction | null = null;
   try {
     const version = wx.getAccountInfoSync().miniProgram.envVersion;
-    return version === "develop" || version === "trial" ? "dailyReminderTrial" : null;
-  } catch { return null; }
+    next = version === "release" ? "dailyReminder"
+      : version === "develop" || version === "trial" ? "dailyReminderTrial" : null;
+  } catch { /* 无法识别版本时不调用任何提醒通道。 */ }
+  if (next !== activeFunction) {
+    activeFunction = next;
+    channelVersion += 1;
+    accountVerified = false;
+    recentSettings = undefined;
+    pendingSettings = undefined;
+    settingsMutationRevision += 1;
+    lastWriteRevision = settingsMutationRevision;
+  }
+  return next;
 };
 
-const CACHE_KEY = "haisha:trial:wechat-reminder-settings:v1";
-let accountVerified = false;
-export const isReminderAccountVerified = () => accountVerified && Boolean(getReminderFunction());
+export const getReminderChannelVersion = (): number => {
+  getReminderFunction();
+  return channelVersion;
+};
+
+export const getReminderStorageKey = (suffix: string): string => {
+  const functionName = getReminderFunction();
+  const channel = functionName === "dailyReminder" ? "formal"
+    : functionName === "dailyReminderTrial" ? "trial" : "unavailable";
+  return `haisha:${channel}:${suffix}`;
+};
+
+const settingsKey = () => getReminderStorageKey("wechat-reminder-settings:v1");
+export const isReminderAccountVerified = () => Boolean(getReminderFunction()) && accountVerified;
 const VALID_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
 export const getReminderChoiceDate = (offset: 0 | 1, now = Date.now()): string =>
@@ -96,13 +124,14 @@ const parseSettings = (value: unknown): ReminderSettingsState | null => {
 
 export const readCachedReminderSettings = (): ReminderSettingsState => {
   if (!getReminderFunction()) return defaultSettings();
-  try { return parseSettings(Taro.getStorageSync(CACHE_KEY)) || defaultSettings(); }
+  try { return parseSettings(Taro.getStorageSync(settingsKey())) || defaultSettings(); }
   catch { return defaultSettings(); }
 };
 
 export const isReminderExplicitlyOff = (): boolean => {
+  if (!getReminderFunction()) return false;
   try {
-    const state = parseSettings(Taro.getStorageSync(CACHE_KEY));
+    const state = parseSettings(Taro.getStorageSync(settingsKey()));
     return state !== null && !state.enabled;
   } catch {
     return false;
@@ -110,7 +139,7 @@ export const isReminderExplicitlyOff = (): boolean => {
 };
 
 const cacheSettings = (settings: ReminderSettingsState): void => {
-  try { Taro.setStorageSync(CACHE_KEY, settings); }
+  try { Taro.setStorageSync(settingsKey(), settings); }
   catch { /* 云端保存结果不受本机缓存故障影响。 */ }
 };
 
@@ -131,6 +160,8 @@ const invokeSettings = async (
       code?: string;
       data?: unknown;
     } | undefined;
+    // 读取通道也会更新版本号，使切换通道前的迟到响应失效。
+    if (getReminderFunction() !== functionName) return { ok: false, reason: "STALE_RESPONSE" };
     const currentRevision = data.action === "setSettings" ? lastWriteRevision : settingsMutationRevision;
     if (revision !== currentRevision) {
       return { ok: false, reason: "STALE_RESPONSE" };
@@ -186,6 +217,7 @@ export const getReminderSettings = (): Promise<ReminderSettingsResult> => {
 };
 
 export const setReminderSettings = (enabled: boolean, time: string, targetDate?: string): Promise<ReminderSettingsResult> => {
+  if (!getReminderFunction()) return Promise.resolve({ ok: false, reason: "CLOUD_UNAVAILABLE" });
   if (typeof enabled !== "boolean" || !VALID_TIME.test(time)) {
     return Promise.resolve({ ok: false, reason: "INVALID_ARGUMENT" });
   }
