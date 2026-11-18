@@ -1,13 +1,13 @@
 import Taro from "@tarojs/taro";
 import { CLOUD_ENV_ID } from "@/cloud";
-import { getReminderFunction, invalidateReminderSettings, isReminderAccountVerified, isReminderExplicitlyOff, isReminderTimeInFuture, readCachedReminderSettings } from "./reminderSettings";
+import { getReminderChannelVersion, getReminderStorageKey, getReminderFunction, invalidateReminderSettings, isReminderAccountVerified, isReminderExplicitlyOff, isReminderTimeInFuture, readCachedReminderSettings } from "./reminderSettings";
 
-const SUBSCRIPTION_ATTEMPT_KEY = "haisha:trial:tomorrow-subscribe-attempt:v1";
-const PENDING_REGISTRATION_KEY = "haisha:trial:tomorrow-reminder-registration:v1";
-const HOME_PENDING_REGISTRATION_KEY = "haisha:trial:home-tomorrow-reminder-registration:v1";
-const SCHEDULED_STATUS_KEY = "haisha:trial:tomorrow-reminder-scheduled:v1";
-const LEARNING_START_KEY = "haisha:trial:learning-start-reminders:v1";
-const PREVIOUS_COMPLETION_KEY = "haisha:trial:previous-completion:v1";
+const SUBSCRIPTION_ATTEMPT_KEY = () => getReminderStorageKey("tomorrow-subscribe-attempt:v1");
+const PENDING_REGISTRATION_KEY = () => getReminderStorageKey("tomorrow-reminder-registration:v1");
+const HOME_PENDING_REGISTRATION_KEY = () => getReminderStorageKey("home-tomorrow-reminder-registration:v1");
+const SCHEDULED_STATUS_KEY = () => getReminderStorageKey("tomorrow-reminder-scheduled:v1");
+const LEARNING_START_KEY = () => getReminderStorageKey("learning-start-reminders:v1");
+const PREVIOUS_COMPLETION_KEY = () => getReminderStorageKey("previous-completion:v1");
 
 type SavedAttempt = {
   version: 1;
@@ -88,11 +88,11 @@ const homeRegistrationFlights = new Map<string, Promise<HomeReminderResult>>();
 
 const markTomorrowScheduled = (requestChinaDate: string, id: string): void => {
   try {
-    const previous = Taro.getStorageSync(SCHEDULED_STATUS_KEY) as Partial<ScheduledStatus> | undefined;
+    const previous = Taro.getStorageSync(SCHEDULED_STATUS_KEY()) as Partial<ScheduledStatus> | undefined;
     if (previous?.version === 1 && previous.templateId === id
       && typeof previous.requestChinaDate === "string"
       && previous.requestChinaDate > requestChinaDate) return;
-    Taro.setStorageSync(SCHEDULED_STATUS_KEY, {
+    Taro.setStorageSync(SCHEDULED_STATUS_KEY(), {
       version: 1, requestChinaDate, templateId: id,
     } satisfies ScheduledStatus);
   } catch { /* 云端登记结果仍有效；仅本地状态无法保留。 */ }
@@ -100,7 +100,7 @@ const markTomorrowScheduled = (requestChinaDate: string, id: string): void => {
 
 export const isTomorrowWechatReminderScheduled = (): boolean => {
   try {
-    const value: unknown = Taro.getStorageSync(SCHEDULED_STATUS_KEY);
+    const value: unknown = Taro.getStorageSync(SCHEDULED_STATUS_KEY());
     if (!value || typeof value !== "object") return false;
     const status = value as Partial<ScheduledStatus>;
     return status.version === 1 && status.requestChinaDate === chinaDayKey()
@@ -110,7 +110,7 @@ export const isTomorrowWechatReminderScheduled = (): boolean => {
   }
 };
 
-const readPendingRegistration = (storageKey = PENDING_REGISTRATION_KEY): PendingRegistration | null => {
+const readPendingRegistration = (storageKey = PENDING_REGISTRATION_KEY()): PendingRegistration | null => {
   try {
     const value: unknown = Taro.getStorageSync(storageKey);
     if (!value || typeof value !== "object") return null;
@@ -126,12 +126,12 @@ const readPendingRegistration = (storageKey = PENDING_REGISTRATION_KEY): Pending
   }
 };
 
-const savePendingRegistration = (item: PendingRegistration, storageKey = PENDING_REGISTRATION_KEY): void => {
+const savePendingRegistration = (item: PendingRegistration, storageKey = PENDING_REGISTRATION_KEY()): void => {
   try { Taro.setStorageSync(storageKey, item); }
   catch { /* 网络请求仍继续；本机存储不可用时无法自动重试。 */ }
 };
 
-const clearPendingRegistration = (item: PendingRegistration, storageKey = PENDING_REGISTRATION_KEY): void => {
+const clearPendingRegistration = (item: PendingRegistration, storageKey = PENDING_REGISTRATION_KEY()): void => {
   const current = readPendingRegistration(storageKey);
   if (!current || registrationKey(current) !== registrationKey(item)) return;
   try { Taro.removeStorageSync(storageKey); }
@@ -140,7 +140,7 @@ const clearPendingRegistration = (item: PendingRegistration, storageKey = PENDIN
 
 const readAttempt = (id: string, day: string): SavedAttempt | null => {
   try {
-    const value: unknown = Taro.getStorageSync(SUBSCRIPTION_ATTEMPT_KEY);
+    const value: unknown = Taro.getStorageSync(SUBSCRIPTION_ATTEMPT_KEY());
     if (!value || typeof value !== "object") return null;
     const item = value as Partial<SavedAttempt>;
     return item.version === 1 && item.chinaDate === day && item.templateId === id
@@ -153,7 +153,7 @@ const readAttempt = (id: string, day: string): SavedAttempt | null => {
 
 const saveAttempt = (id: string, status: SavedAttempt["status"], day: string): void => {
   try {
-    Taro.setStorageSync(SUBSCRIPTION_ATTEMPT_KEY, {
+    Taro.setStorageSync(SUBSCRIPTION_ATTEMPT_KEY(), {
       version: 1, chinaDate: day, templateId: id, status,
     } satisfies SavedAttempt);
   } catch { /* 存储不可用时仍以微信授权结果为准。 */ }
@@ -162,6 +162,7 @@ const saveAttempt = (id: string, status: SavedAttempt["status"], day: string): v
 /** Call directly from the child's tap handler: WeChat requires a user gesture. */
 export function requestTomorrowSubscription(forceNewRequest = false): Promise<TomorrowSubscriptionDecision> {
   const requestDay = chinaDayKey();
+  const channel = getReminderChannelVersion();
   const id = templateId();
   if (!isWechatReminderConfigured()) return Promise.resolve({ status: "not-configured" });
   const settings = readCachedReminderSettings();
@@ -183,6 +184,7 @@ export function requestTomorrowSubscription(forceNewRequest = false): Promise<To
     // Taro 4.0.12 incorrectly requires Alipay-only entityIds in this shared type.
     return Taro.requestSubscribeMessage({ tmplIds: [id] } as Parameters<typeof Taro.requestSubscribeMessage>[0])
       .then(result => {
+        if (channel !== getReminderChannelVersion()) return { status: "unavailable" } as const;
         const status = result[id] === "accept" ? "accepted" : "declined";
         if (!forceNewRequest) saveAttempt(id, status, requestDay);
         return status === "accepted"
@@ -195,11 +197,15 @@ export function requestTomorrowSubscription(forceNewRequest = false): Promise<To
   }
 }
 
-const sendRegistration = (item: PendingRegistration, storageKey = PENDING_REGISTRATION_KEY): Promise<CompletedReminderResult> => {
+const sendRegistration = (item: PendingRegistration, storageKey = PENDING_REGISTRATION_KEY()): Promise<CompletedReminderResult> => {
+  const channel = getReminderChannelVersion();
   const key = storageKey + registrationKey(item);
   const existing = registrationFlights.get(key);
   if (existing) return existing;
   const promise = invokeCloudRegistration(item).then((result) => {
+    if (channel !== getReminderChannelVersion()) return {
+      todayRecorded: false, tomorrowScheduled: false, reason: "REMINDER_CHANNEL_CHANGED",
+    };
     // 响应丢失时云端也可能已写入预约，下一次读取必须核对服务器状态。
     invalidateReminderSettings();
     // 云端已处理该次完成请求；模板配置错误等明确拒绝也不靠重复请求解决。
@@ -215,7 +221,7 @@ const sendRegistration = (item: PendingRegistration, storageKey = PENDING_REGIST
 
 const readHomePendingRegistration = (): HomePendingRegistration | null => {
   try {
-    const value: unknown = Taro.getStorageSync(HOME_PENDING_REGISTRATION_KEY);
+    const value: unknown = Taro.getStorageSync(HOME_PENDING_REGISTRATION_KEY());
     if (!value || typeof value !== "object") return null;
     const item = value as Partial<HomePendingRegistration>;
     const validBase = (item.version === 1 || item.version === 2) && typeof item.requestChinaDate === "string"
@@ -231,7 +237,7 @@ const readHomePendingRegistration = (): HomePendingRegistration | null => {
     }
     // Upgrade an earlier local draft once so retries of the same grant share one ID.
     const upgraded = { ...item, version: 2, requestId: createHomeRequestId() } as HomePendingRegistration;
-    Taro.setStorageSync(HOME_PENDING_REGISTRATION_KEY, upgraded);
+    Taro.setStorageSync(HOME_PENDING_REGISTRATION_KEY(), upgraded);
     return upgraded;
   } catch {
     return null;
@@ -244,7 +250,7 @@ const homeRegistrationKey = (item: HomePendingRegistration) =>
 const clearHomePendingRegistration = (item: HomePendingRegistration): void => {
   const current = readHomePendingRegistration();
   if (!current || homeRegistrationKey(current) !== homeRegistrationKey(item)) return;
-  try { Taro.removeStorageSync(HOME_PENDING_REGISTRATION_KEY); }
+  try { Taro.removeStorageSync(HOME_PENDING_REGISTRATION_KEY()); }
   catch { /* 下次重试仍由云端幂等处理。 */ }
 };
 
@@ -259,10 +265,10 @@ export const discardPendingReminderRegistrations = (): void => {
   const practice = readPendingRegistration();
   if (practice) clearPendingRegistration(practice);
   try {
-    Taro.removeStorageSync(LEARNING_START_KEY);
-    Taro.removeStorageSync(PREVIOUS_COMPLETION_KEY);
-    Taro.removeStorageSync(SUBSCRIPTION_ATTEMPT_KEY);
-    Taro.removeStorageSync(SCHEDULED_STATUS_KEY);
+    Taro.removeStorageSync(LEARNING_START_KEY());
+    Taro.removeStorageSync(PREVIOUS_COMPLETION_KEY());
+    Taro.removeStorageSync(SUBSCRIPTION_ATTEMPT_KEY());
+    Taro.removeStorageSync(SCHEDULED_STATUS_KEY());
   } catch { /* 云端开关仍决定是否发送。 */ }
 };
 
@@ -313,10 +319,14 @@ const invokeHomeRegistration = async (item: HomePendingRegistration, source?: "l
 };
 
 const sendHomeRegistration = (item: HomePendingRegistration): Promise<HomeReminderResult> => {
-  const key = homeRegistrationKey(item);
+  const channel = getReminderChannelVersion();
+  const key = HOME_PENDING_REGISTRATION_KEY() + homeRegistrationKey(item);
   const existing = homeRegistrationFlights.get(key);
   if (existing) return existing;
   const promise = invokeHomeRegistration(item).then((result) => {
+    if (channel !== getReminderChannelVersion()) return {
+      requestProcessed: false, nextScheduled: false, tomorrowScheduled: false, reason: "REMINDER_CHANNEL_CHANGED",
+    };
     invalidateReminderSettings();
     if (result.requestProcessed || (item.version === 2 && item.targetDate
       && ["INVALID_TARGET_DATE", "REMINDER_TIME_PASSED", "RESERVATION_CHANGED"].includes(result.reason || ""))) {
@@ -334,12 +344,24 @@ const sendHomeRegistration = (item: HomePendingRegistration): Promise<HomeRemind
 // 今日的授权与跨午夜宽限内的昨日授权独立保存，开关预约使用自己的回执。
 let learningStarts: LearningStart[] | undefined;
 let learningEpoch = 0;
+let learningChannelVersion = -1;
 const learningFlights = new Map<string, Promise<HomeReminderResult | null>>();
 const learningConsentFlights = new Map<string, Promise<void>>();
+const syncLearningChannel = (): void => {
+  const version = getReminderChannelVersion();
+  if (version !== learningChannelVersion) {
+    learningChannelVersion = version;
+    learningEpoch++;
+    learningStarts = undefined;
+    learningFlights.clear();
+    learningConsentFlights.clear();
+  }
+};
 const currentLearningStarts = (): LearningStart[] => {
+  syncLearningChannel();
   if (!learningStarts) {
     try {
-      const saved: unknown = Taro.getStorageSync(LEARNING_START_KEY);
+      const saved: unknown = Taro.getStorageSync(LEARNING_START_KEY());
       learningStarts = Array.isArray(saved) ? saved.filter(item => item
         && typeof item.requestChinaDate === "string" && typeof item.templateId === "string"
         && /^([01]\d|2[0-3]):[0-5]\d$/.test(item.reminderTime)
@@ -352,21 +374,26 @@ const currentLearningStarts = (): LearningStart[] => {
 const rememberLearningStart = (item: LearningStart): void => {
   learningStarts = currentLearningStarts().filter(old => old.requestChinaDate !== item.requestChinaDate);
   if (canRetryDate(item.requestChinaDate)) learningStarts.push(item);
-  try { Taro.setStorageSync(LEARNING_START_KEY, learningStarts); }
+  try { Taro.setStorageSync(LEARNING_START_KEY(), learningStarts); }
   catch { /* 本次运行仍可使用同一条授权。 */ }
 };
 
-const canReserveOnStart = () => isWechatReminderConfigured() && isReminderAccountVerified()
-  && readCachedReminderSettings().enabled;
+const canReserveOnStart = () => {
+  syncLearningChannel();
+  return isWechatReminderConfigured() && isReminderAccountVerified()
+    && readCachedReminderSettings().enabled;
+};
 
 // 开始跟读和完成录音共用当日微信授权。已授权但录音未保存时，不会自动提交预约。
 const prepareLearningConsent = (day: string): Promise<void> => {
+  syncLearningChannel();
+  const channel = getReminderChannelVersion();
   const inFlight = learningConsentFlights.get(day);
   if (inFlight) return inFlight;
   if (currentLearningStarts().some(item => item.requestChinaDate === day)) return Promise.resolve();
   const settings = readCachedReminderSettings();
   if (hasTomorrowReservation(settings, day)) return Promise.resolve();
-  for (const key of [PENDING_REGISTRATION_KEY, PREVIOUS_COMPLETION_KEY]) {
+  for (const key of [PENDING_REGISTRATION_KEY(), PREVIOUS_COMPLETION_KEY()]) {
     const queued = readPendingRegistration(key);
     if (queued?.chinaDate === day && queued.accepted && queued.templateId === templateId()) {
       return Promise.resolve();
@@ -374,7 +401,7 @@ const prepareLearningConsent = (day: string): Promise<void> => {
   }
   const epoch = learningEpoch;
   const request = requestTomorrowSubscription(true).then(decision => {
-    if (epoch !== learningEpoch || !canReserveOnStart() || !canRetryDate(day)
+    if (channel !== getReminderChannelVersion() || epoch !== learningEpoch || !canReserveOnStart() || !canRetryDate(day)
       || (decision.status !== "accepted" && decision.status !== "declined")) return;
     rememberLearningStart({
       requestChinaDate: day, templateId: templateId(), reminderTime: settings.time,
@@ -388,9 +415,10 @@ const prepareLearningConsent = (day: string): Promise<void> => {
 };
 
 const sendLearningStart = async (item: LearningStart): Promise<HomeReminderResult> => {
+  const channel = getReminderChannelVersion();
   const epoch = learningEpoch;
   const result = await invokeHomeRegistration({ ...item, version: 1 }, "learningStart");
-  if (epoch === learningEpoch) {
+  if (channel === getReminderChannelVersion() && epoch === learningEpoch) {
     invalidateReminderSettings();
     if (result.requestProcessed || ["EXPIRED_REQUEST_DATE", "REMINDER_TIME_PASSED",
       "REMINDERS_DISABLED", "TEST_ACCOUNT_REQUIRED"].includes(result.reason || "")) {
@@ -414,10 +442,11 @@ const runLearningStart = (day: string, work: () => Promise<HomeReminderResult | 
 export function reserveTomorrowOnLearningStart(): Promise<HomeReminderResult | null> {
   if (!canReserveOnStart()) return Promise.resolve(null);
   const day = chinaDayKey();
+  const channel = getReminderChannelVersion();
   const epoch = learningEpoch;
   return runLearningStart(day, async () => {
     await prepareLearningConsent(day);
-    if (epoch !== learningEpoch || !canReserveOnStart()) return null;
+    if (channel !== getReminderChannelVersion() || epoch !== learningEpoch || !canReserveOnStart()) return null;
     const item = currentLearningStarts().find(candidate => candidate.requestChinaDate === day);
     if (item?.status === "pending") return sendLearningStart(item);
     if (item?.status !== "granted") return null;
@@ -448,7 +477,7 @@ export function subscribeTomorrowFromHome(
     templateId: decision.templateId,
     reminderTime,
   };
-  try { Taro.setStorageSync(HOME_PENDING_REGISTRATION_KEY, item); }
+  try { Taro.setStorageSync(HOME_PENDING_REGISTRATION_KEY(), item); }
   catch { /* 当前请求仍继续；本地存储不可用时无法自动重试。 */ }
   return sendHomeRegistration(item);
 }
@@ -469,7 +498,7 @@ export function subscribeNextFromHome(
     requestId: createHomeRequestId(),
     ...(targetDate ? { targetDate } : {}),
   };
-  try { Taro.setStorageSync(HOME_PENDING_REGISTRATION_KEY, item); }
+  try { Taro.setStorageSync(HOME_PENDING_REGISTRATION_KEY(), item); }
   catch { /* 当前请求仍继续；本地存储不可用时无法自动重试。 */ }
   return sendHomeRegistration(item);
 }
@@ -556,14 +585,14 @@ export function recordCompletedTaskAndTomorrowReminder(
 export function recordLearningCompletion(completionChinaDate: string, grantedTemplateId?: string): Promise<CompletedReminderResult | null> {
   if (!canReserveOnStart() || !canRetryDate(completionChinaDate)) return Promise.resolve(null);
   const previous = readPendingRegistration();
-  const older = readPendingRegistration(PREVIOUS_COMPLETION_KEY);
+  const older = readPendingRegistration(PREVIOUS_COMPLETION_KEY());
   const existing = previous?.chinaDate === completionChinaDate ? previous
     : older?.chinaDate === completionChinaDate ? older : null;
   const useMainSlot = existing ? existing === previous : completionChinaDate === chinaDayKey();
-  const storageKey = useMainSlot ? PENDING_REGISTRATION_KEY : PREVIOUS_COMPLETION_KEY;
+  const storageKey = useMainSlot ? PENDING_REGISTRATION_KEY() : PREVIOUS_COMPLETION_KEY();
   if (existing && (existing.accepted || !grantedTemplateId)) return sendRegistration(existing, storageKey);
   if (!existing && useMainSlot && previous && canRetryDate(previous.chinaDate)) {
-    savePendingRegistration(previous, PREVIOUS_COMPLETION_KEY);
+    savePendingRegistration(previous, PREVIOUS_COMPLETION_KEY());
   }
   const item: PendingRegistration = {
     version: 1, chinaDate: completionChinaDate, templateId: grantedTemplateId || "",
@@ -578,9 +607,10 @@ export async function reserveReminderOnLearningCompletion(
   day: string, recordingSaved: Promise<boolean>,
 ): Promise<CompletedReminderResult | null> {
   if (!canReserveOnStart() || !canRetryDate(day)) return null;
+  const channel = getReminderChannelVersion();
   const epoch = learningEpoch;
   const [, saved] = await Promise.all([prepareLearningConsent(day), recordingSaved.catch(() => false)]);
-  if (!saved || epoch !== learningEpoch || !canReserveOnStart() || !canRetryDate(day)) return null;
+  if (!saved || channel !== getReminderChannelVersion() || epoch !== learningEpoch || !canReserveOnStart() || !canRetryDate(day)) return null;
   const grant = currentLearningStarts().find(item => item.requestChinaDate === day && item.status === "granted");
   const grantedTemplateId = hasTomorrowReservation(readCachedReminderSettings(), day) ? undefined : grant?.templateId;
   const result = recordLearningCompletion(day, grantedTemplateId);
@@ -597,7 +627,7 @@ export function retryPendingTomorrowReminder(): Promise<CompletedReminderResult 
     return Promise.resolve(null);
   }
   const retries: Promise<CompletedReminderResult>[] = [];
-  for (const storageKey of [PREVIOUS_COMPLETION_KEY, PENDING_REGISTRATION_KEY]) {
+  for (const storageKey of [PREVIOUS_COMPLETION_KEY(), PENDING_REGISTRATION_KEY()]) {
     const pending = readPendingRegistration(storageKey);
     if (!pending) continue;
     if (canRetryDate(pending.chinaDate)) retries.push(sendRegistration(pending, storageKey));

@@ -131,10 +131,10 @@ async function setup(t, { enabled = false, envVersion = "trial", allowed = true,
   const events = [];
   const server = serverHarness({
     DAILY_REMINDER_TESTER_HASHES: allowed ? createHash("sha256").update("parent-openid").digest("hex") : "",
-  }, true);
+  }, envVersion !== "release");
   server.clock.now = Date.parse("2026-11-17T08:00:00+08:00");
   t.mock.method(Date, "now", () => server.clock.now);
-  if (enabled && allowed) {
+  if (enabled && (allowed || envVersion === "release")) {
     assert.equal((await server.main({ action: "setSettings", enabled: true, time: "09:00" })).ok, true);
   }
   const pendingDates = () => [...server.records.values()].filter(row => row.status === "pending")
@@ -150,7 +150,7 @@ async function setup(t, { enabled = false, envVersion = "trial", allowed = true,
   const wx = {
     getAccountInfoSync: () => ({ miniProgram: { envVersion } }),
     cloud: { async callFunction({ name, data }) {
-      assert.equal(name, "dailyReminderTrial");
+      assert.equal(name, envVersion === "release" ? "dailyReminder" : "dailyReminderTrial");
       calls.push(data);
       events.push(data.action);
       if (failFirstSwitchReservation && data.action === "subscribeNext") {
@@ -938,7 +938,39 @@ test("录音保存失败保留今天的提醒，重新完成后再使用同一�
   assert.deepEqual(pendingDates(), [dateInChina(1)]);
 });
 
-for (const [envVersion, audience] of [["release", "正式版"], ["trial", "未列入测试名单的体验版账号"]]) {
+test("正式版默认关闭，设置入口可授权预约、调时和关闭，忽略体验版缓存", async t => {
+  const { page, subscriptions, storage, calls, pendingDates, toasts } =
+    await setup(t, { envVersion: "release", allowed: false });
+  const trialSettings = { enabled: true, time: "15:30", nextStatus: "needsConsent" };
+  storage.set("haisha:trial:wechat-reminder-settings:v1", trialSettings);
+  const mine = page(myPage);
+  await showPage(mine);
+  expandSettings(mine);
+  assert.match(settingsSwitch(mine.render()).props.ariaLabel, /已关闭/);
+  assert.match(textOf(byClass(mine.render(), "daily-reminder-card__time")), /09:00/);
+  assert.equal(subscriptions.length, 0);
+  changeSwitch(mine);
+  assert.equal(subscriptions.length, 1);
+  await settle();
+  assert.deepEqual(pendingDates(), [dateInChina()]);
+  changeTime(mine, "10:20", "tomorrow");
+  await settle();
+  assert.deepEqual(pendingDates(), [dateInChina(1)]);
+  assert.equal(subscriptions.length, 1, "调时可复用正式版现有授权");
+  assert.equal(storage.get("haisha:formal:wechat-reminder-settings:v1").enabled, true);
+  changeSwitch(mine);
+  await settle();
+  assert.equal(storage.get("haisha:formal:wechat-reminder-settings:v1").enabled, false);
+  assert.deepEqual(pendingDates(), []);
+  assert.equal(storage.get("haisha:trial:wechat-reminder-settings:v1"), trialSettings);
+  assert.ok(calls.some(call => call.action === "subscribeNext"));
+  assert.deepEqual(toasts, []);
+});
+
+for (const [envVersion, audience] of [
+  ["unknown", "未知版本"], [null, "版本缺失"], ["trial", "未列入测试名单的体验版账号"],
+  ["develop", "未列入测试名单的开发版账号"],
+]) {
   test(audience + "无提醒入口，开始学习不会申请订阅", async t => {
     const { page, subscriptions, calls, storage } = await setup(t, { envVersion, allowed: false });
     storage.set("haisha:trial:wechat-reminder-settings:v1", { enabled: true, time: "09:00", nextStatus: "needsConsent" });
@@ -951,6 +983,6 @@ for (const [envVersion, audience] of [["release", "正式版"], ["trial", "未�
     await settle();
     assert.equal(subscriptions.length, 0);
     assert.ok(calls.every(call => call.action === "getSettings"));
-    if (envVersion === "release") assert.equal(calls.length, 0);
+    if (envVersion !== "trial" && envVersion !== "develop") assert.equal(calls.length, 0);
   });
 }

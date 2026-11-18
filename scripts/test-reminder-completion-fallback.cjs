@@ -20,6 +20,7 @@ function fixture(t) {
     "@/cloud": { CLOUD_ENV_ID: "test" },
     "./reminderSettings": {
       getReminderFunction: () => "dailyReminderTrial", isReminderAccountVerified: () => true,
+      getReminderChannelVersion: () => 0, getReminderStorageKey: suffix => `haisha:trial:${suffix}`,
       isReminderExplicitlyOff: () => !settings.enabled, readCachedReminderSettings: () => settings,
       invalidateReminderSettings() {},
     },

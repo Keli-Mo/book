@@ -25,6 +25,8 @@ function serverHarness(overrides = {}, trial = false) {
   const context = { value: { SOURCE: "wx_client", OPENID: "parent-openid" } };
   const sent = [];
   const logs = [];
+  const queries = [];
+  let transactionTail = Promise.resolve();
   const env = {
     DAILY_REMINDER_TEMPLATE_ID: TEMPLATE,
     DAILY_REMINDER_TEMPLATE_FIELDS_JSON: JSON.stringify({ date5: "{{date}}", thing6: REMINDER_CONTENT, time23: "{{time}}" }),
@@ -34,25 +36,39 @@ function serverHarness(overrides = {}, trial = false) {
   const clone = value => value === undefined ? undefined : structuredClone(value);
   const collection = () => ({
     doc(id) { return {
-      async get() { return { data: clone(records.get(id) || null) }; },
-      async set({ data }) { records.set(id, { ...clone(data), _id: id }); },
+      async get() {
+        if (overrides.beforeRead) await overrides.beforeRead(id, { clock, records });
+        return { data: clone(records.get(id) || null) };
+      },
+      async set({ data }) {
+        if (overrides.beforeWrite) await overrides.beforeWrite(id, data, { clock, records });
+        records.set(id, { ...clone(data), _id: id });
+      },
     }; },
-    where(filter) { return {
+    where(filter) { let take = Infinity; return {
       orderBy(key, direction) {
         assert.equal(key, "dueAtMs"); assert.equal(direction, "asc"); return this;
       },
-      limit(n) { assert.ok(n <= 10); return this; },
-      async get() { return { data: [...records.values()].filter(row =>
+      limit(n) { assert.ok(n > 0 && n <= 100); take = n; return this; },
+      async get() {
+        queries.push({ limit: take, now: clock.now });
+        if (overrides.beforeQuery) await overrides.beforeQuery({ clock, records });
+        return { data: [...records.values()].filter(row =>
         row.status === filter.status && row.dueAtMs <= filter.dueAtMs.lte)
-        .sort((a, b) => a.dueAtMs - b.dueAtMs).map(clone) }; },
+        .sort((a, b) => a.dueAtMs - b.dueAtMs).slice(0, take).map(clone) }; },
     }; },
   });
   const db = {
     collection(name) { assert.equal(name, collectionName); return collection(); },
     command: { lte: value => ({ lte: value }) },
-    async runTransaction(callback) { return callback({ collection: name => {
-      assert.equal(name, collectionName); return collection();
-    } }); },
+    runTransaction(callback) {
+      // Model atomic claims when two timer invocations race for the same rows.
+      const result = transactionTail.then(() => callback({ collection: name => {
+        assert.equal(name, collectionName); return collection();
+      } }));
+      transactionTail = result.catch(() => {});
+      return result;
+    },
   };
   const cloud = {
     DYNAMIC_CURRENT_ENV: Symbol("env"),
@@ -61,6 +77,7 @@ function serverHarness(overrides = {}, trial = false) {
     getWXContext() { return context.value; },
     openapi: { subscribeMessage: { async send(args) {
       sent.push(args);
+      if (overrides.onSend) return overrides.onSend(args, { clock, records });
       if (overrides.sendThrows) {
         const error = new Error("private SDK detail");
         if (overrides.throwCode !== undefined) error.errCode = overrides.throwCode;
@@ -76,7 +93,120 @@ function serverHarness(overrides = {}, trial = false) {
     : name === "./package.json" ? { name: trial ? "daily-reminder-trial" : "daily-reminder" } : require(name),
     process: { env }, Date: FixedDate, console: { info: (...args) => logs.push(args), error: (...args) => logs.push(args) } };
   vm.runInNewContext(serverSource, sandbox, { filename: "dailyReminder/index.js" });
-  return { main: sandbox.exports.main, records, clock, context, sent, logs, env };
+  return { main: sandbox.exports.main, records, clock, context, sent, logs, env, queries };
+}
+
+const seedDueReminders = (h, count) => {
+  for (let index = 0; index < count; index++) {
+    const ownerOpenId = `queue-user-${index}`;
+    const id = rowId(ownerOpenId, "2026-11-05");
+    h.records.set(id, { _id: id, ownerOpenId, localDate: "2026-11-05",
+      dueAtMs: h.clock.now - (count - index) * 1000, reminderTime: "15:00", status: "pending" });
+  }
+  h.context.value = { SOURCE: "wx_trigger" };
+};
+
+async function dispatchCapacityTests() {
+  let active = 0;
+  let peak = 0;
+  const queue = serverHarness({ onSend: async () => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setImmediate(resolve));
+    active--;
+    return { errCode: 0 };
+  } });
+  seedDueReminders(queue, 123);
+  const batch = await queue.main();
+  assert.equal(batch.ok, true);
+  assert.equal(batch.data.sent, 123, "同一触发应继续分页清空超过 10 条的到期预约");
+  assert.ok(queue.queries.length > 1, "数据库 limit 必须真实生效，并继续查询下一批");
+  assert.ok(peak > 1 && peak <= 5, "微信发送应有并发，但不超过 5 个在途请求");
+  assert.equal(active, 0, "云函数返回前必须等已开始的发送完成");
+  await queue.main();
+  assert.equal(queue.sent.length, 123, "再次触发不应重发已完成的记录");
+
+  const slowQuery = serverHarness({ beforeQuery: ({ clock }) => { clock.now += 20_001; } });
+  seedDueReminders(slowQuery, 23);
+  const expired = await slowQuery.main();
+  assert.equal(expired.data.budgetExhausted, true);
+  assert.equal(slowQuery.sent.length, 0, "查询耗尽工作预算后不得开始 claim 或发送");
+  assert.equal([...slowQuery.records.values()].filter(row => row.status === "pending").length, 23);
+
+  const slowClaim = serverHarness({ beforeRead: (_id, { clock }) => { clock.now += 20_001; } });
+  seedDueReminders(slowClaim, 23);
+  assert.equal((await slowClaim.main()).data.budgetExhausted, true);
+  assert.equal(slowClaim.sent.length, 0, "claim 的数据库读取耗尽预算后不能写 sending 或调微信");
+  assert.equal([...slowClaim.records.values()].filter(row => row.status === "pending").length, 23);
+
+  const slowSend = serverHarness({ onSend: async (_args, { clock }) => {
+    await new Promise(resolve => setImmediate(resolve));
+    clock.now += 20_001;
+    return { errCode: 0 };
+  } });
+  seedDueReminders(slowSend, 23);
+  const limited = await slowSend.main();
+  assert.equal(limited.data.budgetExhausted, true);
+  assert.ok(limited.data.sent > 0 && limited.data.sent <= 5);
+  assert.equal([...slowSend.records.values()].some(row => row.status === "sending"), false,
+    "预算耗尽仍须等待本轮已经 claim 的发送落库");
+  assert.equal([...slowSend.records.values()].filter(row => row.status === "pending").length,
+    23 - limited.data.sent, "未接手的预约留待后续触发");
+
+  const shortRuntime = serverHarness();
+  seedDueReminders(shortRuntime, 23);
+  const short = await shortRuntime.main({ time_limit_in_ms: 999_999 }, { time_limit_in_ms: 5_000 });
+  assert.equal(short.data.budgetExhausted, true);
+  assert.equal(shortRuntime.queries.length, 0, "可信运行时不足收尾余量时不能启动查询；event 不能扩展预算");
+
+  const race = serverHarness({ onSend: async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    return { errCode: 0 };
+  } });
+  seedDueReminders(race, 23);
+  const results = await Promise.all([race.main(), race.main()]);
+  assert.ok(results.every(result => result.ok));
+  assert.equal(race.sent.length, 23, "重叠触发必须靠事务 claim 避免重复发送");
+  assert.equal(new Set(race.sent.map(item => item.touser)).size, 23);
+
+  let failedWrite = false;
+  let activeOnFailure = 0;
+  const writeFailure = serverHarness({
+    onSend: async () => {
+      activeOnFailure++;
+      await new Promise(resolve => setImmediate(resolve));
+      activeOnFailure--;
+      return { errCode: 0 };
+    },
+    beforeWrite: (_id, data) => {
+      if (!failedWrite && data.status === "sent") {
+        failedWrite = true;
+        throw new Error("simulated final write failure");
+      }
+    },
+  });
+  seedDueReminders(writeFailure, 23);
+  assert.equal((await writeFailure.main()).code, "DATABASE_ERROR");
+  assert.equal(activeOnFailure, 0, "一条记录写入失败也必须等其他在途发送完成再返回");
+  assert.equal([...writeFailure.records.values()].filter(row => row.status === "sending").length, 1);
+  await writeFailure.main();
+  assert.equal(writeFailure.sent.length, 23, "最后写入失败的已发送记录不可因后续触发再次发送");
+
+  for (const outcome of ["failed", "unknown"]) {
+    const h = serverHarness(outcome === "failed" ? { sendCode: 43101 } : { sendThrows: true });
+    seedDueReminders(h, 123);
+    assert.equal((await h.main()).data[outcome], 123);
+    await h.main();
+    assert.equal(h.sent.length, 123, "分页不能重新发送失败或结果未知的记录");
+  }
+
+  const tester = "queue-user-122";
+  const isolated = serverHarness({ DAILY_REMINDER_TESTER_HASHES:
+    crypto.createHash("sha256").update(tester).digest("hex") }, true);
+  seedDueReminders(isolated, 123);
+  assert.equal((await isolated.main()).data.sent, 1, "跨批次仍须逐条检查测试白名单");
+  assert.equal(isolated.sent[0].touser, tester);
+  assert.equal([...isolated.records.values()].filter(row => row.status === "disabled").length, 122);
 }
 
 async function serverTests() {
@@ -1000,7 +1130,7 @@ async function clientTests() {
 }
 
 if (require.main === module) {
-  (async () => { await serverTests(); await trialIsolationTest(); await nextOccurrenceTests(); await clientTests(); console.log("daily WeChat reminder tests passed"); })()
+  (async () => { await dispatchCapacityTests(); await serverTests(); await trialIsolationTest(); await nextOccurrenceTests(); await clientTests(); console.log("daily WeChat reminder tests passed"); })()
     .catch(error => { console.error(error); process.exitCode = 1; });
 }
 

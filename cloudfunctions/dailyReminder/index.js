@@ -20,7 +20,11 @@ const DAY_MS = 86400000;
 const CHINA_OFFSET_MS = 8 * 3600000;
 const MIDNIGHT_GRACE_MS = 5 * 60000;
 const DISPATCH_INTERVAL_MS = 10 * 60000;
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 50;
+const SEND_CONCURRENCY = 5;
+const DISPATCH_WORK_MS = 20_000;
+const DISPATCH_FINISH_RESERVE_MS = 10_000;
+const FUNCTION_TIMEOUT_MS = 30_000;
 const REMINDER_TIME = "09:00";
 const PAGE = "pages/Home/Home";
 const validTime = time => typeof time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
@@ -422,11 +426,13 @@ const subscribeTomorrow = async (event, openId, scheduleNext = false) => {
   return result.error ? failure(result.error) : response(result);
 };
 
-const claim = async (id, now) => db.runTransaction(async tx => {
+const claim = async (id, now, deadline) => db.runTransaction(async tx => {
+  if (Date.now() >= deadline) return null;
   const doc = tx.collection(collectionName).doc(id);
   const row = (await doc.get()).data;
-  if (!row || row.status !== "pending" || row.dueAtMs > now) return null;
+  if (!row || row.status !== "pending" || row.dueAtMs > now || Date.now() >= deadline) return null;
   const settings = await readStoredSettings(tx, row.ownerOpenId);
+  if (Date.now() >= deadline) return null;
   const { _id, ...data } = row;
   const status = !canUseReminders(row.ownerOpenId) || settings?.enabled === false ? "disabled"
     : row.localDate === chinaDate(now) || canSendAfterMidnight(row, now) ? "sending" : "expired";
@@ -450,56 +456,94 @@ const finishSend = async (id, status, now, lastSendCode) => db.runTransaction(as
   }
 });
 
-const sendDue = async () => {
+const sendCandidate = async (candidate, config, summary, deadline) => {
+  summary.examined++;
+  const row = await claim(candidate._id, Date.now(), deadline);
+  if (!row) return;
+  const deliveryIdPrefix = typeof candidate._id === "string" ? candidate._id.slice(0, 12) : "UNKNOWN";
+  // A sent message cannot be recalled. On an ambiguous SDK/network outcome the row
+  // remains non-retryable, avoiding a second delivery or use of tomorrow's quota.
+  let status = "unknown";
+  let lastSendCode = "UNKNOWN";
+  try {
+    const sent = await cloud.openapi.subscribeMessage.send({
+      touser: row.ownerOpenId,
+      templateId: config.templateId,
+      page: PAGE,
+      data: renderData(config.fields, row.localDate, row.reminderTime),
+      miniprogramState: config.state,
+      lang: "zh_CN",
+    });
+    const errCode = safeErrorCode(sent?.errCode ?? sent?.errcode);
+    lastSendCode = errCode;
+    status = errCode === 0 ? "sent" : "failed";
+    if (status === "failed") {
+      console.error("每日提醒发送明确失败", { deliveryIdPrefix, errCode });
+    }
+  } catch (error) {
+    lastSendCode = safeErrorCode(error?.errCode ?? error?.errcode);
+    console.error("每日提醒发送结果不明", {
+      deliveryIdPrefix,
+      errCode: lastSendCode,
+    });
+  }
+  await finishSend(candidate._id, status, Date.now(), lastSendCode);
+  summary[status]++;
+};
+
+const sendDue = async (startedAtMs, runtimeContext) => {
   const config = templateConfig();
   if (!config) return failure("TEMPLATE_NOT_CONFIGURED");
-  const now = Date.now();
-  const due = await deliveries.where({ status: "pending", dueAtMs: db.command.lte(now) })
-    .orderBy("dueAtMs", "asc").limit(BATCH_SIZE).get();
-  if (!Array.isArray(due?.data)) return failure("DATABASE_ERROR");
-  const summary = { examined: 0, sent: 0, failed: 0, unknown: 0 };
-  for (const candidate of due.data) {
-    summary.examined++;
-    const row = await claim(candidate._id, Date.now());
-    if (!row) continue;
-    const deliveryIdPrefix = typeof candidate._id === "string" ? candidate._id.slice(0, 12) : "UNKNOWN";
-    // A sent message cannot be recalled. On an ambiguous SDK/network outcome the row
-    // remains non-retryable, avoiding a second delivery or use of tomorrow's quota.
-    let status = "unknown";
-    let lastSendCode = "UNKNOWN";
-    try {
-      const sent = await cloud.openapi.subscribeMessage.send({
-        touser: row.ownerOpenId,
-        templateId: config.templateId,
-        page: PAGE,
-        data: renderData(config.fields, row.localDate, row.reminderTime),
-        miniprogramState: config.state,
-        lang: "zh_CN",
-      });
-      const errCode = safeErrorCode(sent?.errCode ?? sent?.errcode);
-      lastSendCode = errCode;
-      status = errCode === 0 ? "sent" : "failed";
-      if (status === "failed") {
-        console.error("每日提醒发送明确失败", { deliveryIdPrefix, errCode });
+  // Only the runtime's second argument can shorten the deployed 30-second limit.
+  // Stop admitting work after 20 seconds and drain already claimed sends/writes.
+  // SDK calls are not cancelable; the reserve is headroom, not a hard RPC deadline.
+  const runtimeLimit = Number.isSafeInteger(runtimeContext?.time_limit_in_ms)
+    && runtimeContext.time_limit_in_ms > 0
+    ? Math.min(FUNCTION_TIMEOUT_MS, runtimeContext.time_limit_in_ms) : FUNCTION_TIMEOUT_MS;
+  const deadline = startedAtMs + Math.min(DISPATCH_WORK_MS,
+    Math.max(0, runtimeLimit - DISPATCH_FINISH_RESERVE_MS));
+  const summary = { examined: 0, sent: 0, failed: 0, unknown: 0, budgetExhausted: false };
+  const attempted = new Set();
+  while (Date.now() < deadline) {
+    const due = await deliveries.where({ status: "pending", dueAtMs: db.command.lte(startedAtMs) })
+      .orderBy("dueAtMs", "asc").limit(BATCH_SIZE).get();
+    if (!Array.isArray(due?.data)) return failure("DATABASE_ERROR");
+    const candidates = due.data.filter(candidate => !attempted.has(candidate._id));
+    if (!candidates.length) break;
+    let next = 0;
+    let databaseError = false;
+    const worker = async () => {
+      while (!databaseError && next < candidates.length && Date.now() < deadline) {
+        const candidate = candidates[next++];
+        attempted.add(candidate._id);
+        try {
+          await sendCandidate(candidate, config, summary, deadline);
+        } catch (_) {
+          // Drain other workers before returning. A failed final write leaves
+          // this record in sending, so no later invocation blindly resends it.
+          databaseError = true;
+        }
       }
-    } catch (error) {
-      lastSendCode = safeErrorCode(error?.errCode ?? error?.errcode);
-      console.error("每日提醒发送结果不明", {
-        deliveryIdPrefix,
-        errCode: lastSendCode,
-      });
+    };
+    await Promise.all(Array.from({ length: Math.min(SEND_CONCURRENCY, candidates.length) }, worker));
+    if (databaseError) {
+      console.error("每日提醒数据库处理失败", summary);
+      return failure("DATABASE_ERROR");
     }
-    await finishSend(candidate._id, status, Date.now(), lastSendCode);
-    summary[status]++;
+    if (due.data.length < BATCH_SIZE) break;
+    // Claimed rows leave pending. Requery the first page instead of offsetting,
+    // which would skip rows as this invocation and overlapping timers drain it.
   }
+  summary.budgetExhausted = Date.now() >= deadline;
   console.info("每日提醒发送批次", summary);
   return response(summary);
 };
 
-exports.main = async (event = {}) => {
+exports.main = async (event = {}, runtimeContext) => {
+  const startedAtMs = Date.now();
   try {
     const context = cloud.getWXContext();
-    if (context.SOURCE === "wx_trigger" && !context.OPENID) return await sendDue();
+    if (context.SOURCE === "wx_trigger" && !context.OPENID) return await sendDue(startedAtMs, runtimeContext);
     if (!context.OPENID) return failure("FORBIDDEN");
     if (!canUseReminders(context.OPENID)) return failure("TEST_ACCOUNT_REQUIRED");
     if (trial && ["completeToday", "subscribeTomorrow", "subscribeNext"].includes(event.action)

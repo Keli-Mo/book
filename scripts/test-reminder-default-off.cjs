@@ -51,7 +51,7 @@ test("无本地设置时练习不自动申请订阅，恢复云端开启状态�
   vm.runInNewContext(compile("wechatSubscription.ts"), subscriptionSandbox);
 
   storage.set("haisha:wechat-reminder-settings:v1", { enabled: true, time: "12:00", nextStatus: "needsConsent" });
-  for (const blockedVersion of ["release", "unknown"]) {
+  for (const blockedVersion of ["unknown", null, undefined]) {
     version = blockedVersion;
     assert.equal((await settingsSandbox.exports.getReminderSettings()).ok, false);
     assert.equal(await subscriptionSandbox.exports.retryPendingHomeReminder(), null);
@@ -68,6 +68,14 @@ test("无本地设置时练习不自动申请订阅，恢复云端开启状态�
   const decision = subscriptionSandbox.exports.requestTomorrowSubscription();
   assert.equal(requestCount, 1, "恢复服务器开启状态后，用户完成练习可触发订阅授权");
   assert.equal((await decision).status, "accepted");
+  version = "release";
+  assert.equal(settingsSandbox.exports.getReminderFunction(), "dailyReminder");
+  assert.equal((await subscriptionSandbox.exports.requestTomorrowSubscription()).status, "disabled",
+    "正式版首次进入必须重新读取自己的云端设置");
+  assert.equal((await settingsSandbox.exports.getReminderSettings()).settings.enabled, true);
+  assert.equal(calls.at(-1), "dailyReminder");
+  assert.equal((await subscriptionSandbox.exports.requestTomorrowSubscription()).status, "accepted");
+  assert.equal(requestCount, 2, "正式版不能复用体验版的授权结果");
 });
 
 test("启动与首页共享设置请求，写入、到点与网络失败后能获取真实状态", async () => {
@@ -101,7 +109,7 @@ test("启动与首页共享设置请求，写入、到点与网络失败后能�
   respond(calls[0], scheduled);
   await launch;
   assert.equal((await getReminderSettings()).settings.nextStatus, "scheduled");
-  version = "release";
+  version = "unknown";
   assert.equal((await getReminderSettings()).ok, false);
   assert.equal(calls.length, 1);
   version = "trial";
