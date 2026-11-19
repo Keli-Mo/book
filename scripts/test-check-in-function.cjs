@@ -504,10 +504,23 @@ test("prepare 只读、大小写与规范化载荷", async () => {
   assert.equal(h.metrics.writes + h.metrics.downloads, 0);
   assert.notEqual(p.cloudPath, (await h.prepare(input({ sectionTitle: "不同课程" }))).cloudPath);
 });
+test("新版十分钟录音按实际大小完成 prepare 和 commit，超过上限拒绝", async () => {
+  const recording = Buffer.alloc(3_600_000, 0x5a);
+  const h = harness(), event = input({ shareVersion: 2, durationMs: 600000,
+    fileSizeBytes: recording.length, contentSha1: hash("sha1", recording) });
+  const prepared = await h.prepare(event);
+  const recordingFileId = h.upload(prepared, recording);
+  const committed = await h.call("commit", { ...event, recordingFileId });
+  assert.equal(committed.ok, true);
+  assert.equal(h.records.get(prepared.id).durationMs, 600000);
+  assert.equal(h.records.get(prepared.id).fileSizeBytes, recording.length);
+  assert.equal(h.metrics.downloads, 1);
+  assert.equal((await h.call("prepare", { ...event, durationMs: 600001 })).ok, false);
+});
 test("非法参数、缺身份零副作用", async () => {
   const h = harness();
   for (const change of [{ requestId: "../bad" }, { requestId: "" }, { requestId: "a".repeat(33) }, { contentSha1: "bad" },
-    { durationMs: NaN }, { durationMs: 499 }, { durationMs: 300001 }, { fileSizeBytes: 0 }, { fileSizeBytes: 1.5 }, { practiceIndex: -1 }, { bookId: "" }]) {
+    { durationMs: NaN }, { durationMs: 499 }, { durationMs: 600001 }, { fileSizeBytes: 0 }, { fileSizeBytes: 1.5 }, { practiceIndex: -1 }, { bookId: "" }]) {
     const r = await h.call("prepare", input(change)); assert.equal(r.ok, false); assert.ok(r.code); assert.ok(r.message);
   }
   h.controls.owner = ""; assert.equal((await h.call("prepare", input())).ok, false);

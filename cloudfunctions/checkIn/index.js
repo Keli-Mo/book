@@ -67,7 +67,7 @@ const requireDurationMs = (value) => {
     reject("INVALID_ARGUMENT", "录音时长格式不正确");
   }
   // 部分真机返回带小数的毫秒值，入库前统一为整数，避免误拒绝有效录音。
-  return requireInteger(Math.round(value), "录音时长", 500, 300000);
+  return requireInteger(Math.round(value), "录音时长", 500, 600000);
 };
 
 const normalizeSnapshot = (event) => ({

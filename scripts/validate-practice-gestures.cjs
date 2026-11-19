@@ -12,6 +12,14 @@ const classes = ["practice-book-zoom-view", "practice-book-zoom-area"];
 const compiledProps = new Map(classes.map((name) => [name, []]));
 const propertyName = (node) => node?.name ?? node?.value;
 const unwrap = (node) => node?.type === "SequenceExpression" ? node.expressions.at(-1) : node;
+const includesClassToken = (node, className) => {
+  if (!node || typeof node !== "object") return false;
+  if (node.type === "StringLiteral") return node.value.split(/\s+/).includes(className);
+  if (node.type === "TemplateElement") return node.value.raw.split(/\s+/).includes(className);
+  return Object.values(node).some((value) => Array.isArray(value)
+    ? value.some((item) => includesClassToken(item, className))
+    : includesClassToken(value, className));
+};
 
 function readChunks(directory) {
   for (const file of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -34,8 +42,9 @@ function readChunks(directory) {
           .filter((prop) => prop.type === "ObjectProperty")
           .map((prop) => [propertyName(prop.key), prop.value]));
         const className = properties.get("className");
-        if (className?.type !== "StringLiteral" || !compiledProps.has(className.value)) return;
-        compiledProps.get(className.value).push({ properties, fullPath });
+        for (const name of classes) {
+          if (includesClassToken(className, name)) compiledProps.get(name).push({ properties, fullPath });
+        }
       },
     });
   }

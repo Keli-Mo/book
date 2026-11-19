@@ -14,6 +14,7 @@ export type BookZoomSize = { width: number; height: number };
 type PracticeBookZoomProps = {
   viewportSize: BookZoomSize;
   contentSize: BookZoomSize;
+  imagePending?: boolean;
   renderContent: () => ReactNode;
   onZoomActiveChange: (active: boolean) => void;
   onVerticalMove?: () => void;
@@ -27,6 +28,7 @@ const DRAG_THRESHOLD_PX = 6;
 export function PracticeBookZoom({
   viewportSize,
   contentSize,
+  imagePending = false,
   renderContent,
   onZoomActiveChange,
   onVerticalMove,
@@ -97,7 +99,7 @@ export function PracticeBookZoom({
 
   return (
     <MovableArea
-      className='practice-book-zoom-area'
+      className={`practice-book-zoom-area${imagePending ? " practice-book-zoom-area--pending" : ""}`}
       scaleArea
       style={{ width: `${viewportSize.width}px`, height: `${viewportSize.height}px` }}
     >

@@ -251,7 +251,7 @@ export const resolveRecorderCallback = (
     };
   }
 
-  // 五分钟上限、系统打断等会直接触发 onStop，并不总有页面 stop 意图。
+  // 到达录音时长上限、系统打断等会直接触发 onStop，并不总有页面 stop 意图。
   if (canAcceptSystemStop(machine, callback)) {
     return {
       ...machine,

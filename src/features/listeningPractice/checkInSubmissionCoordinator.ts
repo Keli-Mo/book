@@ -82,7 +82,7 @@ export type CheckInSubmissionCoordinatorAdapters = {
 type SubmitOptions = { onProgress?: (progress: SubmissionProgress) => void };
 type Phase = "idle" | "preparing" | "uploading" | "backoff" | "persisting" | "committing" | "done";
 const RETRY_DELAYS_MS = [1000, 3000];
-const MAX_RECORDING_DURATION_MS = 300_000;
+const MAX_RECORDING_DURATION_MS = 600_000;
 const MAX_NATIVE_DURATION_OVERSHOOT_MS = 5_000;
 
 const normalizeCloudDurationMs = (durationMs: number) =>

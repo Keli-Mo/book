@@ -442,7 +442,7 @@ automaticStopMachine = resolveRecorderCallback(automaticStopMachine, {
 assert.equal(
   automaticStopMachine.state,
   "recorded",
-  "录音中的五分钟自动 onStop 必须保留本轮录音"
+  "录音达到时长上限自动 onStop 必须保留本轮录音"
 );
 
 let pausedAutomaticStopMachine = resolveRecordingCapabilities(

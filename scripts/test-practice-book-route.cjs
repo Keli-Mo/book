@@ -787,7 +787,7 @@ async function testRoutes() {
       assert.deepEqual(page.permissionChecks, ["scope.record:granted"], "开始录音前必须确认麦克风已授权");
       assert.deepEqual(page.recorderActions[0], {
         action: "start",
-        options: { duration: 300000, sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: "mp3" },
+        options: { duration: 600000, sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: "mp3" },
       }, "点击开始必须把生产录音参数交给 recorder owner");
       page.recorderHandlers.Start();
       assert.equal(page.recordingSessionJournal.read()?.stage, "confirmed", "只有原生 onStart 才能确认会话归属");

@@ -93,7 +93,7 @@ const formatModelPlaybackRate = (rate: ModelPlaybackRate) =>
   MODEL_PLAYBACK_RATE_LABELS[MODEL_PLAYBACK_RATES.indexOf(rate)];
 
 const RECORDER_OPTIONS = {
-  duration: 300000,
+  duration: 600000,
   sampleRate: 16000,
   numberOfChannels: 1,
   encodeBitRate: 48000,
@@ -141,6 +141,12 @@ const getRecorderTimeoutOperation = (error: unknown) => {
 
 type NaturalImageSize = { width: number; height: number };
 const naturalImageSizeCache = new Map<string, NaturalImageSize>();
+
+const bookImageRequestUrl = (url: string, retryToken?: string) => {
+  if (!retryToken) return url;
+  const separator = url.endsWith("?") || url.endsWith("&") ? "" : url.includes("?") ? "&" : "?";
+  return `${url}${separator}bookRetry=${retryToken}`;
+};
 
 const readNaturalImageSize = (value: unknown): NaturalImageSize | null => {
   if (!value || typeof value !== "object") return null;
@@ -265,6 +271,16 @@ export function PracticeSession({
     imageUrl: string;
     size: NaturalImageSize;
   } | null>(null);
+  const [loadedBookImageUrls, setLoadedBookImageUrls] = useState<Set<string>>(() => new Set());
+  const [failedBookImageUrls, setFailedBookImageUrls] = useState<Set<string>>(() => new Set());
+  const [staticBookImageFallbackUrls, setStaticBookImageFallbackUrls] = useState<Set<string>>(() => new Set());
+  const staticBookImageLoadedUrlsRef = useRef(new Set<string>());
+  const zoomBookImageFailedUrlsRef = useRef(new Set<string>());
+  const staticBookImageFallbackUrlsRef = useRef(new Set<string>());
+  const [bookImageRetryTokens, setBookImageRetryTokens] = useState<Record<string, string>>({});
+  const [readyZoomImageKey, setReadyZoomImageKey] = useState<string | null>(null);
+  const bookImageRetrySequenceRef = useRef(0);
+  const bookImageRetryTokensRef = useRef<Record<string, string>>({});
   const [bookSwiperCurrent, setBookSwiperCurrent] = useState(practiceIndex);
   const [bookSwiperDuration, setBookSwiperDuration] = useState(PAGE_TURN_DURATION_MS);
   const [bookSwipeLocked, setBookSwipeLocked] = useState(false);
@@ -273,6 +289,53 @@ export function PracticeSession({
   const [retainedSlideIndexes, setRetainedSlideIndexes] = useState(
     () => new Set(retainPracticeSlideIndexes([], initialPracticeIndex, bundle.practices.length)),
   );
+  const retainedSlideIndexesRef = useRef(retainedSlideIndexes);
+  retainedSlideIndexesRef.current = retainedSlideIndexes;
+  const retryCurrentBookImage = () => {
+    const url = practice.imageUrl;
+    staticBookImageLoadedUrlsRef.current.delete(url);
+    zoomBookImageFailedUrlsRef.current.delete(url);
+    setReadyZoomImageKey(null);
+    staticBookImageFallbackUrlsRef.current.delete(url);
+    setStaticBookImageFallbackUrls((previous) => {
+      if (!previous.has(url)) return previous;
+      const next = new Set(previous);
+      next.delete(url);
+      return next;
+    });
+    setFailedBookImageUrls((previous) => {
+      if (!previous.has(url)) return previous;
+      const next = new Set(previous);
+      next.delete(url);
+      return next;
+    });
+    setLoadedBookImageUrls((previous) => {
+      if (!previous.has(url)) return previous;
+      const next = new Set(previous);
+      next.delete(url);
+      return next;
+    });
+    const nextTokens = {
+      ...bookImageRetryTokensRef.current,
+      [url]: `${Date.now()}-${++bookImageRetrySequenceRef.current}`,
+    };
+    bookImageRetryTokensRef.current = nextTokens;
+    setBookImageRetryTokens(nextTokens);
+  };
+  const showLoadedStaticBookImage = (url: string) => {
+    if (staticBookImageFallbackUrlsRef.current.has(url)) return;
+    staticBookImageFallbackUrlsRef.current.add(url);
+    setStaticBookImageFallbackUrls((previous) => new Set(previous).add(url));
+    setFailedBookImageUrls((previous) => {
+      if (!previous.has(url)) return previous;
+      const next = new Set(previous);
+      next.delete(url);
+      return next;
+    });
+    setLoadedBookImageUrls((previous) => new Set(previous).add(url));
+    setBookZoomActive(false);
+    hotspotGestureBlockedRef.current = false;
+  };
   const modelAudioControllerRef = useRef<ReturnType<
     typeof createTrackAudioController
   > | null>(null);
@@ -319,6 +382,13 @@ export function PracticeSession({
   const hiddenStopAttemptsRef = useRef(0);
   const practiceContextRef = useRef({ practice, practiceIndex });
   practiceContextRef.current = { practice, practiceIndex };
+  const shouldAcceptBookImageEvent = (index: number, inZoomLayer: boolean) =>
+    inZoomLayer
+      ? index === practiceContextRef.current.practiceIndex
+      : retainedSlideIndexesRef.current.has(index) ||
+        index === practiceContextRef.current.practiceIndex ||
+        index === bookSwiperCurrentRef.current ||
+        index === bookSwiperCurrentRef.current + 1;
   const recordingContextRef = useRef<{ practice: ListeningPractice; practiceIndex: number } | null>(null);
   const recordingSessionIdRef = useRef<string | null>(null);
 
@@ -415,6 +485,36 @@ export function PracticeSession({
       return new Set(nextIndexes);
     });
   }, [bookSwiperCurrent, bundle.practices.length]);
+
+  useEffect(() => {
+    const retainedUrls = new Set(
+      [...retainedSlideIndexes].map((index) => bundle.practices[index]?.imageUrl),
+    );
+    // 目录远跳的目标页会先于 retained effect 挂图，不能清掉它刚写入的加载状态。
+    for (const index of [practiceIndex, bookSwiperCurrent, bookSwiperCurrent + 1]) {
+      const url = bundle.practices[index]?.imageUrl;
+      if (url) retainedUrls.add(url);
+    }
+    setLoadedBookImageUrls((previous) => {
+      if ([...previous].every((url) => retainedUrls.has(url))) return previous;
+      return new Set([...previous].filter((url) => retainedUrls.has(url)));
+    });
+    setFailedBookImageUrls((previous) => {
+      if ([...previous].every((url) => retainedUrls.has(url))) return previous;
+      return new Set([...previous].filter((url) => retainedUrls.has(url)));
+    });
+    setStaticBookImageFallbackUrls((previous) => {
+      if ([...previous].every((url) => retainedUrls.has(url))) return previous;
+      return new Set([...previous].filter((url) => retainedUrls.has(url)));
+    });
+    for (const urls of [
+      staticBookImageLoadedUrlsRef.current,
+      zoomBookImageFailedUrlsRef.current,
+      staticBookImageFallbackUrlsRef.current,
+    ]) {
+      for (const url of urls) if (!retainedUrls.has(url)) urls.delete(url);
+    }
+  }, [retainedSlideIndexes, bundle.practices, practiceIndex, bookSwiperCurrent]);
 
   useEffect(() => {
     const cached = naturalImageSizeCache.get(practice.imageUrl);
@@ -1858,6 +1958,7 @@ export function PracticeSession({
       pendingRestoreAttemptRef.current += 1;
       pendingRestoreSuppressedRef.current = false;
       practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
+      setReadyZoomImageKey(null);
       setBookScrollHintDismissed(true);
       setBookSwiperCurrent(nextIndex);
       setCurrentPractice({ practiceIndex: nextIndex, practice: nextPractice });
@@ -1927,6 +2028,7 @@ export function PracticeSession({
     pendingRestoreAttemptRef.current += 1;
     pendingRestoreSuppressedRef.current = false;
     practiceContextRef.current = { practiceIndex: nextIndex, practice: nextPractice };
+    setReadyZoomImageKey(null);
     setBookScrollHintDismissed(true);
     setBookSwiperCurrent(nextIndex);
     setCurrentPractice({ practiceIndex: nextIndex, practice: nextPractice });
@@ -2644,6 +2746,7 @@ export function PracticeSession({
           aspectRatio: `${stablePortraitCanvasNaturalSize.width} / ${stablePortraitCanvasNaturalSize.height}`,
         }
       : undefined;
+  const visibleBookImageUrl = bundle.practices[bookSwiperCurrent]?.imageUrl;
   const shownModelPlaybackTime = modelSeekPreview ?? modelPlaybackCurrentTime;
   const modelProgressMax = Math.max(1, Math.ceil(modelPlaybackDuration));
   const modelProgressValue = Math.min(
@@ -2916,6 +3019,18 @@ export function PracticeSession({
               >
                 {bundle.practices.map((item, index) => {
                   const isSlideRetained = retainedSlideIndexes.has(index);
+                  const isActiveSlide = index === practiceIndex;
+                  // 先挂视觉当前页和下一页；已加载旧页保持节点，未加载的上一页稍后补齐。
+                  const shouldRenderImage = isActiveSlide ||
+                    index === bookSwiperCurrent ||
+                    index === bookSwiperCurrent + 1 ||
+                    (isSlideRetained && (
+                      loadedBookImageUrls.has(item.imageUrl) ||
+                      (index === bookSwiperCurrent - 1 &&
+                        Boolean(visibleBookImageUrl && loadedBookImageUrls.has(visibleBookImageUrl)))
+                    ));
+                  const retryToken = bookImageRetryTokens[item.imageUrl];
+                  const zoomImageKey = `${item.id}:${layout.orientation}:${retryToken || "initial"}`;
                   const retainedNaturalSize = naturalImageSizeCache.get(item.imageUrl) ??
                     readBookImageSize(bundle.book.id, item.imageIndex) ??
                     bookStableCanvasNaturalSize;
@@ -2925,10 +3040,13 @@ export function PracticeSession({
                   const slideImageSize = index === practiceIndex
                     ? fittedBookSize
                     : retainedImageSize;
-                  const isActiveSlide = index === practiceIndex;
                   const canZoom = Boolean(isActiveSlide && bookViewportSize &&
                     bookViewportSize.width > 0 && bookViewportSize.height > 0 &&
-                    (!isLandscapeLayout || fittedBookSize));
+                    (!isLandscapeLayout || fittedBookSize) &&
+                    !staticBookImageFallbackUrls.has(item.imageUrl));
+                  const showStaticUntilZoomReady = canZoom &&
+                    staticBookImageLoadedUrlsRef.current.has(item.imageUrl) &&
+                    readyZoomImageKey !== zoomImageKey;
                   const renderSlidePage = (inZoomLayer: boolean, showHotspots: boolean) => (
                       <PracticeBookPage
                         scrollable={isLandscapeLayout && isSlideRetained && !inZoomLayer}
@@ -2941,14 +3059,15 @@ export function PracticeSession({
                           }
                         } : undefined}
                       >
-                        {isSlideRetained ? (
+                        {shouldRenderImage ? (
                           <Image
+                            key={`${item.id}:${retryToken || "initial"}`}
                             className={
                               isActiveSlide && (inZoomLayer || !canZoom)
                                 ? "practice-book-page__image"
                                 : "practice-book-page__neighbor"
                             }
-                            src={item.imageUrl}
+                            src={bookImageRequestUrl(item.imageUrl, retryToken)}
                             style={stablePortraitCanvasNaturalSize && !isLandscapeLayout ? { height: "100%" } : undefined}
                             mode={
                               isLandscapeLayout || (!isFittedLayout && !stablePortraitCanvasNaturalSize)
@@ -2957,6 +3076,37 @@ export function PracticeSession({
                             }
                             webp
                             onLoad={(event) => {
+                              if (bookImageRetryTokensRef.current[item.imageUrl] !== retryToken) return;
+                              if (!shouldAcceptBookImageEvent(index, inZoomLayer)) return;
+                              if (!inZoomLayer) staticBookImageLoadedUrlsRef.current.add(item.imageUrl);
+                              if (canZoom && isActiveSlide && !inZoomLayer) {
+                                setLoadedBookImageUrls((previous) => {
+                                  if (previous.has(item.imageUrl)) return previous;
+                                  return new Set(previous).add(item.imageUrl);
+                                });
+                                if (index === practiceContextRef.current.practiceIndex &&
+                                  zoomBookImageFailedUrlsRef.current.has(item.imageUrl)) {
+                                  showLoadedStaticBookImage(item.imageUrl);
+                                }
+                                return;
+                              }
+                              if (inZoomLayer && staticBookImageFallbackUrlsRef.current.has(item.imageUrl)) return;
+                              if (inZoomLayer) zoomBookImageFailedUrlsRef.current.delete(item.imageUrl);
+                              if (inZoomLayer && index === practiceContextRef.current.practiceIndex) {
+                                setReadyZoomImageKey(zoomImageKey);
+                              }
+                              setLoadedBookImageUrls((previous) => {
+                                if (previous.has(item.imageUrl)) return previous;
+                                const next = new Set(previous);
+                                next.add(item.imageUrl);
+                                return next;
+                              });
+                              setFailedBookImageUrls((previous) => {
+                                if (!previous.has(item.imageUrl)) return previous;
+                                const next = new Set(previous);
+                                next.delete(item.imageUrl);
+                                return next;
+                              });
                               const size = readNaturalImageSize(event.detail);
                               if (size) {
                                 naturalImageSizeCache.set(item.imageUrl, size);
@@ -2966,6 +3116,43 @@ export function PracticeSession({
                               }
                               if (index === practiceContextRef.current.practiceIndex) {
                                 measureBookImage();
+                              }
+                            }}
+                            onError={(event) => {
+                              if (bookImageRetryTokensRef.current[item.imageUrl] !== retryToken) return;
+                              if (!shouldAcceptBookImageEvent(index, inZoomLayer)) return;
+                              if (!inZoomLayer) staticBookImageLoadedUrlsRef.current.delete(item.imageUrl);
+                              if (canZoom && isActiveSlide && !inZoomLayer) {
+                                return;
+                              }
+                              if (inZoomLayer && index === practiceContextRef.current.practiceIndex) {
+                                setReadyZoomImageKey(null);
+                                zoomBookImageFailedUrlsRef.current.add(item.imageUrl);
+                                if (staticBookImageLoadedUrlsRef.current.has(item.imageUrl)) {
+                                  showLoadedStaticBookImage(item.imageUrl);
+                                  return;
+                                }
+                              }
+                              setLoadedBookImageUrls((previous) => {
+                                if (!previous.has(item.imageUrl)) return previous;
+                                const next = new Set(previous);
+                                next.delete(item.imageUrl);
+                                return next;
+                              });
+                              // 后台预载失败只影响缓存状态；到达该页后以可见图片的结果为准。
+                              if (index !== practiceContextRef.current.practiceIndex) return;
+                              setFailedBookImageUrls((previous) => {
+                                if (previous.has(item.imageUrl)) return previous;
+                                const next = new Set(previous);
+                                next.add(item.imageUrl);
+                                return next;
+                              });
+                              if (index === practiceContextRef.current.practiceIndex) {
+                                console.warn("教材图片加载失败", {
+                                  bookId: bundle.book.id,
+                                  imageIndex: item.imageIndex,
+                                  error: event.detail?.errMsg,
+                                });
                               }
                             }}
                           />
@@ -3027,6 +3214,7 @@ export function PracticeSession({
                         key={`${item.id}:${layout.orientation}`}
                         viewportSize={bookViewportSize!}
                         contentSize={isLandscapeLayout ? fittedBookSize! : bookViewportSize!}
+                        imagePending={showStaticUntilZoomReady}
                         renderContent={() => renderSlidePage(true, true)}
                         onZoomActiveChange={setBookZoomActive}
                         onHotspotGestureBlockChange={(blocked) => {
@@ -3044,14 +3232,22 @@ export function PracticeSession({
                       key={item.id}
                       className={`practice-book-slide${stablePortraitCanvasNaturalSize ? " practice-book-slide--stable-canvas" : ""}`}
                     >
-                      <View className={`practice-book-static${canZoom ? " practice-book-static--covered" : ""}`}>
-                        {renderSlidePage(false, !canZoom)}
+                      <View className={`practice-book-static${canZoom && !showStaticUntilZoomReady ? " practice-book-static--covered" : ""}`}>
+                        {renderSlidePage(false, !canZoom || showStaticUntilZoomReady)}
                       </View>
                     </SwiperItem>
                   );
                 })}
               </Swiper>
               {activeBookZoomLayer}
+              {failedBookImageUrls.has(practice.imageUrl) && (
+                <View className='practice-book-image-error'>
+                  <Text>书页图片加载失败，请检查网络后重试</Text>
+                  <Button className='practice-book-image-retry device-touch-target' onClick={retryCurrentBookImage}>
+                    重新加载书页
+                  </Button>
+                </View>
+              )}
               {isLandscapeLayout && !bookScrollHintDismissed && fittedBookSize && fittedBookSize.height > bookBounds.height && (
                 <Text className='practice-book-scroll-hint'>上下滑动阅读</Text>
               )}
@@ -3066,7 +3262,7 @@ export function PracticeSession({
                   {!isLandscapeLayout && retryRecordingButton}
                   {!isLandscapeLayout && deleteRecordingButton}
                   <Text className='practice-recorder__time'>
-                    {shownDuration > 0 ? formatDuration(shownDuration) : "最长 5:00"}
+                    {shownDuration > 0 ? formatDuration(shownDuration) : `最长 ${formatDuration(RECORDER_OPTIONS.duration)}`}
                   </Text>
                 </View>
               </View>

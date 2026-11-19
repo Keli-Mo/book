@@ -22,6 +22,14 @@ const cleanup = (page) => { page.unload(); page.dispose(); };
 const hasClass = (node, name) => node?.props?.className?.split(/\s+/).includes(name);
 const images = (tree) => elements(tree).filter((node) => node.type === "Image" &&
   /practice-book-page__(?:image|neighbor)/.test(node.props.className || ""));
+const loadCurrentThenNeighbors = (page) => {
+  // The visible page must finish loading before the native Image nodes for
+  // neighboring pages are mounted. Deliver those callbacks in that order.
+  byClass(render(page), "practice-book-page__image").props.onLoad({ detail: natural });
+  const withNeighbors = render(page);
+  for (const image of images(withNeighbors)) image.props.onLoad({ detail: natural });
+  return render(page);
+};
 const imageByUrl = (tree, src) => images(tree).find((node) => node.props.src === src);
 const bookPageByUrl = (tree, src) => elements(tree).find((node) =>
   hasClass(node, "practice-book-page") &&
@@ -90,10 +98,8 @@ for (const route of routes) {
     test(`${route.name}：${mode.name}已预加载图片前后翻页不切换原生显示模式`, async () => {
       const { page } = fixture(route, mode);
       try {
-        const before = render(page);
         // 原生 Image 的加载回调先于滑动到达，模拟邻页已经预载完成。
-        for (const image of images(before)) image.props.onLoad({ detail: natural });
-        const tree = render(page);
+        const tree = loadCurrentThenNeighbors(page);
         const current = byClass(tree, "practice-book-swiper").props.current;
         const originalSrc = byClass(tree, "practice-book-page__image").props.src;
         const preloadModes = new Map(images(tree).map((image) => [image.props.src, image.props.mode]));
@@ -197,9 +203,7 @@ for (const route of routes) {
     test(`${route.name}：${mode.name}预载邻页成为当前页时保持容器几何`, async () => {
       const { page } = fixture(route, mode);
       try {
-        let tree = render(page);
-        for (const image of images(tree)) image.props.onLoad({ detail: natural });
-        tree = render(page);
+        const tree = loadCurrentThenNeighbors(page);
         const swiper = byClass(tree, "practice-book-swiper");
         const current = swiper.props.current;
         const slides = elements(swiper).filter((node) => hasClass(node, "practice-book-slide"));
