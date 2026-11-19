@@ -35,6 +35,9 @@ const launchApp = (audioError) => {
       if (request === "@/features/listeningPractice/recordingSessionRecovery") {
         return { resumeUnfinishedRecordingOnLaunch: () => { recordingRecoveryChecks += 1; } };
       }
+      if (request === "@/features/listeningPractice/audioRuntime") {
+        return { shouldUseOhOsWebAudio: () => false };
+      }
       if (request.endsWith(".scss")) return {};
       throw new Error(`Unexpected dependency: ${request}`);
     },

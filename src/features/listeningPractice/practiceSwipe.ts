@@ -1,8 +1,8 @@
 export const PAGE_TURN_DURATION_MS = 300;
-export const PRACTICE_SLIDE_PREFETCH_RADIUS = 2;
+export const PRACTICE_SLIDE_PREFETCH_RADIUS = 1;
 export const MAX_RETAINED_PRACTICE_SLIDES = 24;
 
-/** 当前页与两侧预加载，避免滑到空白再补图。 */
+/** 计算当前页周围的候选范围；实际图片请求顺序由阅读页控制。 */
 export const shouldRenderPracticeSlideImage = (
   index: number,
   currentIndex: number,

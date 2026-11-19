@@ -275,6 +275,7 @@ for (const route of routes) {
   test(`${route.name}：横屏活动页缩放，已预载图片保留静态滚动容器`, () => {
     const { page } = fixture(route, modes[1]);
     try {
+      loadAgain(page);
       const nodes = elements(render(page));
       const scrolls = nodes.filter((node) => hasClass(node, "practice-book-scroll"));
       const images = nodes.filter((node) => node.type === "Image" &&
@@ -366,6 +367,7 @@ for (const route of routes) {
       try {
         const initialTree = render(page);
         const imageA = byClass(initialTree, "practice-book-page__image").props.src;
+        loadAgain(page);
         scaleTo(page, 2);
         const initialProgress = progress(page);
         const acquireAttempts = page.acquireAttempts;
@@ -378,6 +380,7 @@ for (const route of routes) {
         assert.equal(inactiveA.props.scrollTop, 0, "非活动预载页的滚动位置归零");
         assertCommittedScale(nextTree, 1, "翻页后的新页从原始倍率开始");
         assert.notEqual(progress(page), initialProgress);
+        loadAgain(page);
         await byClass(page.render(), "practice-navigation__button").props.onClick();
         const backTree = render(page);
         assert.equal(byClass(backTree, "practice-book-page__image").props.src, imageA);

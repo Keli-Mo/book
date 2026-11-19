@@ -44,17 +44,17 @@ const {
 } = loadTypeScriptModule(sourcePath);
 
 assert.equal(PAGE_TURN_DURATION_MS, 300);
-assert.equal(PRACTICE_SLIDE_PREFETCH_RADIUS, 2);
+assert.equal(PRACTICE_SLIDE_PREFETCH_RADIUS, 1);
 assert.equal(MAX_RETAINED_PRACTICE_SLIDES, 24);
 assert.equal(shouldRenderPracticeSlideImage(11, 11), true);
-assert.equal(shouldRenderPracticeSlideImage(13, 11), true);
-assert.equal(shouldRenderPracticeSlideImage(14, 11), false);
+assert.equal(shouldRenderPracticeSlideImage(12, 11), true);
+assert.equal(shouldRenderPracticeSlideImage(13, 11), false);
 assert.equal(shouldRenderPracticeSlideImage(1.5, 1), false);
 const normalize = (value) => JSON.parse(JSON.stringify(value));
-assert.deepEqual(normalize(retainPracticeSlideIndexes([], 11, 100)), [9, 10, 11, 12, 13]);
+assert.deepEqual(normalize(retainPracticeSlideIndexes([], 11, 100)), [10, 11, 12]);
 assert.deepEqual(
-  normalize(retainPracticeSlideIndexes([9, 10, 11, 12, 13], 12, 100)),
-  [9, 10, 11, 12, 13, 14],
+  normalize(retainPracticeSlideIndexes([10, 11, 12], 12, 100)),
+  [10, 11, 12, 13],
 );
 assert.equal(retainPracticeSlideIndexes(Array.from({ length: 40 }, (_, index) => index), 39, 100).length, 24);
 assert.ok(retainPracticeSlideIndexes(Array.from({ length: 40 }, (_, index) => index), 39, 100).includes(39));

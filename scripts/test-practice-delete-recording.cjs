@@ -165,7 +165,7 @@ for (const route of routes) {
       assert.ok(button(tree, "开始跟读录音"));
       assert.equal(button(tree, "重新录制"), undefined);
       assert.equal(button(tree, "删除录音"), undefined);
-      assert.equal(textOf(byClass(tree, "practice-recorder__time")), "最长 5:00");
+      assert.equal(textOf(byClass(tree, "practice-recorder__time")), "最长 10:00");
       assert.equal(h.page.completedPending.length, 0);
       assert.equal(h.page.submittedPending.length, 0);
       h.page.hide(); h.page.show(); await settle();

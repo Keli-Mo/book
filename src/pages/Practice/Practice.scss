@@ -149,6 +149,43 @@
   max-width: 100%;
 }
 
+.practice-book-image-error {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12PX;
+  width: calc(100% - 24PX);
+  max-width: 340PX;
+  padding: 20PX;
+  border: 1PX solid #cbd8d3;
+  border-radius: 12PX;
+  box-sizing: border-box;
+  background: rgba(244, 247, 245, 0.98);
+  box-shadow: 0 8PX 28PX rgba(37, 69, 58, 0.14);
+  color: #365349;
+  font-size: 14PX;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.practice-book-image-retry {
+  min-height: 44PX;
+  padding: 0 18PX;
+  border: 1PX solid #2f876b;
+  border-radius: 8PX;
+  background: #fff;
+  color: #276c58;
+  font-size: 14PX;
+  line-height: 44PX;
+  pointer-events: auto;
+}
+
 .practice-book-zoom-area {
   position: absolute;
   z-index: 3;
@@ -158,6 +195,11 @@
   overflow: hidden;
   width: 100%;
   height: 100%;
+
+  &--pending {
+    opacity: 0;
+    pointer-events: none;
+  }
 }
 
 .practice-book-zoom-view {
