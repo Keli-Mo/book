@@ -126,12 +126,17 @@ export default function BookLibrary() {
                 hoverClass='is-pressed'
                 onClick={() => openBook(book)}
               >
-                <Image
-                  className='book-row__cover'
-                  src={book.cover}
-                  mode='aspectFit'
-                  lazyLoad
-                />
+                <View className='book-row__cover-stack'>
+                  <Image
+                    className='book-row__cover'
+                    src={book.cover}
+                    mode='aspectFit'
+                    lazyLoad
+                  />
+                  {book.coverLabel ? (
+                    <Text className='book-row__cover-label'>{book.coverLabel}</Text>
+                  ) : null}
+                </View>
                 <View className='book-row__text'>
                   <Text className='book-row__title'>
                     {seriesId === "casa" ? book.level : book.title}

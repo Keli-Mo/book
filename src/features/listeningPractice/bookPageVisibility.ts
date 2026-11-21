@@ -8,6 +8,7 @@ const HIDDEN_PAGE_INDEXES: Readonly<Record<string, readonly number[]>> = {
   "12": [118, 120, 122, 124, 126],
   "13": [2, 106, 108, 110],
   "14": [58, 60, 62, 64],
+  "32": [172, 174, 180, 183, 184, 186, 188],
 };
 
 export const isBookPageVisible = (

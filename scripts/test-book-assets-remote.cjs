@@ -58,33 +58,33 @@ const testCollection = () => {
 
 const testRealConstantCollection = () => {
   const constants = loadBookAssetConstants();
-  assert.equal(constants.bookCovers.length, 29, "远端校验必须覆盖 29 张教材书架封面");
+  assert.equal(constants.bookCovers.length, 31, "远端校验必须覆盖 31 张教材书架封面");
   assert.equal(constants.seriesCovers.length, 6, "远端校验必须覆盖 6 张首页系列封面");
   const assets = collectBookAssets(constants);
   const sources = assets.flatMap((asset) => asset.sources);
-  assert.equal(assets.length, 7_512, "教材页、音频及封面应有 7,512 个唯一素材");
+  assert.equal(assets.length, 7_984, "共用学生书封面后，教材页、音频及封面应有 7,984 个唯一素材");
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type !== "audio")).length,
-    4_973,
+    5_292,
   );
   assert.equal(
     assets.filter((asset) => asset.sources.some((source) => source.type === "audio")).length,
-    2_539,
-    "新增 37 段剑桥阅读音频后，共有 2,539 个音频 URL",
+    2_692,
+    "新增 Our World 2 两册后，共有 2,692 个音频 URL",
   );
-  assert.equal(sources.filter((source) => source.type === "image").length, 4_958);
-  assert.equal(sources.filter((source) => source.type === "cover").length, 29);
+  assert.equal(sources.filter((source) => source.type === "image").length, 5_279);
+  assert.equal(sources.filter((source) => source.type === "cover").length, 31);
   assert.equal(sources.filter((source) => source.type === "series-cover").length, 6);
   assert.equal(
     sources.filter((source) => source.type === "audio").length,
-    2_677,
-    "全教材应有 2,677 个音频热点",
+    2_830,
+    "全教材应有 2,830 个音频热点",
   );
   assert.deepEqual(
     [...new Set(sources.map(({ bookId }) => bookId).filter(Boolean))],
-    Array.from({ length: 29 }, (_, index) => String(index + 3)),
+    Array.from({ length: 31 }, (_, index) => String(index + 3)),
   );
-  assert.deepEqual(constants.bookIds, Array.from({ length: 29 }, (_, index) => String(index + 3)),
+  assert.deepEqual(constants.bookIds, Array.from({ length: 31 }, (_, index) => String(index + 3)),
     "扫描范围必须包含 OD6 学生书和无音频练习册");
   assert.equal(sources.filter((source) => source.bookId === "30" && source.type === "image").length, 201);
   assert.equal(sources.filter((source) => source.bookId === "30" && source.type === "audio").length, 130);

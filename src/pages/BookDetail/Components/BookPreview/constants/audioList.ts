@@ -16024,6 +16024,424 @@ const audioList30 = {
     // printed p191 / PDF 192, Testing Practice 3
     193: [od6Track(4, "23", 78.906, 11.066)],
 };
+// Our World 2 第二版美音音频，热点采用已核验的圆心百分比。
+const ourWorld2Track = (
+    book: "sb" | "wb", track: string, x: number, y: number, label = `TR ${track.toUpperCase()}`,
+): OriginalAudioTrack => ({
+    url: `https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/our-world-2e/ame/level-2/${book === "sb" ? "student-book" : "workbook"}/audio/ow2e_${book}2_ame_${track}.mp3`,
+    offset: [`${x}%`, `${y}%`],
+    flag: "Percentage",
+    anchor: "center",
+    label,
+});
+
+const ourWorld2StudentAudio: Record<number, OriginalAudioTrack[]> = {
+    6: [
+        ourWorld2Track("sb", "0.1", 39.2157, 79.6935),
+        ourWorld2Track("sb", "0.2", 27.451, 92.2095),
+    ],
+    8: [
+        ourWorld2Track("sb", "0.3", 53.1046, 81.7369),
+        ourWorld2Track("sb", "0.4", 37.0915, 92.9757),
+    ],
+    10: [
+        ourWorld2Track("sb", "0.5", 65.6863, 10.4725),
+        ourWorld2Track("sb", "0.6", 40.8497, 61.0473),
+    ],
+    11: [
+        ourWorld2Track("sb", "0.7", 58.3333, 10.4725),
+    ],
+    14: [
+        ourWorld2Track("sb", "1.1", 38.8889, 9.70626),
+        ourWorld2Track("sb", "1.2", 45.098, 22.2222),
+    ],
+    16: [
+        ourWorld2Track("sb", "1.3", 48.0392, 8.30141),
+    ],
+    18: [
+        ourWorld2Track("sb", "1.4", 57.8431, 8.04598),
+        ourWorld2Track("sb", "1.5", 69.7712, 20.5619),
+    ],
+    20: [
+        ourWorld2Track("sb", "1.6", 38.8889, 13.0268),
+        ourWorld2Track("sb", "1.7", 40.8497, 80.3321),
+    ],
+    21: [
+        ourWorld2Track("sb", "1.8", 70.5882, 7.27969),
+    ],
+    22: [
+        ourWorld2Track("sb", "1.9", 40.5229, 7.02427),
+    ],
+    30: [
+        ourWorld2Track("sb", "2.1", 38.8889, 9.45083),
+        ourWorld2Track("sb", "2.2", 47.549, 21.9668),
+    ],
+    32: [
+        ourWorld2Track("sb", "2.3", 48.0392, 10.2171),
+    ],
+    34: [
+        ourWorld2Track("sb", "2.4", 66.3399, 11.1111),
+    ],
+    36: [
+        ourWorld2Track("sb", "2.5", 61.2745, 10.2171),
+    ],
+    37: [
+        ourWorld2Track("sb", "2.6", 32.5163, 7.27969),
+    ],
+    38: [
+        ourWorld2Track("sb", "2.7", 45.2614, 6.25798),
+    ],
+    46: [
+        ourWorld2Track("sb", "3.1", 38.8889, 9.45083),
+        ourWorld2Track("sb", "3.2", 47.549, 21.9668),
+    ],
+    48: [
+        ourWorld2Track("sb", "3.3", 48.0392, 10.2171),
+    ],
+    50: [
+        ourWorld2Track("sb", "3.4", 30.0654, 8.04598),
+    ],
+    52: [
+        ourWorld2Track("sb", "3.5", 38.8889, 10.2171),
+    ],
+    53: [
+        ourWorld2Track("sb", "3.6", 32.0261, 8.68455),
+    ],
+    54: [
+        ourWorld2Track("sb", "3.7", 43.9542, 8.42912),
+    ],
+    60: [
+        ourWorld2Track("sb", "3.8", 42.9739, 10.3448),
+    ],
+    66: [
+        ourWorld2Track("sb", "4.1", 38.8889, 10.2171),
+        ourWorld2Track("sb", "4.2", 27.451, 22.7331),
+    ],
+    68: [
+        ourWorld2Track("sb", "4.3", 48.0392, 10.2171),
+    ],
+    70: [
+        ourWorld2Track("sb", "4.4", 37.5817, 11.1111),
+    ],
+    72: [
+        ourWorld2Track("sb", "4.5", 61.2745, 10.2171),
+        ourWorld2Track("sb", "4.6", 74.3464, 75.4789),
+    ],
+    73: [
+        ourWorld2Track("sb", "4.7", 59.1503, 7.40741),
+    ],
+    74: [
+        ourWorld2Track("sb", "4.8", 47.549, 6.25798),
+    ],
+    82: [
+        ourWorld2Track("sb", "5.1", 38.8889, 9.70626),
+        ourWorld2Track("sb", "5.2", 45.098, 22.2222),
+    ],
+    84: [
+        ourWorld2Track("sb", "5.3", 48.0392, 9.96169),
+    ],
+    86: [
+        ourWorld2Track("sb", "5.4", 26.9608, 9.70626),
+        ourWorld2Track("sb", "5.5", 72.0588, 25.2874),
+    ],
+    88: [
+        ourWorld2Track("sb", "5.6", 67.9739, 10.2171),
+    ],
+    89: [
+        ourWorld2Track("sb", "5.7", 41.9935, 8.30141),
+    ],
+    90: [
+        ourWorld2Track("sb", "5.8", 42.4837, 6.15581),
+    ],
+    98: [
+        ourWorld2Track("sb", "6.1", 38.8889, 8.17369),
+        ourWorld2Track("sb", "6.2", 54.7386, 12.7714),
+    ],
+    100: [
+        ourWorld2Track("sb", "6.3", 48.0392, 10.2171),
+    ],
+    102: [
+        ourWorld2Track("sb", "6.4", 27.9412, 9.45083),
+        ourWorld2Track("sb", "6.5", 74.8366, 19.4125),
+    ],
+    103: [
+        ourWorld2Track("sb", "6.6", 63.7255, 6.25798),
+    ],
+    104: [
+        ourWorld2Track("sb", "6.7", 8.00654, 19.0294),
+    ],
+    105: [
+        ourWorld2Track("sb", "6.8", 50.817, 7.27969),
+    ],
+    106: [
+        ourWorld2Track("sb", "6.9", 44.6078, 6.3857),
+    ],
+    112: [
+        ourWorld2Track("sb", "6.10", 42.9739, 10.4725),
+    ],
+    118: [
+        ourWorld2Track("sb", "7.1", 38.8889, 8.93997),
+        ourWorld2Track("sb", "7.2", 44.9346, 21.4559),
+    ],
+    120: [
+        ourWorld2Track("sb", "7.3", 48.0392, 10.2171),
+    ],
+    122: [
+        ourWorld2Track("sb", "7.4", 41.3399, 9.06769),
+    ],
+    124: [
+        ourWorld2Track("sb", "7.5", 81.8627, 10.0894),
+    ],
+    125: [
+        ourWorld2Track("sb", "7.6", 70.915, 10.3448),
+        ourWorld2Track("sb", "7.7", 86.6013, 28.7356),
+    ],
+    126: [
+        ourWorld2Track("sb", "7.8", 16.9935, 18.1354),
+    ],
+    134: [
+        ourWorld2Track("sb", "8.1", 38.8889, 8.17369),
+        ourWorld2Track("sb", "8.2", 54.7386, 14.0485),
+    ],
+    136: [
+        ourWorld2Track("sb", "8.3", 48.0392, 10.2171),
+    ],
+    138: [
+        ourWorld2Track("sb", "8.4", 61.2745, 8.68455),
+        ourWorld2Track("sb", "8.5", 57.3529, 25.5428),
+    ],
+    140: [
+        ourWorld2Track("sb", "8.6", 61.2745, 10.2171),
+        ourWorld2Track("sb", "8.7", 40.8497, 80.5875),
+    ],
+    141: [
+        ourWorld2Track("sb", "8.8", 56.5359, 7.40741),
+    ],
+    142: [
+        ourWorld2Track("sb", "8.9", 40.6863, 7.27969),
+    ],
+    150: [
+        ourWorld2Track("sb", "9.1", 38.8889, 9.70626),
+        ourWorld2Track("sb", "9.2", 45.2614, 22.2222),
+    ],
+    152: [
+        ourWorld2Track("sb", "9.3", 48.0392, 10.2171),
+    ],
+    154: [
+        ourWorld2Track("sb", "9.4", 75.9804, 7.79055),
+        ourWorld2Track("sb", "9.5", 40.8497, 33.5888),
+    ],
+    156: [
+        ourWorld2Track("sb", "9.6", 74.6732, 10.2171),
+    ],
+    157: [
+        ourWorld2Track("sb", "9.7", 45.915, 8.81226),
+    ],
+    158: [
+        ourWorld2Track("sb", "9.8", 40.6863, 7.40741),
+    ],
+    164: [
+        // 源书 TR 9.15 对应文件 9.9，录音内容已核对为 Grevy’s Zebras。
+        ourWorld2Track("sb", "9.9", 42.9739, 10.2171, "TR 9.15"),
+    ],
+    168: [
+        ourWorld2Track("sb", "10.1", 13.5621, 23.4994),
+    ],
+    // 第 111 页 TR 6.11 在原配套包中缺失，待补齐后再接入。
+};
+
+const ourWorld2WorkbookAudio: Record<number, OriginalAudioTrack[]> = {
+    5: [
+        ourWorld2Track("wb", "0.2", 86.7647, 12.1328),
+    ],
+    7: [
+        ourWorld2Track("wb", "0.3", 78.5948, 6.258),
+        ourWorld2Track("wb", "0.4", 50.9804, 74.3295),
+    ],
+    8: [
+        ourWorld2Track("wb", "1.1", 46.5686, 30.3959),
+    ],
+    10: [
+        ourWorld2Track("wb", "1.2", 73.0392, 59.6424),
+    ],
+    12: [
+        ourWorld2Track("wb", "1.3", 71.8954, 6.258),
+        ourWorld2Track("wb", "1.4", 69.4444, 42.2733),
+    ],
+    15: [
+        ourWorld2Track("wb", "1.5", 88.8889, 74.4572),
+    ],
+    16: [
+        ourWorld2Track("wb", "1.6", 41.3399, 7.2797),
+    ],
+    19: [
+        ourWorld2Track("wb", "1.7", 58.6601, 10.9834),
+    ],
+    22: [
+        ourWorld2Track("wb", "2.1", 67.8105, 10.9834),
+        ourWorld2Track("wb", "2.2", 67.9739, 41.7625),
+    ],
+    23: [
+        ourWorld2Track("wb", "2.3", 62.0915, 25.2874),
+    ],
+    25: [
+        ourWorld2Track("wb", "2.4", 37.4183, 8.046),
+    ],
+    27: [
+        ourWorld2Track("wb", "2.5", 88.8889, 69.8595),
+    ],
+    28: [
+        ourWorld2Track("wb", "2.6", 41.8301, 10.9834),
+    ],
+    32: [
+        ourWorld2Track("wb", "3.1", 44.281, 33.2056),
+    ],
+    34: [
+        ourWorld2Track("wb", "3.2", 77.6144, 56.8327),
+    ],
+    35: [
+        ourWorld2Track("wb", "3.3", 89.8693, 30.0128),
+    ],
+    36: [
+        ourWorld2Track("wb", "3.4", 68.3007, 9.7063),
+        ourWorld2Track("wb", "3.5", 60.4575, 26.8199),
+    ],
+    37: [
+        ourWorld2Track("wb", "3.6", 73.6928, 9.1954),
+    ],
+    39: [
+        ourWorld2Track("wb", "3.7", 73.8562, 10.9834),
+        ourWorld2Track("wb", "3.8", 88.8889, 83.5249),
+    ],
+    40: [
+        ourWorld2Track("wb", "3.9", 41.3399, 7.5351),
+    ],
+    45: [
+        ourWorld2Track("wb", "r1.1", 82.1895, 67.433),
+    ],
+    46: [
+        ourWorld2Track("wb", "4.1", 27.451, 44.8276),
+    ],
+    48: [
+        ourWorld2Track("wb", "4.2", 54.2484, 15.3257),
+    ],
+    50: [
+        ourWorld2Track("wb", "4.3", 40.3595, 64.1124),
+        ourWorld2Track("wb", "4.4", 56.3725, 68.0715),
+    ],
+    52: [
+        ourWorld2Track("wb", "4.5", 20.5882, 39.5913),
+    ],
+    53: [
+        ourWorld2Track("wb", "4.6", 76.3072, 68.4547),
+    ],
+    54: [
+        ourWorld2Track("wb", "4.7", 41.0131, 6.8966),
+    ],
+    58: [
+        ourWorld2Track("wb", "5.1", 50.4902, 33.461),
+    ],
+    60: [
+        ourWorld2Track("wb", "5.2", 52.1242, 16.092),
+    ],
+    61: [
+        ourWorld2Track("wb", "5.3", 43.7908, 73.4355),
+    ],
+    62: [
+        ourWorld2Track("wb", "5.4", 56.3725, 6.258),
+    ],
+    65: [
+        ourWorld2Track("wb", "5.5", 76.3072, 84.5466),
+    ],
+    66: [
+        ourWorld2Track("wb", "5.6", 41.8301, 10.8557),
+    ],
+    69: [
+        ourWorld2Track("wb", "5.7", 52.9412, 10.9834),
+    ],
+    70: [
+        ourWorld2Track("wb", "6.1", 74.183, 28.0971),
+    ],
+    72: [
+        ourWorld2Track("wb", "6.2", 77.9412, 8.4291),
+        ourWorld2Track("wb", "6.3", 42.4837, 45.083),
+    ],
+    73: [
+        ourWorld2Track("wb", "6.4", 43.7908, 85.1852),
+    ],
+    75: [
+        ourWorld2Track("wb", "6.5", 43.7908, 62.1967),
+    ],
+    77: [
+        ourWorld2Track("wb", "6.6", 76.3072, 79.3103),
+    ],
+    78: [
+        ourWorld2Track("wb", "6.7", 42.8105, 11.2388),
+    ],
+    83: [
+        ourWorld2Track("wb", "r2.1", 43.9542, 48.7867),
+    ],
+    84: [
+        ourWorld2Track("wb", "7.1", 54.085, 25.9259),
+    ],
+    86: [
+        ourWorld2Track("wb", "7.2", 66.0131, 15.7088),
+    ],
+    87: [
+        ourWorld2Track("wb", "7.3", 91.9935, 59.7701),
+    ],
+    90: [
+        ourWorld2Track("wb", "7.4", 85.2941, 78.2886),
+    ],
+    91: [
+        ourWorld2Track("wb", "7.5", 76.3072, 74.5849),
+    ],
+    92: [
+        ourWorld2Track("wb", "7.6", 41.5033, 8.3014),
+    ],
+    96: [
+        ourWorld2Track("wb", "8.1", 68.9542, 29.5019),
+    ],
+    98: [
+        ourWorld2Track("wb", "8.2", 56.0458, 7.6628),
+    ],
+    100: [
+        ourWorld2Track("wb", "8.3", 88.8889, 6.258),
+        ourWorld2Track("wb", "8.4", 90.5229, 22.0945),
+    ],
+    102: [
+        ourWorld2Track("wb", "8.5", 46.732, 27.7139),
+    ],
+    103: [
+        ourWorld2Track("wb", "8.6", 76.3072, 84.4189),
+    ],
+    104: [
+        ourWorld2Track("wb", "8.7", 41.0131, 6.8966),
+    ],
+    108: [
+        ourWorld2Track("wb", "9.1", 45.2614, 17.4968),
+    ],
+    110: [
+        ourWorld2Track("wb", "9.2", 83.6601, 10.9834),
+    ],
+    111: [
+        ourWorld2Track("wb", "9.3", 52.7778, 32.6948),
+    ],
+    114: [
+        ourWorld2Track("wb", "9.4", 61.7647, 73.1801),
+    ],
+    115: [
+        ourWorld2Track("wb", "9.5", 86.1111, 9.4508),
+        ourWorld2Track("wb", "9.6", 76.3072, 79.5658),
+    ],
+    116: [
+        ourWorld2Track("wb", "9.7", 41.0131, 6.8966),
+    ],
+    120: [
+        ourWorld2Track("wb", "r3.1", 53.7582, 73.1801),
+    ],
+};
+
 export const legacyAudioList = {
     //广告
     '1': [],
@@ -16067,6 +16485,8 @@ export const legacyAudioList = {
     '30': audioList30,
     // Oxford Discover 2e Level 6 练习册（无配套示范音频）
     '31': {},
+    "32": ourWorld2StudentAudio,
+    "33": ourWorld2WorkbookAudio,
 }
 
 const cambridgeReadingRoot = "https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/cambridge-reading";

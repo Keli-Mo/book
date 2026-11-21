@@ -99,10 +99,50 @@ async function checkCambridgeReading() {
   }
 }
 
+async function checkOurWorld2() {
+  for (const [bookId, kind, prefix, count] of [
+    ["32", "student-book", "ow2e_sb2_ame_", 84],
+    ["33", "workbook", "ow2e_wb2_ame_", 69],
+  ]) {
+    const bundle = buildFullBookPracticeBundle(bookId);
+    const reader = open(bookId, { page: "0" });
+    let tree = reader.render();
+    let clicked = 0;
+    for (const [index, practice] of bundle.practices.entries()) {
+      if (!practice.tracks.length) continue;
+      await directoryOf(tree).props.onSelect(index);
+      reader.render();
+      tree = reader.render();
+      const printedPage = bookId === "33" ? practice.imageIndex - 2 : practice.imageIndex;
+      assert.equal(textOf(byClass(tree, "practice-header__progress")).trim(), `第 ${printedPage} 页`);
+      assert.equal(imageOf(tree), concatImages[bookId][practice.imageIndex]);
+      const buttons = elements(tree).filter((node) => node.props?.className?.split(" ").includes("audio-hotspot"));
+      assert.equal(buttons.length, practice.tracks.length);
+      for (const [trackIndex, track] of practice.tracks.entries()) {
+        assert.equal(track.anchor, "center");
+        assert.match(track.url, new RegExp(`/our-world-2e/ame/level-2/${kind}/audio/${prefix}`));
+        buttons[trackIndex].props.onClick();
+        assert.equal(reader.audios.at(-1).src, track.url, "真实教材路由按钮应播放已核验音轨");
+        assert.ok(reader.audios.at(-1).events.includes("play"));
+        clicked += 1;
+      }
+    }
+    assert.equal(clicked, count, "两册全部153个播放入口都必须可调用");
+    reader.dispose();
+  }
+  const student = buildFullBookPracticeBundle("32");
+  assert.ok(student.practices.find(({ imageIndex }) => imageIndex === 111), "缺音频的书页仍然保留阅读及录音");
+  assert.equal(student.practices.flatMap(({ tracks }) => tracks).some(({ url }) => url.endsWith("_6.11.mp3")), false);
+  const alias = student.practices.find(({ imageIndex }) => imageIndex === 162).tracks;
+  assert.ok(alias.some(({ url, label }) => url.endsWith("/ow2e_sb2_ame_9.9.mp3") && label.includes("9.15")),
+    "TR 9.15 应保留书面标号，并播放内容核验的9.9源文件");
+}
+
 async function run() {
   await checkCambridgeReading();
+  await checkOurWorld2();
   assert.equal(typeof resolveHotspotAnchorOffset, "function", "热点锚点分类必须由可测试的纯函数统一维护");
-  const anchorCounts = { legacyTopLeft: 0, confirmedCenter: 0, thinkCenter: 0, od6Center: 0 };
+  const anchorCounts = { legacyTopLeft: 0, confirmedCenter: 0, thinkCenter: 0, od6Center: 0, ourWorld2Center: 0 };
   for (const book of BOOKS) {
     const bundle = buildBookPracticeBundle(book.id);
     for (const practice of bundle.practices) {
@@ -118,12 +158,15 @@ async function run() {
         } else if (book.seriesId === "think") {
           anchorCounts.thinkCenter += 1;
           expected = { offsetXPx: book.id === "26" ? -22 : -8, offsetYPx: 0 };
+        } else if (["32", "33"].includes(book.id)) {
+          anchorCounts.ourWorld2Center += 1;
+          expected = { offsetXPx: 0, offsetYPx: 0 };
         } else {
           anchorCounts.od6Center += 1;
           expected = { offsetXPx: 0, offsetYPx: 0 };
         }
         assert.deepEqual(
-          resolveHotspotAnchorOffset(book.id, book.seriesId, track.id),
+          resolveHotspotAnchorOffset(book.id, book.seriesId, track.id, track.anchor),
           expected,
           `教材 ${book.id} 热点 ${track.id} 的锚点类型必须与数据来源一致`,
         );
@@ -135,7 +178,8 @@ async function run() {
     confirmedCenter: 4,
     thinkCenter: 429,
     od6Center: 130,
-  }, "全部 2,640 个热点都必须且只能归入一种坐标锚点类型");
+    ourWorld2Center: 153,
+  }, "全部 2,793 个历史入口热点都必须且只能归入一种坐标锚点类型");
 
   for (const book of BOOKS) {
     const images = concatImages[book.id];
@@ -241,6 +285,6 @@ async function run() {
     assert.match(textOf(page.render()), /暂时无法打开训练/, `拒绝非法页索引 ${raw}`);
     page.dispose();
   }
-  console.log("29 本教材路由、剑桥阅读 37 个新增按钮和 1 个复用按钮的播放、旧链接/草稿兼容及录音回听通过");
+  console.log("31 本教材路由、剑桥阅读 37 个新增按钮和 1 个复用按钮的播放、旧链接/草稿兼容及录音回听通过");
 }
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => opened.forEach((page) => page.dispose()));

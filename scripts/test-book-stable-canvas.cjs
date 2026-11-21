@@ -39,10 +39,11 @@ const EXPECTED_CANVAS_SIZES = {
   "24": [1587, 2079], "25": [1587, 2079],
   "26": [1040, 1411], "27": [1040, 1411], "28": [1040, 1411], "29": [1040, 1411],
   "30": [1536, 1987], "31": [1536, 1984],
+  "32": [1536, 1966], "33": [1536, 1966],
 };
 
-test("当前 29 本教材都有稳定画布尺寸", () => {
-  assert.equal(Object.keys(EXPECTED_CANVAS_SIZES).length, 29);
+test("当前 31 本教材都有稳定画布尺寸", () => {
+  assert.equal(Object.keys(EXPECTED_CANVAS_SIZES).length, 31);
   for (const [bookId, [width, height]] of Object.entries(EXPECTED_CANVAS_SIZES)) {
     assert.deepEqual(
       normalize(readBookStableCanvasSize(bookId)),
