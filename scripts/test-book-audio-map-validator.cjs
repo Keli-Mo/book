@@ -7,11 +7,11 @@ const projectRoot = path.resolve(__dirname, "..");
 const report = validateBookData({ log: false });
 
 assert.equal(report.mappingVersion, "audio-key-minus-2/v1");
-assert.equal(report.books.length, 29, "应覆盖教材 3–31");
-assert.equal(report.imageCount, 4958, "教材图片总数应为 4,958");
-assert.equal(report.practicePageCount, 1717, "音频训练页总数应为 1,717");
-assert.equal(report.audioSegmentCount, 2677, "教材应有 2,677 个热点");
-assert.equal(report.mappings.length, 2677, "每个音频热点都应保留一条可追踪映射");
+assert.equal(report.books.length, 31, "应覆盖教材 3–33");
+assert.equal(report.imageCount, 5279, "教材图片总数应为 5,279");
+assert.equal(report.practicePageCount, 1840, "音频训练页总数应为 1,840");
+assert.equal(report.audioSegmentCount, 2830, "教材应有 2,830 个热点");
+assert.equal(report.mappings.length, 2830, "每个音频热点都应保留一条可追踪映射");
 assert.deepEqual(
   report.books.filter(({ bookId }) => Number(bookId) >= 26 && Number(bookId) <= 29)
     .map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) =>
@@ -25,7 +25,7 @@ assert.deepEqual(
   "Think 1/2 四书应保留所有来源图片及逐页音频热点",
 );
 assert.deepEqual(
-  report.books.slice(-2).map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) =>
+  report.books.filter(({ bookId }) => ["30", "31"].includes(bookId)).map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) =>
     ({ bookId, imageCount, audioPageCount, audioSegmentCount })),
   [
     { bookId: "30", imageCount: 201, audioPageCount: 93, audioSegmentCount: 130 },
@@ -37,6 +37,157 @@ assert.equal(report.mappings.some(({ bookId }) => bookId === "31"), false,
   "OD6 练习册不能补造学生书音频热点");
 assert.equal(report.books.find(({ bookId }) => bookId === "31").noAudioCatalogRanges.length, 19,
   "无音频练习册的18个单元及写作资源必须完整纳入目录报告");
+
+// 来自美音源PDF逐字符提取的 TR 标识及左右页位置，按书页内印刷顺序排列。
+// 学生书 p162 的 TR 9.15 内容核验后使用源文件 9.9；缺失的 6.11 不生成链接。
+const expectedOurWorld2 = [
+  { bookId: "32", kind: "student-book", prefix: "ow2e_sb2_ame_", pages: [
+    [4, "0.1 0.2"],
+    [6, "0.3 0.4"],
+    [8, "0.5 0.6"],
+    [9, "0.7"],
+    [12, "1.1 1.2"],
+    [14, "1.3"],
+    [16, "1.4 1.5"],
+    [18, "1.6 1.7"],
+    [19, "1.8"],
+    [20, "1.9"],
+    [28, "2.1 2.2"],
+    [30, "2.3"],
+    [32, "2.4"],
+    [34, "2.5"],
+    [35, "2.6"],
+    [36, "2.7"],
+    [44, "3.1 3.2"],
+    [46, "3.3"],
+    [48, "3.4"],
+    [50, "3.5"],
+    [51, "3.6"],
+    [52, "3.7"],
+    [58, "3.8"],
+    [64, "4.1 4.2"],
+    [66, "4.3"],
+    [68, "4.4"],
+    [70, "4.5 4.6"],
+    [71, "4.7"],
+    [72, "4.8"],
+    [80, "5.1 5.2"],
+    [82, "5.3"],
+    [84, "5.4 5.5"],
+    [86, "5.6"],
+    [87, "5.7"],
+    [88, "5.8"],
+    [96, "6.1 6.2"],
+    [98, "6.3"],
+    [100, "6.4 6.5"],
+    [101, "6.6"],
+    [102, "6.7"],
+    [103, "6.8"],
+    [104, "6.9"],
+    [110, "6.10"],
+    [116, "7.1 7.2"],
+    [118, "7.3"],
+    [120, "7.4"],
+    [122, "7.5"],
+    [123, "7.6 7.7"],
+    [124, "7.8"],
+    [132, "8.1 8.2"],
+    [134, "8.3"],
+    [136, "8.4 8.5"],
+    [138, "8.6 8.7"],
+    [139, "8.8"],
+    [140, "8.9"],
+    [148, "9.1 9.2"],
+    [150, "9.3"],
+    [152, "9.4 9.5"],
+    [154, "9.6"],
+    [155, "9.7"],
+    [156, "9.8"],
+    [162, "9.9"],
+    [166, "10.1"],
+  ] },
+  { bookId: "33", kind: "workbook", prefix: "ow2e_wb2_ame_", pages: [
+    [3, "0.2"],
+    [5, "0.3 0.4"],
+    [6, "1.1"],
+    [8, "1.2"],
+    [10, "1.3 1.4"],
+    [13, "1.5"],
+    [14, "1.6"],
+    [17, "1.7"],
+    [20, "2.1 2.2"],
+    [21, "2.3"],
+    [23, "2.4"],
+    [25, "2.5"],
+    [26, "2.6"],
+    [30, "3.1"],
+    [32, "3.2"],
+    [33, "3.3"],
+    [34, "3.4 3.5"],
+    [35, "3.6"],
+    [37, "3.7 3.8"],
+    [38, "3.9"],
+    [43, "r1.1"],
+    [44, "4.1"],
+    [46, "4.2"],
+    [48, "4.3 4.4"],
+    [50, "4.5"],
+    [51, "4.6"],
+    [52, "4.7"],
+    [56, "5.1"],
+    [58, "5.2"],
+    [59, "5.3"],
+    [60, "5.4"],
+    [63, "5.5"],
+    [64, "5.6"],
+    [67, "5.7"],
+    [68, "6.1"],
+    [70, "6.2 6.3"],
+    [71, "6.4"],
+    [73, "6.5"],
+    [75, "6.6"],
+    [76, "6.7"],
+    [81, "r2.1"],
+    [82, "7.1"],
+    [84, "7.2"],
+    [85, "7.3"],
+    [88, "7.4"],
+    [89, "7.5"],
+    [90, "7.6"],
+    [94, "8.1"],
+    [96, "8.2"],
+    [98, "8.3 8.4"],
+    [100, "8.5"],
+    [101, "8.6"],
+    [102, "8.7"],
+    [106, "9.1"],
+    [108, "9.2"],
+    [109, "9.3"],
+    [112, "9.4"],
+    [113, "9.5 9.6"],
+    [114, "9.7"],
+    [118, "r3.1"],
+  ] },
+];
+for (const { bookId, kind, prefix, pages } of expectedOurWorld2) {
+  const actual = report.mappings.filter((mapping) => mapping.bookId === bookId);
+  const expected = pages.flatMap(([imageIndex, codes]) => codes.split(" ").map((code) => ({
+    imageIndex, rawAudioKey: imageIndex + 2, audioFilename: `${prefix}${code}.mp3`,
+  })));
+  assert.deepEqual(actual.map(({ imageIndex, rawAudioKey, audioFilename }) => ({ imageIndex, rawAudioKey, audioFilename })),
+    expected, `Our World 2 ${kind} 全部音轨须对应源PDF的页码、左右半页和活动顺序`);
+  assert.ok(actual.every(({ audioFilename }) => !audioFilename.includes("6.11") || bookId === "33"));
+}
+assert.deepEqual(
+  report.books.filter(({ bookId }) => ["32", "33"].includes(bookId))
+    .map(({ bookId, imageCount, audioPageCount, audioSegmentCount }) => ({ bookId, imageCount, audioPageCount, audioSegmentCount })),
+  [
+    { bookId: "32", imageCount: 191, audioPageCount: 63, audioSegmentCount: 84 },
+    { bookId: "33", imageCount: 130, audioPageCount: 60, audioSegmentCount: 69 },
+  ],
+);
+assert.equal(report.mappings.some(({ bookId, audioFilename }) => bookId === "33" && audioFilename === "ow2e_wb2_ame_0.1.mp3"), false,
+  "ZIP中无书内TR标识的0.1不能随意挂到练习页");
 
 const thinkRepeatedTrack = report.mappings.filter(({ bookId, audioFilename }) =>
   bookId === "26" && audioFilename === "Thk2e_BrE_L1_SB_Unit_1_p15_t04.mp3");
@@ -273,5 +424,5 @@ assert.match(cli.stdout, /教材 31：185 张图片，0 个音频页，0 段音�
   "无音频练习册的命令行报告应明确标记无热点");
 
 console.log(
-  "教材音频映射校验器测试通过：29 本、4,958 图、1,717 页、2,677 个热点，OD6 两册和 Think 1/2 历史映射已核对，2 个历史越界仅警告。",
+  "教材音频映射校验器测试通过：31 本、5,279 图、1,840 页、2,830 个热点，OD6 两册和 Think 1/2 历史映射已核对，2 个历史越界仅警告。",
 );

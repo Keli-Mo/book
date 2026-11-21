@@ -64,7 +64,7 @@ const concatImages = {
     //Our World L1 练习册
     "12": [
         // 封面页
-        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_L1_Workbook.png',
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_2E_L1_Studentbook.png',
         // 原有页面
         ...Array(127).fill(0).map((_, index) =>
             'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_L1_Workbook-%E5%9B%BE%E7%89%87/OW_2E_L1_Workbook_' + (index + 1) + '.png?'
@@ -73,7 +73,7 @@ const concatImages = {
     //Our World Starter 学生用书
     "13": [
         // 封面页
-        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Studentbook.png',
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/our-world-2e/ame/starter/student-book/pages/ow2e-starter-sb_0.jpg',
         // 原有页面
         ...Array(112).fill(0).map((_, index) =>
             'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_Starter_Studentbook-%E5%9B%BE%E7%89%87/OW_2E_Starter_Studentbook_' + (index + 1) + '.png'
@@ -82,7 +82,7 @@ const concatImages = {
     //Our World Starter 练习册
     "14": [
         // 封面页
-        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Workbook-1.png',
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/our-world-2e/ame/starter/student-book/pages/ow2e-starter-sb_0.jpg',
         // 原有页面
         ...Array(65).fill(0).map((_, index) =>
             'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/Our_World_2E_Starter_Workbook-%E5%9B%BE%E7%89%87/OW_2E_Starter_Workbook_' + (index + 1) + '.png'
@@ -183,6 +183,13 @@ const concatImages = {
         'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/oxford-discover-2e-l6/workbook/pages/od6-wb_' + index + '.jpg'
     ),
     
+    // Our World 2：跨页按左、右拆开，封面使用索引 0。
+    "32": Array.from({ length: 191 }, (_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/our-world-2e/ame/level-2/student-book/pages/ow2e-l2-sb_' + index + '.jpg'
+    ),
+    "33": Array.from({ length: 130 }, (_, index) =>
+        'https://636c-cloud1-6geu18jg425a604e-1360744728.tcb.qcloud.la/our-world-2e/ame/level-2/workbook/pages/ow2e-l2-wb_' + index + '.jpg'
+    ),
     ...images,
 }
 export { concatImages };

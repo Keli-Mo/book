@@ -57,7 +57,7 @@ export type BookPracticeBundle = {
 
 const COVER_WHITELIST: Record<string, string> = {
   "11": "OW_2E_L1_Studentbook.png",
-  "12": "OW_L1_Workbook.png",
+  "12": "OW_2E_L1_Studentbook.png",
   "13": "OW_Starter_Studentbook.png",
   "14": "OW_Starter_Workbook-1.png",
 };

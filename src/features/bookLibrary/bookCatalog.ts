@@ -13,6 +13,7 @@ export type BookCatalogItem = {
   level: string;
   kind: string;
   cover: string;
+  coverLabel?: string;
   available: boolean;
 };
 
@@ -140,8 +141,9 @@ export const BOOKS: BookCatalogItem[] = [
     level: "Level 1",
     kind: "练习册",
     cover: cover(
-      "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_L1_Workbook.png",
+      "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_2E_L1_Studentbook.png",
     ),
+    coverLabel: "Workbook",
     available: true,
   },
   {
@@ -151,7 +153,7 @@ export const BOOKS: BookCatalogItem[] = [
     level: "Starter",
     kind: "学生用书",
     cover: cover(
-      "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Studentbook.png",
+      "our-world-2e/ame/starter/student-book/pages/ow2e-starter-sb_0.jpg",
     ),
     available: true,
   },
@@ -162,8 +164,9 @@ export const BOOKS: BookCatalogItem[] = [
     level: "Starter",
     kind: "练习册",
     cover: cover(
-      "%E5%B0%81%E9%9D%A2%E5%9B%BE%E7%89%87-%E4%B9%A6%E6%9E%B6/OW_Starter_Workbook-1.png",
+      "our-world-2e/ame/starter/student-book/pages/ow2e-starter-sb_0.jpg",
     ),
+    coverLabel: "Workbook",
     available: true,
   },
   // 原注释写的是 1st–5th edition，实际资源是第二版的 1–5 级。
@@ -342,6 +345,25 @@ export const BOOKS: BookCatalogItem[] = [
     cover: cover("oxford-discover-2e-l6/workbook/pages/od6-wb_0.jpg"),
     available: true,
   },
+  {
+    id: "32",
+    seriesId: "our-world",
+    title: "Our World 2 · 学生用书",
+    level: "Level 2",
+    kind: "学生用书",
+    cover: cover("our-world-2e/ame/level-2/student-book/pages/ow2e-l2-sb_0.jpg"),
+    available: true,
+  },
+  {
+    id: "33",
+    seriesId: "our-world",
+    title: "Our World 2 · 练习册",
+    level: "Level 2",
+    kind: "练习册",
+    cover: cover("our-world-2e/ame/level-2/student-book/pages/ow2e-l2-sb_0.jpg"),
+    coverLabel: "Workbook",
+    available: true,
+  },
 ];
 
 const bookById = new Map(BOOKS.map((book) => [book.id, book]));
@@ -374,7 +396,7 @@ export const BOOK_SERIES: BookSeries[] = [
     id: "our-world",
     title: "Our World",
     shortTitle: "OW",
-    rangeLabel: "Starter · Level 1",
+    rangeLabel: "Starter · Level 1–2",
     cover: requireBook("12").cover,
   }),
   createBookSeries({

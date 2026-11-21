@@ -3157,6 +3157,11 @@ export function PracticeSession({
                             }}
                           />
                         ) : null}
+                        {isSlideRetained && item.imageIndex === 0 && bundle.book.coverLabel ? (
+                          <Text className='practice-book-page__cover-label'>
+                            {bundle.book.coverLabel}
+                          </Text>
+                        ) : null}
                         {showHotspots && isActiveSlide && (!stablePortraitCanvasNaturalSize || fittedBookSize) ? (
                           <View
                             className={`practice-book-page__hotspots${

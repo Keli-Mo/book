@@ -94,7 +94,9 @@
 
     &::after { left: 62PX; }
 
-    &__cover { width: 51PX; height: 68PX; flex-basis: 51PX; }
+    &__cover-stack { width: 51PX; flex-basis: 51PX; }
+    &__cover { width: 51PX; height: 68PX; }
+    &__cover-label { font-size: 9PX; line-height: 12PX; }
     &__text { margin-left: 11PX; }
     &__title { font-size: 13PX; }
     &__meta { font-size: 11PX; }
@@ -198,13 +200,32 @@
   box-sizing: border-box;
   align-items: center;
 
-  &__cover {
+  &__cover-stack {
+    display: flex;
     flex: 0 0 102rpx;
     width: 102rpx;
-    height: 136rpx;
+    flex-direction: column;
+    overflow: hidden;
     border-radius: 8rpx;
-    background: #eef3f1;
     box-shadow: 0 4rpx 14rpx rgba(26, 54, 44, 0.12);
+  }
+
+  &__cover {
+    display: block;
+    flex: none;
+    width: 102rpx;
+    height: 136rpx;
+    background: #eef3f1;
+  }
+
+  &__cover-label {
+    display: block;
+    background: #00843d;
+    color: #ffffff;
+    font-size: 18rpx;
+    font-weight: 700;
+    line-height: 24rpx;
+    text-align: center;
   }
 
   &__text {

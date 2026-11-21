@@ -117,6 +117,25 @@ const resolveOxfordDiscover6WorkbookPageLabel = (imageIndex: number): string | u
   return undefined;
 };
 
+const resolveOurWorld2StudentPageLabel = (imageIndex: number): string | undefined => {
+  if (imageIndex === 0) return "封面";
+  if (imageIndex === 1) return "扉页与目录";
+  if (imageIndex === 2 || imageIndex === 3) return "Scope and Sequence";
+  if (imageIndex >= 4 && imageIndex <= 182) return `第 ${imageIndex} 页`;
+  if (imageIndex >= 183 && imageIndex <= 189) return "贴纸";
+  if (imageIndex === 190) return "致谢";
+  return undefined;
+};
+
+const resolveOurWorld2WorkbookPageLabel = (imageIndex: number): string | undefined => {
+  if (imageIndex === 0) return "封面";
+  if (imageIndex === 1) return "扉页";
+  if (imageIndex === 2) return "目录";
+  if (imageIndex >= 3 && imageIndex <= 128) return `第 ${imageIndex - 2} 页`;
+  if (imageIndex === 129) return "致谢";
+  return undefined;
+};
+
 const VERIFIED_PAGE_LABELS: Readonly<Record<string, (imageIndex: number) => string | undefined>> = {
   "3": resolveCasaPageLabel,
   "4": resolveCasaPageLabel,
@@ -153,6 +172,8 @@ const VERIFIED_PAGE_LABELS: Readonly<Record<string, (imageIndex: number) => stri
   "29": resolveThinkWorkbookPageLabel,
   "30": resolveOxfordDiscover6StudentPageLabel,
   "31": resolveOxfordDiscover6WorkbookPageLabel,
+  "32": resolveOurWorld2StudentPageLabel,
+  "33": resolveOurWorld2WorkbookPageLabel,
 };
 
 export const resolveBookPageLabel = (

@@ -152,4 +152,4 @@ assert.equal(api(createStore(null)).saveFullReadingProgress("missing", 0), false
 assert.equal(api(createStore(null)).saveFullReadingProgress("3", -1), false);
 assert.equal(api(createStore(null)).saveFullReadingProgress("3", 999999), false);
 
-console.log("阅读进度测试通过：29 册全页稳定索引、OD6 无音频练习册、旧音频原页及损坏/Storage 故障均正确。");
+console.log("阅读进度测试通过：31 册全页稳定索引、OD6 无音频练习册、旧音频原页及损坏/Storage 故障均正确。");

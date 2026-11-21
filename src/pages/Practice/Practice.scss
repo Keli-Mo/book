@@ -104,6 +104,20 @@
     position: relative;
     z-index: 1;
   }
+  &__cover-label {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 2;
+    background: #00843d;
+    color: #ffffff;
+    font-size: 36rpx;
+    font-weight: 700;
+    line-height: 1.6;
+    text-align: center;
+    pointer-events: none;
+  }
   &__prefetch {
     position: absolute;
     width: 0;

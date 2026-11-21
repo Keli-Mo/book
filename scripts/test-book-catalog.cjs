@@ -28,11 +28,11 @@ vm.runInNewContext(compiled.outputText, {
 const { BOOKS, BOOK_SERIES, filterBooks, resolveBookAction } =
   moduleContainer.exports;
 
-assert.equal(BOOKS.length, 29, "应展示 29 本真实教材，不包含两张课程海报");
+assert.equal(BOOKS.length, 31, "应展示 31 本真实教材，不包含两张课程海报");
 assert.deepEqual(
   Array.from(BOOKS, (book) => Number(book.id)),
-  Array.from({ length: 29 }, (_, index) => index + 3),
-  "教材 ID 应连续覆盖 3–31",
+  Array.from({ length: 31 }, (_, index) => index + 3),
+  "教材 ID 应连续覆盖 3–33",
 );
 assert.ok(
   BOOKS.every((book) => book.cover.startsWith("https://")),
@@ -40,8 +40,8 @@ assert.ok(
 );
 assert.deepEqual(
   Array.from(BOOKS.filter((book) => book.available), (book) => book.id),
-  Array.from({ length: 29 }, (_, index) => String(index + 3)),
-  "ID 3–31 的 29 本教材都应开放跟读",
+  Array.from({ length: 31 }, (_, index) => String(index + 3)),
+  "ID 3–33 的 31 本教材都应开放跟读",
 );
 assert.equal(BOOK_SERIES.length, 6, "首页应展示 6 个教材系列");
 assert.deepEqual(
@@ -50,7 +50,7 @@ assert.deepEqual(
   ),
   {
     casa: 4,
-    "our-world": 4,
+    "our-world": 6,
     "oxford-discover": 7,
     "reading-explorer": 6,
     cambridge: 4,
@@ -141,8 +141,28 @@ assert.deepEqual(
 );
 assert.deepEqual(
   Array.from(filterBooks(BOOKS, "our-world", "练习册"), (book) => book.id),
-  ["12", "14"],
+  ["12", "14", "33"],
   "搜索与系列筛选应能组合使用",
+);
+assert.deepEqual(
+  Array.from(filterBooks(BOOKS, "our-world", "Level 2"), (book) => book.id),
+  ["32", "33"],
+  "Our World Level 2 的学生书和练习册都应可搜索",
+);
+for (const [studentId, workbookId] of [["13", "14"], ["32", "33"]]) {
+  const student = BOOKS.find(({ id }) => id === studentId);
+  const workbook = BOOKS.find(({ id }) => id === workbookId);
+  assert.equal(workbook.cover, student.cover, "练习册按用户要求复用对应学生书封面");
+  assert.equal(workbook.coverLabel, "Workbook", "练习册需有独立 Workbook 标签");
+  assert.equal(student.coverLabel, undefined, "学生书不显示 Workbook 标签");
+}
+assert.match(BOOKS.find(({ id }) => id === "13").cover, /\/our-world-2e\/ame\/starter\/student-book\/pages\/ow2e-starter-sb_0\.jpg$/);
+assert.deepEqual(
+  Array.from(BOOKS.filter(({ id }) => ["32", "33"].includes(id)), ({ id, title, level, kind }) => ({ id, title, level, kind })),
+  [
+    { id: "32", title: "Our World 2 · 学生用书", level: "Level 2", kind: "学生用书" },
+    { id: "33", title: "Our World 2 · 练习册", level: "Level 2", kind: "练习册" },
+  ],
 );
 assert.deepEqual(
   JSON.parse(JSON.stringify(resolveBookAction(BOOKS[0]))),
@@ -182,4 +202,4 @@ assert.deepEqual(
   "普通教材应从原图片第 0 张进入完整训练页",
 );
 
-console.log("教材目录测试通过：29 本教材、6 个系列、开放状态、路由和搜索筛选均正确。");
+console.log("教材目录测试通过：31 本教材、6 个系列、开放状态、路由和搜索筛选均正确。");

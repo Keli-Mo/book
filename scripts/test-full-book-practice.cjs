@@ -15,7 +15,7 @@ const {
 const { buildBookPracticeBundle, buildFullBookPracticeBundle } = loadModel("src/features/listeningPractice/bookPractice.ts");
 const expectedCounts = [
   191, 191, 193, 195, 210, 80, 187, 76, 183, 123, 109, 62, 193, 193,
-  194, 194, 202, 177, 177, 193, 209, 225, 273, 132, 126, 132, 126, 201, 185,
+  194, 194, 202, 177, 177, 193, 209, 225, 273, 132, 126, 132, 126, 201, 185, 184, 130,
 ];
 const sourceBefore = JSON.stringify({ concatImages, allAudioList, catalogLists });
 
@@ -161,6 +161,25 @@ for (let imageIndex = 2; imageIndex <= 184; imageIndex += 1) {
   assert.equal(od6Workbook.practices[imageIndex].pageLabel, `第 ${imageIndex} 页`);
 }
 
+const ow2Student = buildFullBookPracticeBundle("32");
+assert.deepEqual(ow2Student.practices.slice(0, 4).map(({ pageLabel }) => pageLabel),
+  ["封面", "扉页与目录", "Scope and Sequence", "Scope and Sequence"]);
+assert.deepEqual(concatImages["32"].map((_, index) => index).filter((index) =>
+  !ow2Student.practices.some(({ imageIndex }) => imageIndex === index)),
+  [172, 174, 180, 183, 184, 186, 188], "只隐藏逐页核验的空白页，保留彩色卡背");
+for (const page of ow2Student.practices.filter(({ imageIndex }) => imageIndex >= 4 && imageIndex <= 182)) {
+  assert.equal(page.pageLabel, `第 ${page.imageIndex} 页`);
+}
+assert.equal(ow2Student.practices.at(-1).pageLabel, "致谢");
+const ow2Workbook = buildFullBookPracticeBundle("33");
+assert.deepEqual(ow2Workbook.practices.slice(0, 4).map(({ pageLabel }) => pageLabel),
+  ["封面", "扉页", "目录", "第 1 页"], "按目录和内容页序修正源PDF首练习误印的页脚3");
+for (let imageIndex = 3; imageIndex <= 128; imageIndex += 1) {
+  assert.equal(ow2Workbook.practices[imageIndex].pageLabel, `第 ${imageIndex - 2} 页`);
+  assert.equal(ow2Workbook.practices[imageIndex].imageIndex, imageIndex);
+}
+assert.equal(ow2Workbook.practices[129].pageLabel, "致谢");
+
 assert.equal(typeof buildFullBookPracticeBundle, "function", "必须提供独立的全页构建器，同时保留旧音频索引模型");
 for (const id of ["missing", "1", "2"]) {
   assert.equal(buildFullBookPracticeBundle(id), null, "未知教材和广告图片不得进入全页训练");
@@ -217,10 +236,10 @@ for (const [bookIndex, book] of BOOKS.entries()) {
   totalAudioPages += full.practices.filter((page) => page.tracks.length > 0).length;
   totalTracks += full.practices.reduce((sum, page) => sum + page.tracks.length, 0);
 }
-assert.equal(BOOKS.length, 29);
-assert.equal(totalPages, 4932);
-assert.equal(totalAudioPages, 1717);
-assert.equal(totalTracks, 2677);
+assert.equal(BOOKS.length, 31);
+assert.equal(totalPages, 5246);
+assert.equal(totalAudioPages, 1840);
+assert.equal(totalTracks, 2830);
 assert.equal(JSON.stringify({ concatImages, allAudioList, catalogLists }), sourceBefore, "不得改写或补造源图片、音频、目录");
 for (const id of ["3", "4", "5", "6"]) {
   const casa = buildFullBookPracticeBundle(id);
@@ -236,7 +255,7 @@ for (const id of ["3", "4", "5", "6"]) {
     );
   }
 }
-for (const id of ["11", "12", "13", "14", "26", "27", "28", "29", "30", "31"]) {
+for (const id of ["11", "12", "13", "14", "26", "27", "28", "29", "30", "31", "32", "33"]) {
   const cover = buildFullBookPracticeBundle(id).practices[0];
   assert.equal(cover.pageNumber, 0);
   assert.equal(cover.pageLabel, ["27", "29"].includes(id) ? "扉页" : "封面");
@@ -245,4 +264,4 @@ for (const id of ["11", "12", "13", "14", "26", "27", "28", "29", "30", "31"]) {
 assert.deepEqual(buildBookPracticeBundle("31").practices, [], "OD6 练习册明确没有示范音频");
 assert.equal(buildFullBookPracticeBundle("31").practices.every((page) => page.tracks.length === 0), true,
   "无音频练习册的185页均可翻页和录音，不能补造学生书热点");
-console.log("全页模型验证通过：29 册、4,932 个可见页、1,717 个音频页和 2,677 段音轨，旧映射保持不变。");
+console.log("全页模型验证通过：31 册、5,246 个可见页、1,840 个音频页和 2,830 段音轨，旧映射保持不变。");
