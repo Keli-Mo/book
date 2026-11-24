@@ -1,0 +1,262 @@
+.voice-orb-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 137PX;
+  max-height: 190PX;
+  flex: none;
+
+  .voice-orb__ripple {
+    position: absolute;
+    width: 105PX;
+    height: 105PX;
+    box-sizing: border-box;
+    border: 1PX solid rgba(43, 132, 94, .18);
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &--recording .voice-orb__ripple,
+  &--repeat-recording .voice-orb__ripple {
+    animation: voice-orb-ripple 2s ease-out infinite;
+  }
+
+  &--recording .voice-orb__ripple--second,
+  &--repeat-recording .voice-orb__ripple--second { animation-delay: 1s; }
+
+  &--repeat-recording .voice-orb__ripple {
+    border-style: dashed;
+    border-color: rgba(35, 148, 145, .35);
+  }
+}
+
+button.voice-orb,
+button.voice-orb[disabled] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 98PX;
+  height: 98PX;
+  max-width: 112PX;
+  max-height: 112PX;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: visible;
+  border: 0;
+  border-radius: 50%;
+  color: #146342;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0;
+  line-height: 1;
+  opacity: 1;
+  transition: transform .18s ease;
+
+  .voice-orb__surface {
+    position: absolute;
+    top: -35PX;
+    left: -35PX;
+    width: 168PX;
+    height: 168PX;
+    // The transparent asset includes the selected matte surface and soft halo.
+    pointer-events: none;
+  }
+
+  > view { z-index: 1; }
+  &::after { border: 0; }
+}
+
+button.voice-orb.voice-orb--idle .voice-orb__surface {
+  animation: voice-orb-breathe 4s ease-in-out infinite;
+}
+
+button.voice-orb.voice-orb--pressed {
+  transform: scale(.95);
+}
+
+button.voice-orb.voice-orb--repeat-recording {
+  color: #176556;
+}
+
+button.voice-orb.voice-orb--blocked,
+button.voice-orb.voice-orb--blocked[disabled] {
+  color: #718c7e;
+
+  .voice-orb__surface { opacity: .4; }
+}
+
+.voice-orb {
+  &__stop {
+    position: relative;
+    width: 21.5PX;
+    height: 21.5PX;
+    border-radius: 5PX;
+    background: currentColor;
+  }
+
+  &--speaking &__stop {
+    width: 17PX;
+    height: 17PX;
+    margin-top: -10.5PX;
+    border-radius: 4PX;
+  }
+
+  &__wave {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3.5PX;
+    width: 39PX;
+    height: 32PX;
+  }
+
+  &__bar {
+    width: 5PX;
+    height: 21PX;
+    border-radius: 999PX;
+    background: currentColor;
+    transform-origin: center;
+  }
+  &__bar--0, &__bar--4 { height: 10PX; animation-delay: -.15s; }
+  &__bar--1 { animation-delay: -.6s; }
+  &__bar--2 { height: 32PX; animation-delay: -.35s; }
+  &__bar--3 { animation-delay: -.8s; }
+
+  &--speaking &__wave { position: absolute; left: 29.5PX; bottom: 19PX; transform: scaleY(.5); }
+  &--speaking &__bar {
+    animation-name: voice-orb-wave;
+    animation-duration: .95s;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+
+  &__repeat {
+    position: absolute;
+    right: 15PX;
+    bottom: 15PX;
+    width: 16PX;
+    height: 16PX;
+    box-sizing: border-box;
+    border: 1.5PX solid currentColor;
+    border-left-color: transparent;
+    border-radius: 50%;
+    transform: rotate(-25deg);
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: -2PX;
+      left: -0.5PX;
+      width: 0;
+      height: 0;
+      border: 3.5PX solid transparent;
+      border-right-color: currentColor;
+      transform: rotate(-15deg);
+    }
+  }
+
+  &__spinner {
+    position: absolute;
+    width: 34PX;
+    height: 34PX;
+    box-sizing: border-box;
+    border: 2PX solid rgba(20, 99, 66, .16);
+    border-top-color: currentColor;
+    border-right-color: rgba(20, 99, 66, .55);
+    border-radius: 50%;
+    animation: voice-orb-spin 1.25s linear infinite;
+  }
+
+  &--processing &__spinner { width: 45PX; height: 45PX; border-width: 1.5PX; animation-duration: 2.4s; }
+
+  &__dots { position: relative; display: flex; gap: 4PX; align-items: center; }
+  &__dot {
+    width: 4.5PX;
+    height: 4.5PX;
+    background: currentColor;
+    border-radius: 50%;
+    animation: voice-orb-dot 1.35s ease-in-out infinite;
+  }
+  &__dot--1 { animation-delay: .15s; }
+  &__dot--2 { animation-delay: .3s; }
+
+  &__lock { position: relative; width: 27PX; height: 32.5PX; }
+  &__lock-shackle {
+    position: absolute;
+    top: 0;
+    left: 6PX;
+    width: 15PX;
+    height: 18.5PX;
+    box-sizing: border-box;
+    border: 2PX solid currentColor;
+    border-radius: 9PX 9PX 0 0;
+  }
+  &__lock-body {
+    position: absolute;
+    top: 12.5PX;
+    left: 1.5PX;
+    width: 24PX;
+    height: 18PX;
+    border: 2PX solid currentColor;
+    border-radius: 4.5PX;
+    box-sizing: border-box;
+    background: #e7f0e9;
+  }
+
+  &__error-mark {
+    position: absolute;
+    right: 13.5PX;
+    bottom: 15.5PX;
+    width: 17PX;
+    height: 17PX;
+    border-radius: 50%;
+    background: #fff5df;
+    box-shadow: 0 1PX 2.5PX rgba(73, 92, 53, .12);
+  }
+  &__error-stroke { position: absolute; top: 3.5PX; left: 7.5PX; width: 2PX; height: 6PX; border-radius: 1PX; background: #a8691f; }
+  &__error-dot { position: absolute; top: 11PX; left: 7.5PX; width: 2PX; height: 2PX; border-radius: 50%; background: #a8691f; }
+}
+
+@keyframes voice-orb-breathe {
+  0%, 100% { opacity: .84; transform: scale(.98); }
+  50% { opacity: 1; transform: scale(1.02); }
+}
+@keyframes voice-orb-ripple {
+  0% { opacity: .7; transform: scale(.95); }
+  100% { opacity: 0; transform: scale(1.31); }
+}
+@keyframes voice-orb-wave {
+  from { transform: scaleY(.55); opacity: .65; }
+  to { transform: scaleY(1.1); opacity: 1; }
+}
+@keyframes voice-orb-spin { to { transform: rotate(360deg); } }
+@keyframes voice-orb-dot {
+  0%, 70%, 100% { opacity: .42; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-2.5PX); }
+}
+
+@media (max-height: 560px) {
+  .voice-orb-stage { height: 107PX; }
+  button.voice-orb, button.voice-orb[disabled] { transform: scale(.86); }
+  button.voice-orb.voice-orb--pressed { transform: scale(.82); }
+  .voice-orb-stage .voice-orb__ripple { width: 90PX; height: 90PX; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.voice-orb.voice-orb--idle .voice-orb__surface,
+  .voice-orb-stage .voice-orb__ripple,
+  .voice-orb .voice-orb__bar,
+  .voice-orb .voice-orb__spinner,
+  .voice-orb .voice-orb__dot { animation: none; }
+  button.voice-orb, button.voice-orb[disabled] { transition: none; }
+  .voice-orb-stage--recording .voice-orb__ripple--first,
+  .voice-orb-stage--repeat-recording .voice-orb__ripple--first { opacity: .6; transform: scale(1.08); }
+}

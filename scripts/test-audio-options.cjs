@@ -10,8 +10,12 @@ const compiled = ts.transpileModule(
   fs.readFileSync(path.join(__dirname, "../src/app.ts"), "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 } },
 ).outputText;
+const compiledAudioRuntime = ts.transpileModule(
+  fs.readFileSync(path.join(__dirname, "../src/features/listeningPractice/audioRuntime.ts"), "utf8"),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 } },
+).outputText;
 
-const launchApp = (audioError) => {
+const launchApp = (audioError, platform = "ios") => {
   let onLaunch;
   let cloudInitializations = 0;
   let recordingRecoveryChecks = 0;
@@ -24,6 +28,12 @@ const launchApp = (audioError) => {
       return audioError ? Promise.reject(audioError) : Promise.resolve({});
     },
   };
+  const audioRuntime = { exports: {} };
+  vm.runInNewContext(compiledAudioRuntime, {
+    module: audioRuntime,
+    exports: audioRuntime.exports,
+    wx: { getDeviceInfo: () => ({ platform }) },
+  });
   const loaded = { exports: {} };
   vm.runInNewContext(compiled, {
     module: loaded,
@@ -33,6 +43,7 @@ const launchApp = (audioError) => {
       if (request === "@tarojs/taro") return { __esModule: true, default: taro, ...taro };
       if (request === "@/cloud") return { initCloudHosting: () => { cloudInitializations += 1; } };
       if (request === "@/features/dailyReminder/reminderSettings") return { getReminderSettings: async () => ({ ok: false }) };
+      if (request === "@/features/listeningPractice/audioRuntime") return audioRuntime.exports;
       if (request === "@/features/listeningPractice/recordingSessionRecovery") {
         return { resumeUnfinishedRecordingOnLaunch: () => { recordingRecoveryChecks += 1; } };
       }
@@ -72,4 +83,13 @@ test("开发者工具明确不支持全局音频配置时不输出误导性警�
   await Promise.resolve();
   assert.equal(app.cloudInitializations, 1);
   assert.equal(app.warnings.length, 0, "开发者工具能力缺失不应显示成业务故障");
+});
+
+test("鸿蒙冷启动跳过不兼容的全局音频设置，仍执行录音恢复和云初始化", async () => {
+  const app = launchApp(undefined, "ohos");
+  await Promise.resolve();
+  assert.equal(app.audioOptions.length, 0);
+  assert.equal(app.recordingRecoveryChecks, 1);
+  assert.equal(app.cloudInitializations, 1);
+  assert.equal(app.warnings.length, 0);
 });

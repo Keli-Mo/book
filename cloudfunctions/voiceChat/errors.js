@@ -1,15 +1,17 @@
 // Public messages are fixed; provider messages may contain credentials or child speech.
+const { safeFailureDetails } = require("./diagnostics");
 const definitions = {
   INVALID_ARGUMENT: ["请求格式不正确，请重新录音", "validation", false],
   NOT_ENABLED: ["英语聊天暂未开放", "access", false],
   UNAUTHORIZED: ["请在微信小程序中重试", "access", false],
   TRIAL_ONLY: ["英语聊天正在试用中", "access", false],
-  NO_SPEECH: ["这段录音没有识别到文字，请重新说一句", "asr", true],
+  NO_SPEECH: ["这次没有识别到文字。请靠近麦克风，慢一点说一句简短英语", "asr", true],
   INVALID_AUDIO: ["录音文件无效，请重新录音", "asr", true],
+  AUDIO_FORMAT_UNSUPPORTED: ["录音格式不兼容，请重新录音；仍失败请联系管理员", "asr", true],
   BAD_TRANSCRIPT: ["录音内容太长，请说短一点", "asr", true],
-  BAD_MODEL_REPLY: ["英文回答格式异常，请重试", "reply", true],
+  BAD_MODEL_REPLY: ["AI 这次的回答格式异常，请重新生成回答", "reply", true],
   BAD_AUDIO: ["英文回答已生成，但语音文件异常，请重试", "tts", true],
-  ASR_UNAVAILABLE: ["语音识别服务暂时出错，请稍后重试", "asr", true],
+  ASR_UNAVAILABLE: ["语音识别失败，原因暂未确认，请稍后再试", "asr", true],
   REPLY_UNAVAILABLE: ["已识别你的话，准备英文回答时出错，请稍后重试", "reply", true],
   TTS_UNAVAILABLE: ["英文回答已生成，语音生成失败，请稍后重试", "tts", true],
   ASR_TIMEOUT: ["语音识别超时，请稍后重试", "asr", true],
@@ -45,6 +47,8 @@ class VoiceError extends Error {
   }
 }
 const voiceError = (code, message, stage) => new VoiceError(code, message, stage);
+const modelReplyError = (reasonCode, message, details = {}) =>
+  Object.assign(voiceError("BAD_MODEL_REPLY", message), { diagnostic: { ...details, reasonCode } });
 
 // Exact codes from Tencent SentenceRecognition/TextToVoice and common error docs.
 // Never classify from an arbitrary error message or an unverified prefix.
@@ -92,18 +96,21 @@ function failure(error, fallback = "VOICE_CHAT_ERROR", stage) {
   const definition = definitions[code];
   // Only our own validation errors carry safe, specific field instructions.
   const message = code === "INVALID_ARGUMENT" && error instanceof VoiceError ? error.message : definition[0];
-  return { ok: false, code, message, stage: stages.has(stage) ? stage : (error instanceof VoiceError && stages.has(error.stage) ? error.stage : definition[1]), retryable: definition[2] };
+  const reasonCode = code === "BAD_MODEL_REPLY" && error instanceof VoiceError
+    ? safeFailureDetails(error).reasonCode : undefined;
+  return { ok: false, code, message, stage: stages.has(stage) ? stage : (error instanceof VoiceError && stages.has(error.stage) ? error.stage : definition[1]), retryable: definition[2], ...(reasonCode ? { reasonCode } : {}) };
 }
 
-function reportFailure(adapters, result, error, requestId) {
-  const diagnostic = { event: "voice_chat_failure", stage: result.stage, safeCode: result.code };
-  const providerCode = error?.providerCode;
-  if (providerCodes.has(providerCode) || (typeof providerCode === "string" && /^HTTP_[45][0-9]{2}$/.test(providerCode))) diagnostic.providerCode = providerCode;
-  if (typeof requestId === "string" && /^[a-f0-9]{32}$/i.test(requestId)) diagnostic.requestId = requestId;
+function reportFailure(adapters, result, error, requestId, context) {
   try {
+    const diagnostic = { event: "voice_chat_failure", stage: result.stage, safeCode: result.code };
+    const providerCode = error?.providerCode;
+    if (providerCodes.has(providerCode) || (typeof providerCode === "string" && /^HTTP_[45][0-9]{2}$/.test(providerCode))) diagnostic.providerCode = providerCode;
+    if (typeof requestId === "string" && /^[a-f0-9]{32}$/i.test(requestId)) diagnostic.requestId = requestId;
+    Object.assign(diagnostic, context?.snapshot(), error instanceof VoiceError ? safeFailureDetails(error) : {});
     const reporting = adapters.logDiagnostic?.(diagnostic);
     if (reporting?.catch) reporting.catch(() => {});
   } catch { /* Diagnostics must never change the learner's result. */ }
 }
 
-module.exports = { definitions, voiceError, providerError, failure, reportFailure };
+module.exports = { definitions, voiceError, modelReplyError, providerError, failure, reportFailure };

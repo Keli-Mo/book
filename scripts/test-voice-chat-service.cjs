@@ -10,6 +10,7 @@ const cloudEnv = "expected-voice-env";
 let version = "develop";
 let identity = "o-trial_test";
 let identityCalls = 0;
+const routedCalls = [];
 let transportError;
 const errorSource = ts.transpileModule(fs.readFileSync(path.join(__dirname, "../src/services/voiceChatErrors.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
 const errorModule = { exports: {} };
@@ -24,7 +25,8 @@ new Function("module", "exports", "require", "wx", compiled)(moduleRef, moduleRe
   throw new Error(`Unexpected import: ${name}`);
 }, { cloud: { callFunction: async ({ name, config, data }) => {
   if (transportError) throw transportError;
-  assert.equal(name, "voiceChat");
+  assert.equal(name, ["develop", "trial"].includes(version) ? "voiceChatDiagnostics" : "voiceChat");
+  routedCalls.push({ version, name, action: data.action || "recording" });
   assert.equal(config.env, cloudEnv);
   if (data.action === "trialIdentity") {
     assert.deepEqual(data, { action: "trialIdentity" });
@@ -40,7 +42,7 @@ new Function("module", "exports", "require", "wx", compiled)(moduleRef, moduleRe
   return { result: { ok: true, data: { requestId: data.requestId, transcript: "Hello", replyEn: "Hi!", replyZh: "你好！", audioBase64: "QUJD", receipt } } };
 } } });
 
-const { callVoiceChat, readVoiceChatResponse, getVoiceChatTrialId, getVoiceChatQuota, confirmVoiceChatTurn } = moduleRef.exports;
+const { callVoiceChat, retryVoiceChat, readVoiceChatResponse, getVoiceChatTrialId, getVoiceChatQuota, confirmVoiceChatTurn } = moduleRef.exports;
 assert.equal(readVoiceChatResponse({ ok: true, data: { requestId: "c".repeat(32), transcript: "Hello", replyEn: "Hi!", replyZh: "你好！", audioBase64: "QUJD" } }, "c".repeat(32)).replyEn, "Hi!");
 assert.throws(() => readVoiceChatResponse({ ok: true, data: { requestId: "other", transcript: "Hello", replyEn: "Hi!", replyZh: "你好！", audioBase64: "QUJD" } }, "c".repeat(32)), error => error.code === "RESPONSE_INVALID");
 assert.throws(() => readVoiceChatResponse({ ok: false, code: "NO_SPEECH", message: "private details" }, "c".repeat(32)), /没有识别到文字/);
@@ -84,6 +86,18 @@ for (const [code, definition] of Object.entries(require("../cloudfunctions/voice
     await assert.rejects(getVoiceChatQuota, thrown => thrown.code === expected && !/private/.test(thrown.message));
   }
   transportError = null;
+  quota = { kind: "unlimited" };
+  for (version of ["develop", "trial", "release", "", "unknown"]) {
+    const context = { requestId: "c".repeat(32), mode: "free", level: "basic", topic: "animals", turns: [] };
+    await callVoiceChat({ ...context, durationMs: 1000, audioBase64: "QUJD" });
+    await retryVoiceChat({ ...context, action: "retryReply", transcript: "I like 意大利面。" });
+    await retryVoiceChat({ ...context, action: "retrySpeech", transcript: "I like 意大利面。",
+      reply: { replyEn: "Pasta is tasty!", replyZh: "意大利面很好吃！" } });
+    await getVoiceChatQuota();
+    await confirmVoiceChatTurn(receipt);
+    assert.deepEqual(routedCalls.slice(-5).map(call => call.action), ["recording", "retryReply", "retrySpeech", "quotaStatus", "confirmTurn"]);
+    assert.ok(routedCalls.slice(-5).every(call => call.name === (["develop", "trial"].includes(version) ? "voiceChatDiagnostics" : "voiceChat")));
+  }
   for (version of ["develop", "trial"]) assert.equal(await getVoiceChatTrialId(), identity);
   identity = "";
   await assert.rejects(getVoiceChatTrialId, /获取试用编号/);

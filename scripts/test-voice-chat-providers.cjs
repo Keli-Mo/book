@@ -11,7 +11,7 @@ const messages = buildMessages(input);
 assert.equal(messages[0].role, "system");
 assert.match(messages[0].content, /JSON/);
 assert.match(messages[0].content, /animals/);
-assert.equal(messages.at(-1).content, "I like dogs.");
+assert.equal(JSON.parse(messages.at(-1).content).currentUtterance, "I like dogs.");
 
 const localEnv = { TENCENTCLOUD_SECRET_ID: "local-id", TENCENTCLOUD_SECRET_KEY: "local-key" };
 const speechEnv = { VOICE_CHAT_TENCENT_SECRET_ID: "speech-id", VOICE_CHAT_TENCENT_SECRET_KEY: "speech-key" };
@@ -30,13 +30,13 @@ async function testHttpFailures() {
     for (const [scenario, expected] of [
       [{ statusCode: 401, body: "sensitive upstream detail" }, { statusCode: 401 }],
       [{ statusCode: 429, body: "private key" }, { statusCode: 429 }],
-      [{ statusCode: 200, body: "broken-json" }, { code: "BAD_MODEL_REPLY" }],
-      [{ statusCode: 200, body: "x".repeat(1000001) }, { code: "BAD_MODEL_REPLY" }],
+      [{ statusCode: 200, body: "broken-json" }, { code: "BAD_MODEL_REPLY", reasonCode: "MODEL_HTTP_JSON_INVALID" }],
+      [{ statusCode: 200, body: "x".repeat(1000001) }, { code: "BAD_MODEL_REPLY", reasonCode: "MODEL_HTTP_RESPONSE_TOO_LARGE" }],
       [{ timeout: true }, { code: "ETIMEDOUT" }],
       [{ interrupted: true }, { code: "ECONNRESET" }],
     ]) {
       https.request = (_url, options, onResponse) => {
-        assert.equal(options.timeout, 20000, "保持单次请求原有超时预算");
+        assert.ok(options.timeout > 0 && options.timeout <= 20000, "不超过原有总超时预算");
         const req = new EventEmitter();
         req.destroy = (error) => req.emit("error", error);
         req.end = () => queueMicrotask(() => {
@@ -53,7 +53,7 @@ async function testHttpFailures() {
       };
       const provider = createProviders({ env: { DEEPSEEK_API_KEY: "test-key" } });
       await assert.rejects(() => provider.reply(input), (error) => {
-        for (const [key, value] of Object.entries(expected)) assert.equal(error[key], value);
+        for (const [key, value] of Object.entries(expected)) assert.equal(key === "reasonCode" ? error.diagnostic?.reasonCode : error[key], value);
         assert.ok(!error.message.includes("sensitive upstream detail"));
         assert.ok(!error.message.includes("private key"));
         return true;
@@ -92,13 +92,33 @@ async function testHttpFailures() {
   }
   const silent = createProviders({ env: speechEnv, asrClient: { SentenceRecognition: async () => ({ Result: "" }) } });
   assert.equal(await silent.transcribe(Buffer.from("ID3sample")), "", "仅确认返回的空文字才表示未识别到内容");
-  for (const result of [
-    {}, { choices: [{ finish_reason: "length", message: { content: "{}" } }] },
-    { choices: [{ finish_reason: "stop", message: { content: "" } }] },
-    { choices: [{ finish_reason: "stop", message: { content: "{truncated" } }] },
+  for (const [result, reasonCode] of [
+    [{}, "MODEL_FINISH_INCOMPLETE"],
+    [{ choices: [{ finish_reason: "length", message: { content: "{}" } }] }, "MODEL_FINISH_INCOMPLETE"],
+    [{ choices: [{ finish_reason: "stop" }] }, "MODEL_CONTENT_MISSING"],
+    [{ choices: [{ finish_reason: "stop", message: { content: null } }] }, "MODEL_CONTENT_MISSING"],
+    [{ choices: [{ finish_reason: "stop", message: { content: "" } }] }, "MODEL_CONTENT_EMPTY"],
+    [{ choices: [{ finish_reason: "stop", message: { content: " ".repeat(109) } }], usage: { completion_tokens: 28 } }, "MODEL_CONTENT_EMPTY"],
+    [{ choices: [{ finish_reason: "stop", message: { content: "{private malformed model content" } }] }, "MODEL_JSON_INVALID"],
   ]) {
-    const malformed = createProviders({ env: { DEEPSEEK_API_KEY: "test-key" }, postJson: async () => result });
-    await assert.rejects(() => malformed.reply(input), (error) => error.code === "BAD_MODEL_REPLY");
+    let observed = false, requests = 0;
+    const malformed = createProviders({ env: { DEEPSEEK_API_KEY: "test-key" }, postJson: async () => { requests++; return result; } });
+    await assert.rejects(() => malformed.reply({ ...input, diagnostics: { modelResponse: (value) => {
+      assert.equal(value, result, "观察原始返回，保留 finish_reason 和空白长度供安全诊断");
+      observed = true;
+    } } }), (error) => {
+      assert.equal(observed, true, "模型校验失败之前先采集诊断");
+      assert.equal(error.code, "BAD_MODEL_REPLY");
+      assert.equal(error.diagnostic?.reasonCode, reasonCode);
+      assert.ok(!JSON.stringify(error.diagnostic).includes("private malformed model content"));
+      return true;
+    });
+    assert.equal(requests, reasonCode === "MODEL_CONTENT_EMPTY" ? 2 : 1, "只为空回答执行一次自动恢复");
+  }
+  for (const modelResponse of [() => { throw new Error("diagnostic unavailable"); }, async () => { throw new Error("diagnostic unavailable"); }]) {
+    const expected = { replyEn: "Hello!", replyZh: "你好！", correction: null };
+    const reliable = createProviders({ env: { DEEPSEEK_API_KEY: "test-key" }, postJson: async () => ({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(expected) } }] }) });
+    assert.deepEqual(await reliable.reply({ ...input, diagnostics: { modelResponse } }), expected, "诊断抛异常不影响正常回答");
   }
   console.log("voice chat provider checks passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

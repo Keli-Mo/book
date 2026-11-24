@@ -25,7 +25,8 @@ export const saveVoiceAudioBase64 = (requestId: string, audioBase64: string): Pr
 });
 
 export const removeVoiceFile = (filePath: string): Promise<void> => new Promise((resolve) => {
-  if (!filePath || !filePath.startsWith(wx.env.USER_DATA_PATH + "/voice-chat-")) { resolve(); return; }
+  const root = wx.env.USER_DATA_PATH + "/";
+  if (!filePath || !filePath.startsWith(root) || !/^voice-chat-[a-f0-9]{32}\.mp3$/.test(filePath.slice(root.length))) { resolve(); return; }
   fileManager().unlink({ filePath, success: () => resolve(), fail: () => resolve() });
 });
 

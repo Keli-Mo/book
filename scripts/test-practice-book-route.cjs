@@ -30,6 +30,7 @@ const load = (file, overrides = {}, cache = new Map()) => {
     loaded, loaded.exports, (request) => {
       if (Object.hasOwn(overrides, request)) return overrides[request];
       if (request.endsWith(".scss")) return {};
+      if (/\.(png|jpe?g|webp|svg)$/.test(request)) return request;
       if (request.startsWith("@/") || request.startsWith(".")) {
         const base = request.startsWith("@/") ? `src/${request.slice(2)}` : path.join(path.dirname(file), request);
         const target = [base, `${base}.ts`, `${base}.tsx`].find((candidate) => fs.existsSync(path.join(projectRoot, candidate)));

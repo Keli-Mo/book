@@ -16,6 +16,7 @@ import { useAppEntryIntroGuard } from "@/hooks/useAppEntryIntroGuard";
 import { useDeviceLayout } from "@/hooks/useDeviceLayout";
 import { readMiniProgramEnvVersion } from "@/services/appEntry";
 import { sharedImage, sharedTitle } from "@/constant";
+import microphoneIcon from "../../assets/icons/microphone.svg";
 
 import "./Home.scss";
 
@@ -106,13 +107,6 @@ export default function Home() {
       </View>
 
       <View className='library-home__content device-layout__content'>
-        {showVoiceChatPreview && <View className='voice-chat-entry' hoverClass='is-pressed' onClick={openVoiceChat}>
-          <View>
-            <Text className='voice-chat-entry__title'>英语语音伙伴</Text>
-            <Text className='voice-chat-entry__detail'>自由聊 · 主题聊 · 英语发声与跟读</Text>
-          </View>
-          <Text className='voice-chat-entry__action'>开始聊天 ›</Text>
-        </View>}
         <View className={`continue-card ${progressBook ? "" : "continue-card--empty"}`}>
           {progressBook && progressPractice ? (
             <Image
@@ -187,6 +181,18 @@ export default function Home() {
           <AppIcon value='folder' size='24' color='#2f856a' />
           <Text>学习</Text>
         </View>
+        {showVoiceChatPreview && (
+          <View
+            className='home-tabs__item home-tabs__voice device-touch-target'
+            hoverClass='is-pressed'
+            ariaRole='button'
+            ariaLabel='英语伙伴'
+            onClick={openVoiceChat}
+          >
+            <Image className='home-tabs__voice-icon' src={microphoneIcon} mode='aspectFit' />
+            <Text>英语伙伴</Text>
+          </View>
+        )}
         <View
           className='home-tabs__item device-touch-target'
           hoverClass='is-pressed'

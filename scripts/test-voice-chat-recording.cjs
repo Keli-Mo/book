@@ -53,4 +53,45 @@ assert.ok(!errorMessage.includes("private-data"));
 assert.equal(recorder.isActive(), false);
 owner.start = () => ({ ok: false, reason: "native-error", error: new Error("privacy authorization denied private-data") });
 assert.throws(() => recorder.start(() => {}, () => {}), error => error.code === "MIC_PRIVACY" && !error.message.includes("private-data"));
+
+// The native callback arrives after the user can tap the orb/inline stop again.
+{
+  let nativeListener, nativePhase = "idle", stopCalls = 0, synchronousStop = false;
+  const finished = [], errors = [];
+  const delayedOwner = {
+    subscribe(value) { nativeListener = value; return { ok: true, unsubscribe() {} }; },
+    start() { nativePhase = "recording"; return { ok: true }; },
+    stop() {
+      stopCalls++;
+      if (nativePhase === "stopping") return { ok: false, reason: "invalid-phase" };
+      nativePhase = "stopping";
+      if (synchronousStop) nativeListener.onStop({ tempFilePath: "sync.mp3", duration: 1500 });
+      return { ok: true };
+    },
+    release() { nativePhase = "idle"; return { ok: true, phase: "idle" }; },
+  };
+  const delayed = createVoiceRecorder({ acquire: () => ({ ok: true, owner: delayedOwner }) });
+  const start = () => delayed.start((path, duration) => finished.push([path, duration]), message => errors.push(message));
+  start();
+  delayed.stop(); delayed.stop();
+  assert.equal(stopCalls, 1, "异步 onStop 前重复点结束只能向原生发送一次 stop");
+  assert.equal(delayed.isActive(), true, "等待原生确认期间应保留当前录音");
+  nativeListener.onStop({ tempFilePath: "delayed.mp3", duration: 1250 });
+  assert.deepEqual(finished, [["delayed.mp3", 1250]], "重复停止不能丢失有效录音");
+  assert.deepEqual(errors, []);
+  assert.equal(delayed.isActive(), false);
+
+  start();
+  delayed.stop(); delayed.stop();
+  assert.equal(stopCalls, 2, "下一段录音拥有独立的停止状态");
+  nativeListener.onStop({ tempFilePath: "next.mp3", duration: 1800 });
+  assert.deepEqual(finished[1], ["next.mp3", 1800]);
+
+  synchronousStop = true;
+  start(); delayed.stop(); delayed.stop();
+  assert.equal(stopCalls, 3, "同步 onStop 也只完成一次，不再触碰已结束的录音");
+  assert.deepEqual(finished[2], ["sync.mp3", 1500]);
+  assert.equal(delayed.isActive(), false);
+  assert.deepEqual(errors, []);
+}
 console.log("voice chat recording checks passed");

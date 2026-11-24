@@ -1,7 +1,7 @@
-import type { VoiceCorrection, VoiceLevel, VoiceMode, VoiceTopic } from "@/features/voiceChat/session";
+import type { VoiceCorrection, VoiceLevel, VoiceMode, VoiceTopic, VoicePartialReply } from "@/features/voiceChat/session";
 import { CLOUD_ENV_ID } from "@/cloud";
 import { readMiniProgramEnvVersion } from "@/services/appEntry";
-import { cloudVoiceError, safeVoiceError, voiceError } from "./voiceChatErrors";
+import { cloudVoiceError, safeVoiceError, voiceError, type VoiceError } from "./voiceChatErrors";
 
 export type VoiceChatRequest = {
   requestId: string;
@@ -28,6 +28,11 @@ export type VoiceChatQuota =
   | { kind: "unlimited" }
   | { kind: "metered"; freeRemaining: number; packRemaining: number; packExpiresAt: number | null; pendingUntil?: number };
 export type VoiceChatReceipt = { requestId: string; token: string };
+export type VoiceChatError = VoiceError & { partial?: VoicePartialReply };
+export type VoiceChatContext = Pick<VoiceChatRequest, "requestId" | "mode" | "level" | "topic" | "turns">;
+export type VoiceChatRetry = VoiceChatContext & { transcript: string } & (
+  { action: "retryReply" } | { action: "retrySpeech"; reply: Pick<VoiceChatResponse, "replyEn" | "replyZh" | "correction"> }
+);
 
 const protocolError = () => voiceError("RESPONSE_INVALID");
 const nonEmpty = (value: unknown, max: number): value is string =>
@@ -48,14 +53,41 @@ function readData(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") throw protocolError();
   const result = value as { ok?: unknown; code?: unknown; message?: unknown; data?: unknown };
   if (result.ok === false) {
-    throw safeVoiceError(result, "VOICE_CHAT_ERROR");
+    const error = safeVoiceError(result, "VOICE_CHAT_ERROR");
+    if (error.code === "AUDIO_FORMAT_UNSUPPORTED") {
+      let simulator = false;
+      try { simulator = typeof wx !== "undefined" && (wx as typeof wx & { getDeviceInfo?: () => { platform?: string } }).getDeviceInfo?.().platform === "devtools"; } catch { /* Keep the device-neutral message. */ }
+      if (simulator) throw safeVoiceError({ ...error, code: "SIMULATOR_AUDIO_FORMAT" }, "AUDIO_FORMAT_UNSUPPORTED");
+    }
+    throw error;
   }
   if (result.ok !== true || !result.data || typeof result.data !== "object") throw protocolError();
   return result.data as Record<string, unknown>;
 }
 
 export function readVoiceChatResponse(value: unknown, requestId: string): VoiceChatResponse {
-  const data = readData(value) as Partial<VoiceChatResponse>;
+  let data: Partial<VoiceChatResponse>;
+  try { data = readData(value) as Partial<VoiceChatResponse>; }
+  catch (caught) {
+    const error = caught as VoiceChatError;
+    const result = value as { ok?: unknown; requestId?: unknown; stage?: unknown; partial?: VoicePartialReply } | null;
+    const partial = result?.partial;
+    if (result?.ok === false && result.requestId === requestId && (result.stage === "reply" || result.stage === "tts") &&
+        partial && nonEmpty(partial.transcript, 500)) {
+      const english = (text: unknown, max: number): text is string => nonEmpty(text, max) && /[A-Za-z]/.test(text) &&
+        ![...text].some(char => /\p{Letter}/u.test(char) && !/\p{Script=Latin}/u.test(char));
+      const chinese = (text: unknown, max: number): text is string => nonEmpty(text, max) && /\p{Script=Han}/u.test(text);
+      if (result.stage === "reply" && partial.replyEn === undefined && partial.replyZh === undefined && partial.correction === undefined) {
+        error.partial = { transcript: partial.transcript };
+      } else if (result.stage === "tts" && english(partial.replyEn, 220) && chinese(partial.replyZh, 350)) {
+        error.partial = { transcript: partial.transcript, replyEn: partial.replyEn, replyZh: partial.replyZh };
+        if (partial.correction && english(partial.correction.betterEn, 180) && chinese(partial.correction.explanationZh, 180)) {
+          error.partial.correction = { betterEn: partial.correction.betterEn, explanationZh: partial.correction.explanationZh };
+        }
+      }
+    }
+    throw error;
+  }
   if (data.requestId !== requestId || !nonEmpty(data.transcript, 500) || !nonEmpty(data.replyEn, 500) ||
       !nonEmpty(data.replyZh, 500) || !nonEmpty(data.audioBase64, 1200000) ||
       /[\u3400-\u9fff]/.test(data.replyEn) || !/^[A-Za-z0-9+/]+={0,2}$/.test(data.audioBase64)) {
@@ -70,13 +102,16 @@ export function readVoiceChatResponse(value: unknown, requestId: string): VoiceC
   return data as VoiceChatResponse;
 }
 
-type VoiceChatInvocation = (VoiceChatRequest & { quotaProtocol: 1 }) | { action: "trialIdentity" | "quotaStatus" } |
+type VoiceChatInvocation = ((VoiceChatRequest | VoiceChatRetry) & { quotaProtocol: 1; progressProtocol: 1 }) | { action: "trialIdentity" | "quotaStatus" } |
   (VoiceChatReceipt & { action: "confirmTurn" });
 
 async function invokeVoiceChat(data: VoiceChatInvocation): Promise<unknown> {
   if (typeof wx === "undefined" || !wx.cloud?.callFunction) throw voiceError("WX_UNSUPPORTED");
   try {
-    const response = await wx.cloud.callFunction({ name: "voiceChat", config: { env: CLOUD_ENV_ID }, data });
+    // Preview phones use the isolated service directly; release/unknown
+    // environments retain the existing production function.
+    const name = isVoiceChatPreview() ? "voiceChatDiagnostics" : "voiceChat";
+    const response = await wx.cloud.callFunction({ name, config: { env: CLOUD_ENV_ID }, data });
     return response.result;
   } catch (error) {
     throw cloudVoiceError(error);
@@ -84,7 +119,11 @@ async function invokeVoiceChat(data: VoiceChatInvocation): Promise<unknown> {
 }
 
 export async function callVoiceChat(request: VoiceChatRequest): Promise<VoiceChatResponse> {
-  return readVoiceChatResponse(await invokeVoiceChat({ ...request, quotaProtocol: 1 }), request.requestId);
+  return readVoiceChatResponse(await invokeVoiceChat({ ...request, quotaProtocol: 1, progressProtocol: 1 }), request.requestId);
+}
+
+export async function retryVoiceChat(request: VoiceChatRetry): Promise<VoiceChatResponse> {
+  return readVoiceChatResponse(await invokeVoiceChat({ ...request, quotaProtocol: 1, progressProtocol: 1 }), request.requestId);
 }
 
 export async function getVoiceChatQuota(): Promise<VoiceChatQuota> {

@@ -12,6 +12,7 @@ const RECORD_OPTIONS = {
 
 type ActiveRecording = {
   owner: RecorderOwner;
+  stopping: boolean;
   unsubscribe: () => void;
   onStop: (path: string, durationMs: number) => void;
   onError: (message: string) => void;
@@ -36,7 +37,7 @@ export const createVoiceRecorder = (coordinator: RecorderCoordinator = getRecord
       if (active) throw voiceError("RECORD_BUSY");
       const acquired = coordinator.acquire();
       if (acquired.ok === false) throw voiceError(acquired.reason === "busy" ? "RECORD_BUSY" : "RECORD_START");
-      const session: ActiveRecording = { owner: acquired.owner, unsubscribe: () => undefined, onStop, onError };
+      const session: ActiveRecording = { owner: acquired.owner, stopping: false, unsubscribe: () => undefined, onStop, onError };
       active = session;
       const subscribed = session.owner.subscribe({
         onStop: (result) => {
@@ -60,8 +61,10 @@ export const createVoiceRecorder = (coordinator: RecorderCoordinator = getRecord
       }
     },
     stop() {
-      if (!active) return;
+      if (!active || active.stopping) return;
       const session = active;
+      // Native onStop is asynchronous; every UI entry shares this one stop request.
+      session.stopping = true;
       const result = session.owner.stop();
       if (result.ok === false && finish(session, true)) session.onError(voiceError("RECORD_STOP").message);
     },

@@ -1,9 +1,9 @@
 const messages = {
-  NO_SPEECH: "这段录音没有识别到文字，请重新说一句。",
+  NO_SPEECH: "这次没有识别到文字。请靠近麦克风，慢一点说一句简短英语。",
   BAD_TRANSCRIPT: "录音内容太长，请说短一点。",
-  BAD_MODEL_REPLY: "英文回答格式异常，请重试。",
+  BAD_MODEL_REPLY: "AI 这次的回答格式异常，请重新生成回答。",
   BAD_AUDIO: "英文回答已生成，但语音文件异常，请重试。",
-  ASR_UNAVAILABLE: "语音识别服务暂时出错，请稍后重试。",
+  ASR_UNAVAILABLE: "语音识别失败，原因暂未确认，请稍后再试。",
   REPLY_UNAVAILABLE: "已识别你的话，准备英文回答时出错，请稍后重试。",
   TTS_UNAVAILABLE: "英文回答已生成，语音生成失败，请稍后重试。",
   ASR_TIMEOUT: "语音识别超时，请稍后重试。",
@@ -16,6 +16,8 @@ const messages = {
   TTS_BUSY: "英文语音服务繁忙，请稍后重试。",
   TTS_NETWORK: "英文语音服务连接失败，请稍后重试。",
   INVALID_AUDIO: "录音文件无效，请重新录音。",
+  AUDIO_FORMAT_UNSUPPORTED: "录音格式不兼容，请重新录音；仍失败请联系管理员。",
+  SIMULATOR_AUDIO_FORMAT: "模拟器录音格式不兼容，请启用本地语音助手后重试。",
   SERVICE_AUTH_FAILED: "语音服务授权异常，请联系管理员。",
   SERVICE_QUOTA_EXHAUSTED: "语音服务额度不足，请联系管理员。",
   SERVICE_CONFIG_ERROR: "语音服务配置异常，请联系管理员。",
@@ -52,18 +54,41 @@ const messages = {
   PLAYBACK_FAILED: "英文语音播放失败，可点重听再试。",
 } as const;
 
+// Only fixed, known reasons may refine the public message. Never render raw
+// provider text, diagnostic snippets, or a reason attached to another stage.
+const modelReasonMessages = {
+  MODEL_CONTENT_EMPTY: "已识别你的话，但 AI 没有返回回答，请再试一次。",
+  MODEL_CONTENT_MISSING: "已识别你的话，但 AI 没有返回回答，请再试一次。",
+  MODEL_FINISH_INCOMPLETE: "AI 这次未生成完整回答，请再试一次。",
+  MODEL_HTTP_JSON_INVALID: "AI 返回的内容无法读取，请再试一次。",
+  MODEL_JSON_INVALID: "AI 返回的内容无法读取，请再试一次。",
+  MODEL_CHINESE_MISSING: "AI 回复缺少中文字幕，请再试一次。",
+  MODEL_ENGLISH_INVALID: "AI 没有按要求生成纯英文回答，请重新生成回答。",
+  MODEL_FIELD_TOO_LONG: "AI 这次的回答过长，请重新生成回答。",
+  MODEL_HTTP_RESPONSE_TOO_LARGE: "AI 返回的内容过长，请重新生成回答。",
+  MODEL_FIELD_TYPE: "AI 这次的回答格式异常，请重新生成回答。",
+  MODEL_OBJECT_INVALID: "AI 这次的回答格式异常，请重新生成回答。",
+  MODEL_FIELD_EMPTY: "AI 这次的回答内容不完整，请重新生成回答。",
+} as const;
+type ModelReasonCode = keyof typeof modelReasonMessages;
+
 export type VoiceErrorCode = keyof typeof messages;
-export type VoiceError = Error & { code: VoiceErrorCode; stage?: string; retryable?: boolean };
+export type VoiceError = Error & { code: VoiceErrorCode; stage?: string; retryable?: boolean; reasonCode?: ModelReasonCode };
 
 export function voiceError(code: VoiceErrorCode): VoiceError {
   return Object.assign(new Error(messages[code]), { code });
 }
 
 export function safeVoiceError(error: unknown, fallback: VoiceErrorCode): VoiceError {
-  const value = error as { code?: unknown; stage?: unknown; retryable?: unknown } | null;
+  const value = error as { code?: unknown; stage?: unknown; retryable?: unknown; reasonCode?: unknown } | null;
   const code = typeof value?.code === "string" && Object.prototype.hasOwnProperty.call(messages, value.code)
     ? value.code as VoiceErrorCode : fallback;
   const result = voiceError(code);
+  if (code === "BAD_MODEL_REPLY" && typeof value?.reasonCode === "string" &&
+      Object.prototype.hasOwnProperty.call(modelReasonMessages, value.reasonCode)) {
+    result.reasonCode = value.reasonCode as ModelReasonCode;
+    result.message = modelReasonMessages[result.reasonCode];
+  }
   if (typeof value?.stage === "string" && /^(recording|network|validation|asr|reply|tts|quota|server|playback|access)$/.test(value.stage)) result.stage = value.stage;
   if (typeof value?.retryable === "boolean") result.retryable = value.retryable;
   return result;

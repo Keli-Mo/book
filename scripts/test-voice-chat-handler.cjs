@@ -157,7 +157,17 @@ async function testFailureTaxonomy() {
     };
     const result = await createHandler(adapters)(request);
     assert.deepEqual(result, { ok: false, code, message: definitions[code][0], stage, retryable, requestId: request.requestId });
-    assert.deepEqual(logs, [{ event: "voice_chat_failure", stage, safeCode: code, ...(providerCode ? { providerCode } : {}), requestId: request.requestId }]);
+    assert.equal(logs.length, 1, "每次失败只写一条诊断日志");
+    const { elapsedMs, stageMs, ...logged } = logs[0];
+    assert.deepEqual(logged, {
+      event: "voice_chat_failure", stage, safeCode: code, ...(providerCode ? { providerCode } : {}), requestId: request.requestId,
+      mode: "free", level: "basic", historyTurns: 0, inputAudioBytes: 9, inputDurationMs: 2000,
+      ...(operation === "transcribe" ? {} : { transcriptCharacters: "I like dogs.".length }),
+    });
+    assert.ok(Number.isInteger(elapsedMs) && elapsedMs >= 0);
+    const completedStages = { transcribe: ["asr"], reply: ["asr", "reply"], synthesize: ["asr", "reply", "tts"] }[operation];
+    assert.deepEqual(Object.keys(stageMs), completedStages);
+    for (const value of Object.values(stageMs)) assert.ok(Number.isInteger(value) && value >= 0);
     assert.equal(calls.at(-1), operation, "失败后停止后续收费调用");
     assert.equal(calls.filter((name) => name === operation).length, 1, "服务端不自动重试收费调用");
     assert.ok(!JSON.stringify([result, logs]).includes(secret));

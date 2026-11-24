@@ -44,6 +44,34 @@ async function deliver(store, n, user = student) {
   return store.complete(user, id, token);
 }
 
+test("a partial failure can retry the same request and confirmation debits exactly once", async () => {
+  const { store } = fixture();
+  let failing = true, asrCalls = 0;
+  const handler = createHandler({ enabled: true, getOpenId: () => student, allowedOpenIds: new Set([student]),
+    quotaEnabled: true, quota: store,
+    transcribe: async () => { asrCalls++; return "I like pandas."; },
+    reply: async () => { if (failing) throw new Error("temporary"); return { replyEn: "Pandas are cute!", replyZh: "熊猫很可爱！" }; },
+    synthesize: async () => "QUJD",
+  });
+  const input = { requestId: requestId(8), mode: "free", level: "basic", topic: "animals", turns: [],
+    durationMs: 2000, audioBase64: Buffer.from("ID3fixture").toString("base64"), quotaProtocol: 1, progressProtocol: 1 };
+  const failed = await handler(input);
+  assert.equal(failed.partial.transcript, "I like pandas.");
+  assert.equal((await store.status(student)).freeRemaining, 5);
+  failing = false;
+  const retry = { ...input, action: "retryReply", transcript: failed.partial.transcript };
+  const succeeded = await handler(retry);
+  assert.equal(succeeded.ok, true);
+  assert.equal(asrCalls, 1);
+  const held = await store.status(student);
+  assert.equal(held.freeRemaining, 4, "one turn is reserved while waiting for playback");
+  assert.ok(held.pendingUntil);
+  const confirm = { action: "confirmTurn", ...succeeded.data.receipt };
+  assert.equal((await handler(confirm)).data.quota.freeRemaining, 4);
+  assert.equal((await handler(confirm)).data.quota.freeRemaining, 4);
+  assert.equal((await handler(retry)).code, "REQUEST_COMPLETED");
+});
+
 test("a free account has exactly five confirmed turns across concurrent requests", async () => {
   const { store } = fixture();
   assert.equal((await store.status(student)).freeRemaining, 5);

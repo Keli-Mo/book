@@ -4,8 +4,9 @@
   "private": true,
   "main": "index.js",
   "dependencies": {
-    "wx-server-sdk": "^4.0.2",
+    "mpg123-decoder": "1.0.3",
     "tencentcloud-sdk-nodejs-asr": "4.1.339",
-    "tencentcloud-sdk-nodejs-tts": "4.1.237"
+    "tencentcloud-sdk-nodejs-tts": "4.1.237",
+    "wx-server-sdk": "^4.0.2"
   }
 }
